@@ -2,3 +2,4 @@ anything/apps/web/.env
 anything-property-management-db/
 anything/__anything-migration-package__/
 anything-migration-package
+.DS_Store
