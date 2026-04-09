@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/invoices/generate-monthly",
+      "schedule": "0 0 1 * *"
+    },
+    {
+      "path": "/api/notifications/check-landlord-due-dates",
+      "schedule": "0 8 * * *"
+    }
+  ]
+}
