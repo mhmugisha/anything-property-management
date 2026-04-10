@@ -12,6 +12,7 @@ import { loadFontsFromTailwindSource } from './plugins/loadFontsFromTailwindSour
 import { nextPublicProcessEnv } from './plugins/nextPublicProcessEnv';
 import { restart } from './plugins/restart';
 import { restartEnvFileChange } from './plugins/restartEnvFileChange';
+import { vercelPreset } from '@vercel/react-router/vite';
 
 export default defineConfig({
   // Keep them available via import.meta.env.NEXT_PUBLIC_*
@@ -64,7 +65,9 @@ export default defineConfig({
     consoleToParent(),
     loadFontsFromTailwindSource(),
     addRenderIds(),
-    reactRouter(),
+    reactRouter({
+      presets: [vercelPreset()],
+    }),
     tsconfigPaths(),
     aliases(),
     layoutWrapperPlugin(),
