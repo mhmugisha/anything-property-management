@@ -15,20 +15,29 @@ import { restartEnvFileChange } from './plugins/restartEnvFileChange';
 import { vercelPreset } from '@vercel/react-router/vite';
 
 export default defineConfig({
-  // Keep them available via import.meta.env.NEXT_PUBLIC_*
   envPrefix: 'NEXT_PUBLIC_',
   build: {
     target: 'esnext',
+    rollupOptions: {
+      external: [
+        'hono',
+        'hono/cors',
+        'hono/proxy',
+        'hono/body-limit',
+        'hono/request-id',
+        'hono/context-storage',
+        '@hono/auth-js',
+        'argon2',
+        'ws',
+      ],
+    },
   },
   optimizeDeps: {
-    // Explicitly include fast-glob, since it gets dynamically imported and we
-    // don't want that to cause a re-bundle.
     include: ['fast-glob', 'lucide-react'],
     exclude: [
       '@hono/auth-js/react',
       '@hono/auth-js',
       '@auth/core',
-      '@hono/auth-js',
       'hono/context-storage',
       '@auth/core/errors',
       'fsevents',
