@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { reactRouter } from '@react-router/dev/vite';
-import { reactRouterHonoServer } from 'react-router-hono-server/dev';
 import { defineConfig } from 'vite';
 import babel from 'vite-plugin-babel';
 import tsconfigPaths from 'vite-tsconfig-paths';
@@ -18,26 +17,10 @@ export default defineConfig({
   envPrefix: 'NEXT_PUBLIC_',
   build: {
     target: 'esnext',
-    rollupOptions: {
-      external: (id) => {
-        // Externalize all hono packages and other server-only packages
-        if (id.startsWith('hono') || id.startsWith('@hono/')) return true;
-        if (id === 'argon2' || id === 'ws') return true;
-        if (id.startsWith('@neondatabase/')) return true;
-        if (id.startsWith('@auth/core')) return true;
-        if (id.startsWith('react-router-hono-server')) return true;
-        return false;
-      },
-    },
   },
   optimizeDeps: {
     include: ['fast-glob', 'lucide-react'],
     exclude: [
-      '@hono/auth-js/react',
-      '@hono/auth-js',
-      '@auth/core',
-      'hono/context-storage',
-      '@auth/core/errors',
       'fsevents',
       'lightningcss',
     ],
@@ -46,10 +29,6 @@ export default defineConfig({
   plugins: [
     nextPublicProcessEnv(),
     restartEnvFileChange(),
-    reactRouterHonoServer({
-      serverEntryPoint: './__create/index.ts',
-      runtime: 'node',
-    }),
     babel({
       include: ['src/**/*.{js,jsx,ts,tsx}'],
       exclude: /node_modules/,
