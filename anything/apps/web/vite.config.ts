@@ -19,17 +19,15 @@ export default defineConfig({
   build: {
     target: 'esnext',
     rollupOptions: {
-      external: [
-        'hono',
-        'hono/cors',
-        'hono/proxy',
-        'hono/body-limit',
-        'hono/request-id',
-        'hono/context-storage',
-        '@hono/auth-js',
-        'argon2',
-        'ws',
-      ],
+      external: (id) => {
+        // Externalize all hono packages and other server-only packages
+        if (id.startsWith('hono') || id.startsWith('@hono/')) return true;
+        if (id === 'argon2' || id === 'ws') return true;
+        if (id.startsWith('@neondatabase/')) return true;
+        if (id.startsWith('@auth/core')) return true;
+        if (id.startsWith('react-router-hono-server')) return true;
+        return false;
+      },
     },
   },
   optimizeDeps: {
