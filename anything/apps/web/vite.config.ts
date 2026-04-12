@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { reactRouter } from '@react-router/dev/vite';
+import { reactRouterHonoServer } from 'react-router-hono-server/dev';
 import { defineConfig } from 'vite';
 import babel from 'vite-plugin-babel';
 import tsconfigPaths from 'vite-tsconfig-paths';
@@ -11,7 +12,6 @@ import { loadFontsFromTailwindSource } from './plugins/loadFontsFromTailwindSour
 import { nextPublicProcessEnv } from './plugins/nextPublicProcessEnv';
 import { restart } from './plugins/restart';
 import { restartEnvFileChange } from './plugins/restartEnvFileChange';
-import { vercelPreset } from '@vercel/react-router/vite';
 
 export default defineConfig({
   envPrefix: 'NEXT_PUBLIC_',
@@ -29,6 +29,10 @@ export default defineConfig({
   plugins: [
     nextPublicProcessEnv(),
     restartEnvFileChange(),
+    reactRouterHonoServer({
+      serverEntryPoint: './__create/index.ts',
+      runtime: 'node',
+    }),
     babel({
       include: ['src/**/*.{js,jsx,ts,tsx}'],
       exclude: /node_modules/,
@@ -51,9 +55,7 @@ export default defineConfig({
     consoleToParent(),
     loadFontsFromTailwindSource(),
     addRenderIds(),
-    reactRouter({
-      presets: [vercelPreset()],
-    }),
+    reactRouter(),
     tsconfigPaths(),
     aliases(),
     layoutWrapperPlugin(),
