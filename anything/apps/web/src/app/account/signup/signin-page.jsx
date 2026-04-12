@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import ExelaLogo from "@/components/ExelaLogo";
 
@@ -11,61 +10,24 @@ export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [csrfToken, setCsrfToken] = useState("");
 
-  const queryClient = useQueryClient();
+  useEffect(() => {
+    // Fetch CSRF token on mount
+    fetch("/api/auth/csrf")
+      .then((res) => res.json())
+      .then((data) => setCsrfToken(data.csrfToken || ""))
+      .catch(() => {});
+  }, []);
 
-  const onSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    if (!email || !password) {
-      setError("Please fill in all fields");
-      setLoading(false);
-      return;
+  // Check for error in URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const errorParam = params.get("error");
+    if (errorParam) {
+      setError("Invalid email or password. Please try again.");
     }
-
-    try {
-      queryClient.clear();
-
-      // Get CSRF token first
-      const csrfRes = await fetch("/api/auth/csrf");
-      const { csrfToken } = await csrfRes.json();
-
-      // Submit credentials directly
-      const res = await fetch("/api/auth/callback/credentials-signin", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          email,
-          password,
-          csrfToken,
-          callbackUrl: "/dashboard",
-          redirect: "true",
-        }),
-        redirect: "follow",
-      });
-
-      if (res.ok || res.redirected) {
-        // Check if we got a session
-        const sessionRes = await fetch("/api/auth/session");
-        const session = await sessionRes.json();
-
-        if (session?.user) {
-          window.location.href = "/dashboard";
-        } else {
-          setError("Invalid email or password. Please try again.");
-          setLoading(false);
-        }
-      } else {
-        setError("Invalid email or password. Please try again.");
-        setLoading(false);
-      }
-    } catch (err) {
-      setError("Something went wrong. Please try again.");
-      setLoading(false);
-    }
-  };
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#E5E7EB] flex items-center justify-center p-4">
@@ -81,12 +43,21 @@ export default function SignInPage() {
             Welcome Back
           </h1>
 
-          {/* Form */}
-          <form onSubmit={onSubmit} className="space-y-4">
+          {/* Native form POST - most reliable approach */}
+          <form
+            method="POST"
+            action="/api/auth/callback/credentials-signin"
+            className="space-y-4"
+          >
+            <input type="hidden" name="csrfToken" value={csrfToken} />
+            <input type="hidden" name="callbackUrl" value="/dashboard" />
+            <input type="hidden" name="redirect" value="true" />
+
             {/* Email Field */}
             <div>
               <input
                 type="email"
+                name="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email or Username"
@@ -99,6 +70,7 @@ export default function SignInPage() {
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
+                name="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
@@ -138,10 +110,9 @@ export default function SignInPage() {
             {/* Login Button */}
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-[#0B1F3A] text-white py-4 rounded-xl font-semibold text-lg hover:bg-[#162d4d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-5"
+              className="w-full bg-[#0B1F3A] text-white py-4 rounded-xl font-semibold text-lg hover:bg-[#162d4d] transition-colors mt-5"
             >
-              {loading ? "Signing in..." : "Login"}
+              Login
             </button>
           </form>
 
