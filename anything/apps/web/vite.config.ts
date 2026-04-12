@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { reactRouter } from '@react-router/dev/vite';
-import { reactRouterHonoServer } from 'react-router-hono-server/dev';
 import { defineConfig } from 'vite';
 import babel from 'vite-plugin-babel';
 import tsconfigPaths from 'vite-tsconfig-paths';
@@ -16,49 +15,25 @@ import { vercelPreset } from '@vercel/react-router/vite';
 
 export default defineConfig({
   envPrefix: 'NEXT_PUBLIC_',
-  build: {
-    target: 'esnext',
-  },
+  build: { target: 'esnext' },
   optimizeDeps: {
     include: ['fast-glob', 'lucide-react'],
-    exclude: [
-      'fsevents',
-      'lightningcss',
-    ],
+    exclude: ['fsevents', 'lightningcss'],
   },
   logLevel: 'info',
   plugins: [
     nextPublicProcessEnv(),
     restartEnvFileChange(),
-    reactRouterHonoServer({
-      serverEntryPoint: './__create/index.ts',
-      runtime: 'node',
-    }),
     babel({
       include: ['src/**/*.{js,jsx,ts,tsx}'],
       exclude: /node_modules/,
-      babelConfig: {
-        babelrc: false,
-        configFile: false,
-        plugins: ['styled-jsx/babel'],
-      },
+      babelConfig: { babelrc: false, configFile: false, plugins: ['styled-jsx/babel'] },
     }),
-    restart({
-      restart: [
-        'src/**/page.jsx',
-        'src/**/page.tsx',
-        'src/**/layout.jsx',
-        'src/**/layout.tsx',
-        'src/**/route.js',
-        'src/**/route.ts',
-      ],
-    }),
+    restart({ restart: ['src/**/page.jsx','src/**/page.tsx','src/**/layout.jsx','src/**/layout.tsx','src/**/route.js','src/**/route.ts'] }),
     consoleToParent(),
     loadFontsFromTailwindSource(),
     addRenderIds(),
-    reactRouter({
-      presets: [vercelPreset()],
-    }),
+    reactRouter({ presets: [vercelPreset()] }),
     tsconfigPaths(),
     aliases(),
     layoutWrapperPlugin(),
@@ -75,15 +50,5 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   clearScreen: false,
-  server: {
-    allowedHosts: true,
-    host: '0.0.0.0',
-    port: 4000,
-    hmr: {
-      overlay: false,
-    },
-    warmup: {
-      clientFiles: ['./src/app/**/*', './src/app/root.tsx', './src/app/routes.ts'],
-    },
-  },
+  server: { allowedHosts: true, host: '0.0.0.0', port: 4000, hmr: { overlay: false } },
 });
