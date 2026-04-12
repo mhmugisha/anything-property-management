@@ -8,5 +8,11 @@
       "path": "/api/notifications/check-landlord-due-dates",
       "schedule": "0 8 * * *"
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/auth/:path*",
+      "destination": "/api/auth/:path*"
+    }
   ]
 }

@@ -12,11 +12,22 @@ import { loadFontsFromTailwindSource } from './plugins/loadFontsFromTailwindSour
 import { nextPublicProcessEnv } from './plugins/nextPublicProcessEnv';
 import { restart } from './plugins/restart';
 import { restartEnvFileChange } from './plugins/restartEnvFileChange';
+import { vercelPreset } from '@vercel/react-router/vite';
 
 export default defineConfig({
   envPrefix: 'NEXT_PUBLIC_',
   build: {
     target: 'esnext',
+    rollupOptions: {
+      external: (id, importer, isResolved) => {
+        // Only externalize for SSR bundle, not client bundle
+        if (!importer) return false;
+        return false;
+      },
+    },
+  },
+  ssr: {
+    noExternal: ['hono', '@hono/auth-js', 'react-router-hono-server'],
   },
   optimizeDeps: {
     include: ['fast-glob', 'lucide-react'],
@@ -55,7 +66,9 @@ export default defineConfig({
     consoleToParent(),
     loadFontsFromTailwindSource(),
     addRenderIds(),
-    reactRouter(),
+    reactRouter({
+      presets: [vercelPreset()],
+    }),
     tsconfigPaths(),
     aliases(),
     layoutWrapperPlugin(),
