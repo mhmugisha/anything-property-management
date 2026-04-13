@@ -143,7 +143,7 @@ async function handleApiRoute(req, res) {
   const apiPath = pathname.replace(/^\/api/, '');
   
   // Try exact match first, then with dynamic segments
-  const baseDir = join(__dirname, 'src/app/api');
+  const baseDir = join(__dirname, 'build/api');
   
   async function findRoute(urlParts, dirPath, params = {}) {
     if (urlParts.length === 0) {
