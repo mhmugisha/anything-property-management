@@ -3,11 +3,9 @@ import { createServer } from 'node:http';
 
 const port = Number(process.env.PORT) || 3000;
 
-const build = await import('./build/server/index.js');
-
-const listener = createRequestListener(() => build, { build });
-
-const server = createServer(listener);
+const server = createServer(
+  createRequestListener(() => import('./build/server/index.js'))
+);
 
 server.listen(port, () => {
   console.log(`Server started on port ${port}`);
