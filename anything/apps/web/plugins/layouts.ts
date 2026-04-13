@@ -134,7 +134,12 @@ export function layoutWrapperPlugin(userOpts: HierarchicalLayoutOptions = {}): P
     });
 
     // import the actual page with a flag to skip re-wrapping
-    imports.push(`import Page from ${JSON.stringify(pagePath + NO_LAYOUT_QUERY)};`);
+    const pageSource = fs.readFileSync(pagePath, 'utf-8');
+    const hasAction = pageSource.includes('export async function action') || pageSource.includes('export function action');
+    const hasLoader = pageSource.includes('export async function loader') || pageSource.includes('export function loader');
+    const namedExports = [hasAction ? 'action' : '', hasLoader ? 'loader' : ''].filter(Boolean).join(', ');
+    imports.push(`import Page${namedExports ? ', { ' + namedExports + ' }' : ''} from ${JSON.stringify(pagePath + NO_LAYOUT_QUERY)};`);
+    if (namedExports) imports.push(`export { ${namedExports} };`);
 
     if (routeParams.length > 0) {
       imports.push(
