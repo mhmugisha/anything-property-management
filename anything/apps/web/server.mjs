@@ -1,26 +1,30 @@
-import { serve } from '@hono/node-server';
-import { serveStatic } from '@hono/node-server/serve-static';
-import { Hono } from 'hono';
-import { createRequestHandler } from 'react-router';
-
-const app = new Hono();
-
-// Serve static assets
-app.use('/assets/*', serveStatic({ root: './build/client' }));
-app.use('/favicon.ico', serveStatic({ root: './build/client' }));
-app.use('*', serveStatic({ root: './build/client', rewriteRequestPath: (path) => path }));
-
-// Handle all other requests with React Router
-app.all('*', async (c) => {
-  const handler = createRequestHandler(
-    () => import('./build/server/index.js'),
-    'production'
-  );
-  return handler(c.req.raw);
-});
+import { createRequestHandler } from '@react-router/node';
+import { createServer } from 'node:http';
 
 const port = Number(process.env.PORT) || 3000;
 
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`Server started on port ${info.port}`);
+const handler = createRequestHandler(
+  () => import('./build/server/index.js'),
+  'production'
+);
+
+const server = createServer(async (req, res) => {
+  try {
+    const request = new Request(`http://${req.headers.host}${req.url}`, {
+      method: req.method,
+      headers: req.headers,
+      body: ['GET', 'HEAD'].includes(req.method) ? null : req,
+    });
+    const response = await handler(request);
+    res.writeHead(response.status, Object.fromEntries(response.headers));
+    res.end(await response.arrayBuffer());
+  } catch (err) {
+    console.error(err);
+    res.writeHead(500);
+    res.end('Internal Server Error');
+  }
+});
+
+server.listen(port, () => {
+  console.log(`Server started on port ${port}`);
 });
