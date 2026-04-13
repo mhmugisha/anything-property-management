@@ -1,11 +1,13 @@
+"use client";
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import ExelaLogo from "@/components/ExelaLogo";
-import { redirect } from "react-router";
-import { Pool } from "@neondatabase/serverless";
-import { verify } from "argon2";
 
 export async function action({ request }) {
+  const { Pool } = await import('@neondatabase/serverless');
+  const argon2 = await import('argon2');
+  const { redirect } = await import('react-router');
+
   const formData = await request.formData();
   const email = formData.get('email');
   const password = formData.get('password');
@@ -22,7 +24,7 @@ export async function action({ request }) {
     const accountResult = await pool.query('SELECT * FROM auth_accounts WHERE "userId" = $1 AND provider = $2', [user.id, 'credentials']);
     if (accountResult.rows.length === 0) { await pool.end(); return { error: 'Invalid email or password' }; }
 
-    const isValid = await verify(accountResult.rows[0].password, password);
+    const isValid = await argon2.verify(accountResult.rows[0].password, password);
     await pool.end();
     if (!isValid) return { error: 'Invalid email or password' };
 
