@@ -3,8 +3,13 @@ import { createServer } from 'node:http';
 
 const port = Number(process.env.PORT) || 3000;
 
+const build = await import('./build/server/index.js');
+
 const server = createServer(
-  createRequestListener(() => import('./build/server/index.js'))
+  createRequestListener({
+    build,
+    mode: 'production',
+  })
 );
 
 server.listen(port, () => {
