@@ -55,6 +55,18 @@ function getCookieValue(cookieHeader, name) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function nodeRequestToWebRequest(req) {
+  const url = `https://${req.headers.host}${req.url}`;
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
+  }
+  return new Request(url, {
+    method: req.method,
+    headers,
+  });
+}
+
 async function handleAuth(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const path = url.pathname;
@@ -68,22 +80,11 @@ async function handleAuth(req, res) {
   if (path === '/api/auth/session') {
     const token = getCookieValue(req.headers.cookie, '__Secure-authjs.session-token') ||
                   getCookieValue(req.headers.cookie, 'authjs.session-token');
-    if (!token) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({}));
-      return true;
-    }
+    if (!token) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({})); return true; }
     const payload = await verifyJWT(token);
-    if (!payload) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({}));
-      return true;
-    }
+    if (!payload) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({})); return true; }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      user: { id: payload.sub, email: payload.email, name: payload.name },
-      expires: new Date(payload.exp * 1000).toISOString(),
-    }));
+    res.end(JSON.stringify({ user: { id: payload.sub, email: payload.email, name: payload.name }, expires: new Date(payload.exp * 1000).toISOString() }));
     return true;
   }
 
@@ -94,10 +95,7 @@ async function handleAuth(req, res) {
   }
 
   if (path === '/api/auth/signout') {
-    res.writeHead(302, {
-      'Location': '/account/signin',
-      'Set-Cookie': 'authjs.session-token=; Path=/; HttpOnly; Max-Age=0, __Secure-authjs.session-token=; Path=/; HttpOnly; Max-Age=0',
-    });
+    res.writeHead(302, { 'Location': '/account/signin', 'Set-Cookie': '__Secure-authjs.session-token=; Path=/; HttpOnly; Max-Age=0' });
     res.end();
     return true;
   }
@@ -109,47 +107,20 @@ async function handleAuth(req, res) {
     const email = params.get('email');
     const password = params.get('password');
     const callbackUrl = params.get('callbackUrl') || '/dashboard';
-
-    if (!email || !password) {
-      res.writeHead(302, { 'Location': '/account/signin?error=missing' });
-      res.end();
-      return true;
-    }
-
+    if (!email || !password) { res.writeHead(302, { 'Location': '/account/signin?error=missing' }); res.end(); return true; }
     try {
       const pool = new Pool({ connectionString: process.env.DATABASE_URL });
       const userResult = await pool.query('SELECT * FROM auth_users WHERE email = $1', [email]);
-      if (userResult.rows.length === 0) {
-        await pool.end();
-        res.writeHead(302, { 'Location': '/account/signin?error=invalid' });
-        res.end();
-        return true;
-      }
+      if (userResult.rows.length === 0) { await pool.end(); res.writeHead(302, { 'Location': '/account/signin?error=invalid' }); res.end(); return true; }
       const user = userResult.rows[0];
       const accountResult = await pool.query('SELECT * FROM auth_accounts WHERE "userId" = $1 AND provider = $2', [user.id, 'credentials']);
-      if (accountResult.rows.length === 0) {
-        await pool.end();
-        res.writeHead(302, { 'Location': '/account/signin?error=invalid' });
-        res.end();
-        return true;
-      }
+      if (accountResult.rows.length === 0) { await pool.end(); res.writeHead(302, { 'Location': '/account/signin?error=invalid' }); res.end(); return true; }
       const isValid = await verify(accountResult.rows[0].password, password);
       await pool.end();
-      if (!isValid) {
-        res.writeHead(302, { 'Location': '/account/signin?error=invalid' });
-        res.end();
-        return true;
-      }
+      if (!isValid) { res.writeHead(302, { 'Location': '/account/signin?error=invalid' }); res.end(); return true; }
       const token = await createJWT({ sub: String(user.id), email: user.email, name: user.name });
-      const isSecure = process.env.NODE_ENV === 'production';
-      const cookieName = isSecure ? '__Secure-authjs.session-token' : 'authjs.session-token';
-      const cookieFlags = isSecure
-        ? `Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=${30 * 24 * 60 * 60}`
-        : `Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`;
-      res.writeHead(302, {
-        'Location': callbackUrl,
-        'Set-Cookie': `${cookieName}=${token}; ${cookieFlags}`,
-      });
+      const cookieName = '__Secure-authjs.session-token';
+      res.writeHead(302, { 'Location': callbackUrl, 'Set-Cookie': `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=${30 * 24 * 60 * 60}` });
       res.end();
       return true;
     } catch (err) {
@@ -163,34 +134,121 @@ async function handleAuth(req, res) {
   return false;
 }
 
+async function handleApiRoute(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const pathname = url.pathname;
+  
+  // Convert URL path to file path
+  // /api/staff/profile -> src/app/api/staff/profile/route.js
+  const apiPath = pathname.replace(/^\/api/, '');
+  
+  // Try exact match first, then with dynamic segments
+  const baseDir = join(__dirname, 'src/app/api');
+  
+  async function findRoute(urlParts, dirPath, params = {}) {
+    if (urlParts.length === 0) {
+      const routeFile = join(dirPath, 'route.js');
+      if (existsSync(routeFile)) return { file: routeFile, params };
+      return null;
+    }
+    
+    const [segment, ...rest] = urlParts;
+    
+    // Try exact match
+    const exactPath = join(dirPath, segment);
+    if (existsSync(exactPath)) {
+      const result = await findRoute(rest, exactPath, params);
+      if (result) return result;
+    }
+    
+    // Try dynamic segment [id]
+    const { readdirSync } = await import('node:fs');
+    try {
+      const entries = readdirSync(dirPath);
+      for (const entry of entries) {
+        if (entry.startsWith('[') && entry.endsWith(']')) {
+          const paramName = entry.slice(1, -1).replace('...', '');
+          const newParams = { ...params, [paramName]: segment };
+          const result = await findRoute(rest, join(dirPath, entry), newParams);
+          if (result) return result;
+        }
+      }
+    } catch {}
+    
+    return null;
+  }
+  
+  const urlParts = apiPath.split('/').filter(Boolean);
+  const route = await findRoute(urlParts, baseDir);
+  
+  if (!route) return false;
+  
+  try {
+    const module = await import(route.file);
+    const handler = module[req.method] || module[req.method?.toUpperCase()];
+    
+    if (!handler) {
+      res.writeHead(405, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Method not allowed' }));
+      return true;
+    }
+    
+    // Set global request for auth()
+    const webRequest = nodeRequestToWebRequest(req);
+    globalThis.__currentRequest = webRequest;
+    
+    const response = await handler(webRequest, { params: route.params });
+    
+    // Convert Response to Node.js response
+    const responseHeaders = {};
+    response.headers.forEach((value, key) => { responseHeaders[key] = value; });
+    res.writeHead(response.status, responseHeaders);
+    const responseBody = await response.arrayBuffer();
+    res.end(Buffer.from(responseBody));
+    return true;
+  } catch (err) {
+    console.error(`API route error for ${pathname}:`, err);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Internal server error' }));
+    return true;
+  }
+}
+
 const rrListener = createRequestListener({ build, mode: 'production' });
 
 const server = createServer(async (req, res) => {
-  // Handle auth routes
-  if (req.url.startsWith('/api/auth/')) {
-    const handled = await handleAuth(req, res);
-    if (handled) return;
+  try {
+    // Handle auth routes
+    if (req.url.startsWith('/api/auth/')) {
+      const handled = await handleAuth(req, res);
+      if (handled) return;
+    }
+
+    // Handle API routes
+    if (req.url.startsWith('/api/')) {
+      const handled = await handleApiRoute(req, res);
+      if (handled) return;
+    }
+
+    // Serve static files
+    const staticPath = join(__dirname, 'build/client', req.url.split('?')[0]);
+    if (existsSync(staticPath) && !staticPath.endsWith('/')) {
+      const ext = extname(staticPath);
+      const mime = mimeTypes[ext] || 'application/octet-stream';
+      res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000' });
+      res.end(readFileSync(staticPath));
+      return;
+    }
+
+    // React Router handles everything else
+    const webRequest = nodeRequestToWebRequest(req);
+    globalThis.__currentRequest = webRequest;
+    return rrListener(req, res);
+  } catch (err) {
+    console.error('Server error:', err);
+    res.writeHead(500);
+    res.end('Internal Server Error');
   }
-
-  // Store request globally for auth() calls in API routes
-  const webRequest = new Request(`https://${req.headers.host}${req.url}`, {
-    method: req.method,
-    headers: req.headers,
-  });
-  globalThis.__currentRequest = webRequest;
-
-  // Serve static files
-  const staticPath = join(__dirname, 'build/client', req.url.split('?')[0]);
-  if (existsSync(staticPath) && !staticPath.endsWith('/')) {
-    const ext = extname(staticPath);
-    const mime = mimeTypes[ext] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000' });
-    res.end(readFileSync(staticPath));
-    return;
-  }
-
-  // React Router handles everything else
-  return rrListener(req, res);
 });
 
 server.listen(port, () => {
