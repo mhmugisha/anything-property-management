@@ -1,5 +1,3 @@
-// Custom auth implementation that reads our JWT session cookie
-
 async function verifyJWT(token) {
   try {
     const secret = process.env.AUTH_SECRET || '';
@@ -28,12 +26,15 @@ function getCookieValue(cookieHeader, name) {
 
 export async function auth(request) {
   try {
-    // Get request from global context if not passed
-    const req = request || (typeof globalThis.__currentRequest !== 'undefined' ? globalThis.__currentRequest : null);
-    
+    const req = request || globalThis.__currentRequest;
     let cookieHeader = '';
-    if (req?.headers) {
-      cookieHeader = req.headers.get ? req.headers.get('cookie') : req.headers.cookie;
+    
+    if (req) {
+      if (req.headers?.get) {
+        cookieHeader = req.headers.get('cookie') || '';
+      } else if (req.headers?.cookie) {
+        cookieHeader = req.headers.cookie;
+      }
     }
 
     const token = getCookieValue(cookieHeader, '__Secure-authjs.session-token') ||
@@ -45,11 +46,7 @@ export async function auth(request) {
     if (!payload) return null;
 
     return {
-      user: {
-        id: payload.sub,
-        email: payload.email,
-        name: payload.name,
-      },
+      user: { id: payload.sub, email: payload.email, name: payload.name },
       expires: new Date(payload.exp * 1000).toISOString(),
     };
   } catch { return null; }

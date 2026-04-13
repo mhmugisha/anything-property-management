@@ -96,7 +96,7 @@ async function handleAuth(req, res) {
   if (path === '/api/auth/signout') {
     res.writeHead(302, {
       'Location': '/account/signin',
-      'Set-Cookie': 'authjs.session-token=; Path=/; HttpOnly; Max-Age=0',
+      'Set-Cookie': 'authjs.session-token=; Path=/; HttpOnly; Max-Age=0, __Secure-authjs.session-token=; Path=/; HttpOnly; Max-Age=0',
     });
     res.end();
     return true;
@@ -166,11 +166,18 @@ async function handleAuth(req, res) {
 const rrListener = createRequestListener({ build, mode: 'production' });
 
 const server = createServer(async (req, res) => {
-  // Handle auth routes first
+  // Handle auth routes
   if (req.url.startsWith('/api/auth/')) {
     const handled = await handleAuth(req, res);
     if (handled) return;
   }
+
+  // Store request globally for auth() calls in API routes
+  const webRequest = new Request(`https://${req.headers.host}${req.url}`, {
+    method: req.method,
+    headers: req.headers,
+  });
+  globalThis.__currentRequest = webRequest;
 
   // Serve static files
   const staticPath = join(__dirname, 'build/client', req.url.split('?')[0]);
