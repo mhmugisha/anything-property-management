@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import ExelaLogo from "@/components/ExelaLogo";
+import { redirect } from "react-router";
+import { Pool } from "@neondatabase/serverless";
+import { verify } from "argon2";
 
 export async function action({ request }) {
-  const { Pool } = await import('@neondatabase/serverless');
-  const { verify } = await import('argon2');
-  const { redirect } = await import('react-router');
-
   const formData = await request.formData();
   const email = formData.get('email');
   const password = formData.get('password');
@@ -23,25 +22,28 @@ export async function action({ request }) {
     const accountResult = await pool.query('SELECT * FROM auth_accounts WHERE "userId" = $1 AND provider = $2', [user.id, 'credentials']);
     if (accountResult.rows.length === 0) { await pool.end(); return { error: 'Invalid email or password' }; }
 
-    const account = accountResult.rows[0];
-    const isValid = await verify(account.password, password);
+    const isValid = await verify(accountResult.rows[0].password, password);
     await pool.end();
     if (!isValid) return { error: 'Invalid email or password' };
 
     const secret = process.env.AUTH_SECRET || '';
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({ sub: String(user.id), email: user.email, name: user.name, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60 })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      sub: String(user.id), email: user.email, name: user.name,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+    })).toString('base64url');
     const data = `${header}.${payload}`;
-    const encoder = new TextEncoder();
-    const cryptoKey = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const sig = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(data));
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
     const token = `${data}.${Buffer.from(sig).toString('base64url')}`;
 
-    const isSecure = request.url.startsWith('https');
-    const cookieName = isSecure ? '__Secure-authjs.session-token' : 'authjs.session-token';
-    const cookieFlags = isSecure ? `Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=${30 * 24 * 60 * 60}` : `Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`;
+    const cookieName = '__Secure-authjs.session-token';
+    const cookieFlags = `Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=${30 * 24 * 60 * 60}`;
 
-    return redirect('/dashboard', { headers: { 'Set-Cookie': `${cookieName}=${token}; ${cookieFlags}` } });
+    return redirect('/dashboard', {
+      headers: { 'Set-Cookie': `${cookieName}=${token}; ${cookieFlags}` }
+    });
   } catch (error) {
     console.error('Signin error:', error);
     return { error: 'Something went wrong. Please try again.' };
