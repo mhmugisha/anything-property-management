@@ -14,13 +14,15 @@ export async function GET(request) {
 		}),
 	]);
 
+	const allowedOrigin = process.env.AUTH_URL ?? '';
+
 	if (!jwt) {
 		return new Response(
 			`
 			<html>
 				<body>
 					<script>
-						window.parent.postMessage({ type: 'AUTH_ERROR', error: 'Unauthorized' }, '*');
+						window.parent.postMessage({ type: 'AUTH_ERROR', error: 'Unauthorized' }, ${JSON.stringify(allowedOrigin)});
 					</script>
 				</body>
 			</html>
@@ -49,7 +51,7 @@ export async function GET(request) {
 		<html>
 			<body>
 				<script>
-					window.parent.postMessage(${JSON.stringify(message)}, '*');
+					window.parent.postMessage(${JSON.stringify(message)}, ${JSON.stringify(allowedOrigin)});
 				</script>
 			</body>
 		</html>

@@ -4,3 +4,9 @@
 # React Router
 /.react-router/
 /build/
+
+# Secrets
+.env
+.env.local
+.env*.local
+env

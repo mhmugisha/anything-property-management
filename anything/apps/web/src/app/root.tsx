@@ -97,7 +97,7 @@ function InternalErrorBoundary({ error: errorArg }: Route.ErrorBoundaryProps) {
       }
       postCountRef.current += 1;
       lastPostTimeRef.current = Date.now();
-      window.parent.postMessage({ type: 'sandbox:error:detected', error: serialized }, '*');
+      window.parent.postMessage({ type: 'sandbox:error:detected', error: serialized }, _sandboxParentOrigin);
     };
 
     if (timeSinceLastPost < THROTTLE_MS) {
@@ -306,6 +306,15 @@ export function useHmrConnection(): boolean {
   return connected;
 }
 
+// Captured once from the first incoming sandbox message so subsequent
+// postMessage calls are scoped to the real parent origin instead of '*'.
+let _sandboxParentOrigin = '*';
+function setSandboxParentOrigin(origin: string) {
+  if (_sandboxParentOrigin === '*' && origin && origin !== window.location.origin) {
+    _sandboxParentOrigin = origin;
+  }
+}
+
 const healthyResponseType = 'sandbox:web:healthcheck:response';
 const useHandshakeParent = () => {
   const isHmrConnected = useHmrConnection();
@@ -317,13 +326,15 @@ const useHandshakeParent = () => {
     };
     const handleMessage = (event: MessageEvent) => {
       if (event.data.type === 'sandbox:web:healthcheck') {
-        window.parent.postMessage(healthyResponse, '*');
+        setSandboxParentOrigin(event.origin);
+        // Respond directly to the origin we received the message from
+        window.parent.postMessage(healthyResponse, event.origin);
       }
     };
     window.addEventListener('message', handleMessage);
     // Immediately respond to the parent window with a healthy response in
     // case we missed the healthcheck message
-    window.parent.postMessage(healthyResponse, '*');
+    window.parent.postMessage(healthyResponse, _sandboxParentOrigin);
     return () => {
       window.removeEventListener('message', handleMessage);
     };
@@ -358,6 +369,7 @@ export const useHandleScreenshotRequest = () => {
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
       if (event.data.type === 'sandbox:web:screenshot:request') {
+        setSandboxParentOrigin(event.origin);
         try {
           await waitForScreenshotReady();
 
@@ -379,14 +391,14 @@ export const useHandleScreenshotRequest = () => {
             },
           });
 
-          window.parent.postMessage({ type: 'sandbox:web:screenshot:response', dataUrl }, '*');
+          window.parent.postMessage({ type: 'sandbox:web:screenshot:response', dataUrl }, event.origin);
         } catch (error) {
           window.parent.postMessage(
             {
               type: 'sandbox:web:screenshot:error',
               error: error instanceof Error ? error.message : String(error),
             },
-            '*'
+            event.origin
           );
         }
       }
@@ -409,11 +421,12 @@ export function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data.type === 'sandbox:navigation') {
+        setSandboxParentOrigin(event.origin);
         navigate(event.data.pathname);
       }
     };
     window.addEventListener('message', handleMessage);
-    window.parent.postMessage({ type: 'sandbox:web:ready' }, '*');
+    window.parent.postMessage({ type: 'sandbox:web:ready' }, _sandboxParentOrigin);
     return () => {
       window.removeEventListener('message', handleMessage);
     };
@@ -426,7 +439,7 @@ export function Layout({ children }: { children: ReactNode }) {
           type: 'sandbox:web:navigation',
           pathname,
         },
-        '*'
+        _sandboxParentOrigin
       );
     }
   }, [pathname]);
