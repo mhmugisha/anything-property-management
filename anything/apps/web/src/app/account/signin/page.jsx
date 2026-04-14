@@ -3,7 +3,7 @@ import { Eye, EyeOff } from "lucide-react";
 import ExelaLogo from "@/components/ExelaLogo";
 
 export async function action({ request }) {
-  const { Pool } = await import('@neondatabase/serverless');
+  const { neon } = await import('@neondatabase/serverless');
   const argon2 = await import('argon2');
   const { redirect } = await import('react-router');
 
@@ -13,18 +13,17 @@ export async function action({ request }) {
 
   if (!email || !password) return { error: 'Please fill in all fields' };
 
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
   try {
-    const userResult = await pool.query('SELECT * FROM auth_users WHERE email = $1', [email]);
-    if (userResult.rows.length === 0) { await pool.end(); return { error: 'Invalid email or password' }; }
+    const sql = neon(process.env.DATABASE_URL);
 
-    const user = userResult.rows[0];
-    const accountResult = await pool.query('SELECT * FROM auth_accounts WHERE "userId" = $1 AND provider = $2', [user.id, 'credentials']);
-    if (accountResult.rows.length === 0) { await pool.end(); return { error: 'Invalid email or password' }; }
+    const userRows = await sql`SELECT * FROM auth_users WHERE email = ${email}`;
+    if (userRows.length === 0) return { error: 'Invalid email or password' };
 
-    const isValid = await argon2.verify(accountResult.rows[0].password, password);
-    await pool.end();
+    const user = userRows[0];
+    const accountRows = await sql`SELECT * FROM auth_accounts WHERE "userId" = ${user.id} AND provider = 'credentials'`;
+    if (accountRows.length === 0) return { error: 'Invalid email or password' };
+
+    const isValid = await argon2.verify(accountRows[0].password, password);
     if (!isValid) return { error: 'Invalid email or password' };
 
     const secret = process.env.AUTH_SECRET || '';

@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import ExelaLogo from "@/components/ExelaLogo";
-import { createJWT } from "@/app/api/utils/jwt";
 
 export async function action({ request }) {
   const { Pool } = await import('@neondatabase/serverless');
@@ -49,7 +48,17 @@ export async function action({ request }) {
       return { error: 'Invalid email or password' };
     }
 
-    const token = await createJWT({ sub: String(user.id), email: user.email, name: user.name });
+    const secret = process.env.AUTH_SECRET || '';
+    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      sub: String(user.id), email: user.email, name: user.name,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+    })).toString('base64url');
+    const data = `${header}.${payload}`;
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+    const token = `${data}.${Buffer.from(sig).toString('base64url')}`;
 
     const isSecure = request.url.startsWith('https');
     const cookieName = isSecure ? '__Secure-authjs.session-token' : 'authjs.session-token';
