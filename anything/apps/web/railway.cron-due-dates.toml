@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "echo 'cron service — no build required'"
+
+[deploy]
+startCommand = "node scripts/cron-check-due-dates.mjs"
+cronSchedule = "0 0 * * *"
+restartPolicyType = "NEVER"

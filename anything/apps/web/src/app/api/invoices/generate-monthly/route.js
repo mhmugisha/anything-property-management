@@ -58,7 +58,7 @@ export async function POST(request) {
   try {
     // Log if this is a cron-triggered run
     if (isCronRequest) {
-      console.log("[CRON] Monthly invoice generation triggered by Vercel Cron");
+      console.log("[CRON] Monthly invoice generation triggered by Railway Cron");
     }
 
     const body = await request.json().catch(() => ({}));

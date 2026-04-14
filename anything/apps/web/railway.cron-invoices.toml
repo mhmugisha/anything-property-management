@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "echo 'cron service — no build required'"
+
+[deploy]
+startCommand = "node scripts/cron-generate-invoices.mjs"
+cronSchedule = "0 1 1 * *"
+restartPolicyType = "NEVER"

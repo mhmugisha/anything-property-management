@@ -37,7 +37,7 @@ export async function GET(request) {
   try {
     // Log if this is a cron-triggered run
     if (isCronRequest) {
-      console.log("[CRON] Landlord due date check triggered by Vercel Cron");
+      console.log("[CRON] Landlord due date check triggered by Railway Cron");
     }
 
     const today = new Date();
