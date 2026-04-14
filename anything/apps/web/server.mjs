@@ -85,7 +85,7 @@ function getCookieValue(cookieHeader, name) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-function nodeRequestToWebRequest(req) {
+function nodeRequestToWebRequest(req, body) {
   const url = `https://${req.headers.host}${req.url}`;
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
@@ -94,6 +94,7 @@ function nodeRequestToWebRequest(req) {
   return new Request(url, {
     method: req.method,
     headers,
+    ...(body && body.length > 0 ? { body } : {}),
   });
 }
 
@@ -265,10 +266,18 @@ async function handleApiRoute(req, res) {
       return true;
     }
     
+    // Read the raw body so POST/PUT/PATCH handlers can call request.json()
+    let reqBody;
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      reqBody = Buffer.concat(chunks);
+    }
+
     // Set global request for auth()
-    const webRequest = nodeRequestToWebRequest(req);
+    const webRequest = nodeRequestToWebRequest(req, reqBody);
     globalThis.__currentRequest = webRequest;
-    
+
     const response = await handler(webRequest, { params: route.params });
     
     // Convert Response to Node.js response
