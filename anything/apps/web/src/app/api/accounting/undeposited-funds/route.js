@@ -67,7 +67,7 @@ export async function GET(request) {
         pr.property_name,
         su.full_name AS created_by_name
       FROM transactions t
-      LEFT JOIN payments pm ON pm.id = t.source_id AND t.source_type = 'payment'
+      LEFT JOIN payments pm ON pm.id = t.source_id AND t.source_type IN ('payment', 'payment_advance')
       LEFT JOIN tenants tn ON tn.id = pm.tenant_id
       LEFT JOIN properties pr ON pr.id = pm.property_id
       LEFT JOIN staff_users su ON su.id = t.created_by
@@ -75,7 +75,7 @@ export async function GET(request) {
         AND COALESCE(t.is_deleted, false) = false
         AND t.deposited_by_transaction_id IS NULL
         AND (
-          t.source_type <> 'payment'
+          t.source_type NOT IN ('payment', 'payment_advance')
           OR pm.deposited_at IS NULL
         )
       ORDER BY t.transaction_date ASC, t.id ASC
