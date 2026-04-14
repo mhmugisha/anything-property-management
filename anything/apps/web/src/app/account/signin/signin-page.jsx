@@ -6,6 +6,12 @@ export async function action({ request }) {
   const { Pool } = await import('@neondatabase/serverless');
   const { verify } = await import('argon2');
 
+  const origin = request.headers.get('origin');
+  const host = new URL(request.url).origin;
+  if (origin && origin !== host) {
+    return { error: 'Invalid request origin' };
+  }
+
   const formData = await request.formData();
   const email = formData.get('email');
   const password = formData.get('password');

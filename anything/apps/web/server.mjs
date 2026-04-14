@@ -50,6 +50,36 @@ async function verifyJWT(token) {
   } catch { return null; }
 }
 
+// CSRF: double-submit cookie pattern.
+// The cookie holds `rawToken|hmac(rawToken)`. The form body holds rawToken.
+// On validation we re-derive the HMAC and do a timing-safe comparison.
+async function generateCsrfToken() {
+  const raw = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(raw));
+  const hash = Buffer.from(sig).toString('hex');
+  return { token: raw, cookieValue: `${raw}|${hash}` };
+}
+
+async function verifyCsrfToken(token, cookieValue) {
+  if (!token || !cookieValue) return false;
+  const pipeIndex = cookieValue.lastIndexOf('|');
+  if (pipeIndex === -1) return false;
+  const storedToken = cookieValue.slice(0, pipeIndex);
+  const storedHash = cookieValue.slice(pipeIndex + 1);
+  if (token !== storedToken) return false;
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(token));
+  const expectedHash = Buffer.from(sig).toString('hex');
+  // Timing-safe comparison
+  if (storedHash.length !== expectedHash.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expectedHash.length; i++) {
+    diff |= storedHash.charCodeAt(i) ^ expectedHash.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 function getCookieValue(cookieHeader, name) {
   const match = (cookieHeader || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
   return match ? decodeURIComponent(match[1]) : null;
@@ -72,8 +102,17 @@ async function handleAuth(req, res) {
   const path = url.pathname;
 
   if (path === '/api/auth/csrf') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ csrfToken: 'csrf-placeholder' }));
+    const isSecure = req.headers['x-forwarded-proto'] === 'https' || req.socket?.encrypted;
+    const cookieName = isSecure ? '__Secure-authjs.csrf-token' : 'authjs.csrf-token';
+    const { token, cookieValue } = await generateCsrfToken();
+    const cookieFlags = isSecure
+      ? `Path=/; HttpOnly; SameSite=Lax; Secure`
+      : `Path=/; HttpOnly; SameSite=Lax`;
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Set-Cookie': `${cookieName}=${encodeURIComponent(cookieValue)}; ${cookieFlags}`,
+    });
+    res.end(JSON.stringify({ csrfToken: token }));
     return true;
   }
 
@@ -107,6 +146,20 @@ async function handleAuth(req, res) {
     const email = params.get('email');
     const password = params.get('password');
     const callbackUrl = params.get('callbackUrl') || '/dashboard';
+
+    // Validate CSRF token
+    const isSecure = req.headers['x-forwarded-proto'] === 'https' || req.socket?.encrypted;
+    const csrfCookieName = isSecure ? '__Secure-authjs.csrf-token' : 'authjs.csrf-token';
+    const csrfTokenFromBody = params.get('csrfToken');
+    const csrfCookieRaw = getCookieValue(req.headers.cookie, csrfCookieName);
+    const csrfCookieValue = csrfCookieRaw ? decodeURIComponent(csrfCookieRaw) : null;
+    const csrfValid = await verifyCsrfToken(csrfTokenFromBody, csrfCookieValue);
+    if (!csrfValid) {
+      res.writeHead(302, { 'Location': '/account/signin?error=csrf' });
+      res.end();
+      return true;
+    }
+
     if (!email || !password) { res.writeHead(302, { 'Location': '/account/signin?error=missing' }); res.end(); return true; }
     try {
       const pool = new Pool({ connectionString: process.env.DATABASE_URL });
