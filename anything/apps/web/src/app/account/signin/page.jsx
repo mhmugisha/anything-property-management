@@ -3,6 +3,7 @@ import { Eye, EyeOff } from "lucide-react";
 import ExelaLogo from "@/components/ExelaLogo";
 
 export async function action({ request }) {
+  const { webcrypto: crypto } = await import("node:crypto");
   const { neon } = await import('@neondatabase/serverless');
   const argon2 = await import('argon2');
   const { redirect } = await import('react-router');
