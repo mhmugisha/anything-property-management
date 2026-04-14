@@ -1,6 +1,13 @@
 import sql from "@/app/api/utils/sql";
 import { auth } from "@/auth";
 
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
 /**
  * PATCH /api/notifications/[id]
  * Mark a single notification as read
@@ -12,13 +19,9 @@ export async function PATCH(request, { params }) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = params;
-
-    if (!id) {
-      return Response.json(
-        { error: "Notification ID required" },
-        { status: 400 },
-      );
+    const notifId = toNumber(params.id);
+    if (!notifId) {
+      return Response.json({ error: "Invalid notification ID" }, { status: 400 });
     }
 
     // Get staff user ID from auth user email
@@ -34,9 +37,9 @@ export async function PATCH(request, { params }) {
 
     // Mark as read (only if it belongs to this user)
     const result = await sql`
-      UPDATE notifications 
-      SET is_read = true 
-      WHERE id = ${id} AND user_id = ${userId}
+      UPDATE notifications
+      SET is_read = true
+      WHERE id = ${notifId} AND user_id = ${userId}
       RETURNING id
     `;
 
@@ -68,13 +71,9 @@ export async function DELETE(request, { params }) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = params;
-
-    if (!id) {
-      return Response.json(
-        { error: "Notification ID required" },
-        { status: 400 },
-      );
+    const notifId = toNumber(params.id);
+    if (!notifId) {
+      return Response.json({ error: "Invalid notification ID" }, { status: 400 });
     }
 
     // Get staff user ID from auth user email
@@ -90,8 +89,8 @@ export async function DELETE(request, { params }) {
 
     // Delete notification (only if it belongs to this user)
     const result = await sql`
-      DELETE FROM notifications 
-      WHERE id = ${id} AND user_id = ${userId}
+      DELETE FROM notifications
+      WHERE id = ${notifId} AND user_id = ${userId}
       RETURNING id
     `;
 

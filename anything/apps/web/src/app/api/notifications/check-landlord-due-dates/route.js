@@ -2,14 +2,7 @@ import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
 import { notifyAllAdmins } from "@/app/api/utils/notifications";
 import { getDueToLandlordsBalance } from "@/app/api/utils/accounting";
-
-/**
- * Check if request is from Vercel Cron (bypasses authentication)
- */
-function isVercelCronRequest(request) {
-  const cronHeader = request.headers.get("x-vercel-cron");
-  return cronHeader === "1";
-}
+import { isVercelCronRequest } from "@/app/api/utils/cron";
 
 /**
  * Daily Landlord Due Date Checker (3 Days Early Notification)

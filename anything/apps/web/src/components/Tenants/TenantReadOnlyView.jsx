@@ -6,16 +6,7 @@ import { SummaryCard } from "@/components/Reports/SummaryCard";
 import DatePopoverInput from "@/components/DatePopoverInput";
 import { formatDate } from "@/utils/formatters";
 import { downloadCsv } from "@/utils/downloadCsv";
-
-function formatCurrencyUGX(amount) {
-  const n = Number(amount || 0);
-  // Use en-US for reliable comma separators in production
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-    useGrouping: true, // Explicitly enable thousand separators
-  }).format(n);
-}
+import { formatCurrencyUGX } from "@/utils/formatCurrency";
 
 export function TenantReadOnlyView({ selectedTenant }) {
   const printRef = useRef(null);

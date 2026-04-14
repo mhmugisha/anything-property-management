@@ -12,18 +12,10 @@ import AccessDenied from "@/components/Shell/AccessDenied";
 import { fetchJson, postJson } from "@/utils/api";
 import DatePopoverInput from "@/components/DatePopoverInput";
 import { formatDate } from "@/utils/formatters";
+import { formatCurrencyUGX } from "@/utils/formatCurrency";
 
 function todayYmd() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function formatCurrencyUGX(amount) {
-  const n = Number(amount || 0);
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-    useGrouping: true,
-  }).format(n);
 }
 
 export default function DepositFundsPage() {

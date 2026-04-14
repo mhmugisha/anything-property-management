@@ -1,4 +1,5 @@
 import { requirePermission } from "@/app/api/utils/staff";
+import { isVercelCronRequest } from "@/app/api/utils/cron";
 import {
   ensureInvoicesForAllActiveLeasesUpToCurrentMonth,
   isMonthlyInvoiceGenerationDue,
@@ -44,13 +45,6 @@ function parseRunDateFromRequest(request) {
   };
 }
 
-/**
- * Check if request is from Vercel Cron (bypasses authentication)
- */
-function isVercelCronRequest(request) {
-  const cronHeader = request.headers.get("x-vercel-cron");
-  return cronHeader === "1";
-}
 
 export async function POST(request) {
   // Allow Vercel Cron to bypass authentication

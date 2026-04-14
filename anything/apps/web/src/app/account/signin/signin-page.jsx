@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import ExelaLogo from "@/components/ExelaLogo";
+import { createJWT } from "@/app/api/utils/jwt";
 
 export async function action({ request }) {
   const { Pool } = await import('@neondatabase/serverless');
@@ -48,26 +49,7 @@ export async function action({ request }) {
       return { error: 'Invalid email or password' };
     }
 
-    // Create session using Auth.js
-    const secret = process.env.AUTH_SECRET || '';
-    
-    // Simple JWT creation
-    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({
-      sub: String(user.id),
-      email: user.email,
-      name: user.name,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
-    })).toString('base64url');
-    
-    const data = `${header}.${payload}`;
-    const encoder = new TextEncoder();
-    const keyData = encoder.encode(secret);
-    const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const sig = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(data));
-    const sigStr = Buffer.from(sig).toString('base64url');
-    const token = `${data}.${sigStr}`;
+    const token = await createJWT({ sub: String(user.id), email: user.email, name: user.name });
 
     const isSecure = request.url.startsWith('https');
     const cookieName = isSecure ? '__Secure-authjs.session-token' : 'authjs.session-token';

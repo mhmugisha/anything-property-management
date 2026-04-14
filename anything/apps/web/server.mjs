@@ -6,11 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { Pool } from '@neondatabase/serverless';
 import { verify } from 'argon2';
+import { createJWT, verifyJWT, getCookieValue } from './src/app/api/utils/jwt.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT) || 3000;
 const build = await import('./build/server/index.js');
-const SECRET = process.env.AUTH_SECRET || '';
 
 const mimeTypes = {
   '.js': 'application/javascript',
@@ -24,38 +24,13 @@ const mimeTypes = {
   '.json': 'application/json',
 };
 
-async function createJWT(payload) {
-  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const body = Buffer.from(JSON.stringify({
-    ...payload,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
-  })).toString('base64url');
-  const data = `${header}.${body}`;
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
-  return `${data}.${Buffer.from(sig).toString('base64url')}`;
-}
-
-async function verifyJWT(token) {
-  try {
-    const [header, body, sig] = token.split('.');
-    const data = `${header}.${body}`;
-    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
-    const valid = await crypto.subtle.verify('HMAC', key, Buffer.from(sig, 'base64url'), new TextEncoder().encode(data));
-    if (!valid) return null;
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
-    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
-    return payload;
-  } catch { return null; }
-}
-
 // CSRF: double-submit cookie pattern.
 // The cookie holds `rawToken|hmac(rawToken)`. The form body holds rawToken.
 // On validation we re-derive the HMAC and do a timing-safe comparison.
 async function generateCsrfToken() {
+  const secret = process.env.AUTH_SECRET || '';
   const raw = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(raw));
   const hash = Buffer.from(sig).toString('hex');
   return { token: raw, cookieValue: `${raw}|${hash}` };
@@ -68,7 +43,8 @@ async function verifyCsrfToken(token, cookieValue) {
   const storedToken = cookieValue.slice(0, pipeIndex);
   const storedHash = cookieValue.slice(pipeIndex + 1);
   if (token !== storedToken) return false;
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const secret = process.env.AUTH_SECRET || '';
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(token));
   const expectedHash = Buffer.from(sig).toString('hex');
   // Timing-safe comparison
@@ -78,11 +54,6 @@ async function verifyCsrfToken(token, cookieValue) {
     diff |= storedHash.charCodeAt(i) ^ expectedHash.charCodeAt(i);
   }
   return diff === 0;
-}
-
-function getCookieValue(cookieHeader, name) {
-  const match = (cookieHeader || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
-  return match ? decodeURIComponent(match[1]) : null;
 }
 
 function nodeRequestToWebRequest(req, body) {
