@@ -443,6 +443,53 @@ export function Layout({ children }: { children: ReactNode }) {
       );
     }
   }, [pathname]);
+
+  useEffect(() => {
+    if (!pathname) return;
+    const seg = pathname.split('/').filter(Boolean);
+    const titleMap: Record<string, string> = {
+      dashboard: 'Dashboard',
+      tenants: 'Tenants',
+      landlords: 'Landlords',
+      payments: 'Payments',
+      properties: 'Properties',
+      reports: 'Reports',
+      accounting: 'Accounting',
+      maintenance: 'Maintenance',
+      settings: 'Settings',
+      profile: 'Profile',
+      onboarding: 'Onboarding',
+    };
+    const subTitleMap: Record<string, string> = {
+      'accounting/deposit-funds': 'Deposit Funds',
+      'accounting/chart-of-accounts': 'Chart of Accounts',
+      'accounting/ledger': 'Ledger',
+      'accounting/journal': 'Journal',
+      'accounting/trial-balance': 'Trial Balance',
+      'accounting/balance-sheet': 'Balance Sheet',
+      'accounting/profit-loss': 'Profit & Loss',
+      'accounting/transfer-funds': 'Transfer Funds',
+      'accounting/post-manual-invoice': 'Post Manual Invoice',
+      'accounting/post-arrears': 'Post Arrears',
+      'accounting/reverse-invoice': 'Reverse Invoice',
+      'accounting/tenant-deduction': 'Tenant Deduction',
+      'accounting/landlord-expense-deduction': 'Landlord Deduction',
+      'accounting/new-entry-company': 'New Journal Entry',
+      'accounting/reports': 'Accounting Reports',
+      'payments/pay-invoice': 'Pay Invoice',
+      'payments/payment-on-account': 'Pay on Account',
+      'payments/open-balances': 'Open Balances',
+      'payments/receipt': 'Receipt',
+      'payments/auto-apply': 'Auto-Apply',
+      'tenants/view-details': 'Tenant Details',
+      'dashboard/due-to-landlords': 'Due to Landlords',
+      'account/signin': 'Sign In',
+      'reports/payment-note': 'Payment Note',
+    };
+    const joined = seg.slice(0, 2).join('/');
+    const title = subTitleMap[joined] ?? titleMap[seg[0]] ?? null;
+    if (title) document.title = title;
+  }, [pathname]);
   return (
     <html lang="en">
       <head>
