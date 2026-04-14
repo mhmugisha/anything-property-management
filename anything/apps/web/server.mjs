@@ -134,8 +134,27 @@ async function handleAuth(req, res) {
   }
 
   if (path === '/api/auth/signout') {
-    res.writeHead(302, { 'Location': '/account/signin', 'Set-Cookie': '__Secure-authjs.session-token=; Path=/; HttpOnly; Max-Age=0' });
-    res.end();
+    // Consume the POST body so the TCP connection drains cleanly
+    let signoutBody = '';
+    for await (const chunk of req) signoutBody += chunk;
+    const signoutParams = new URLSearchParams(signoutBody);
+    const callbackUrl = signoutParams.get('callbackUrl') || '/account/signin';
+
+    const isSecure = req.headers['x-forwarded-proto'] === 'https' || req.socket?.encrypted;
+    const sessionCookie = isSecure ? '__Secure-authjs.session-token' : 'authjs.session-token';
+    const csrfCookie = isSecure ? '__Secure-authjs.csrf-token' : 'authjs.csrf-token';
+    const clearFlags = isSecure ? 'Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0' : 'Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+
+    // @hono/auth-js/react sends X-Auth-Return-Redirect: 1 and calls .json()
+    // on the response — return JSON so it can navigate instead of a 302
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Set-Cookie': [
+        `${sessionCookie}=; ${clearFlags}`,
+        `${csrfCookie}=; ${clearFlags}`,
+      ],
+    });
+    res.end(JSON.stringify({ url: callbackUrl }));
     return true;
   }
 
