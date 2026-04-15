@@ -293,7 +293,13 @@ const server = createServer(async (req, res) => {
     }
 
     // React Router handles everything else
-    const webRequest = nodeRequestToWebRequest(req);
+    let rrBody;
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      rrBody = Buffer.concat(chunks);
+    }
+    const webRequest = nodeRequestToWebRequest(req, rrBody);
     globalThis.__currentRequest = webRequest;
     return rrListener(req, res);
   } catch (err) {
