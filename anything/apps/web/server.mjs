@@ -276,6 +276,57 @@ const server = createServer(async (req, res) => {
       if (handled) return;
     }
 
+    // Handle signin form POST directly
+    if (req.url === '/account/signin' && req.method === 'POST') {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const body = Buffer.concat(chunks).toString();
+      const params = new URLSearchParams(body);
+      const email = params.get('email');
+      const password = params.get('password');
+
+      if (!email || !password) {
+        res.writeHead(302, { 'Location': '/account/signin?error=missing' });
+        res.end();
+        return;
+      }
+      try {
+        const { neon } = await import('@neondatabase/serverless');
+        const sql = neon(process.env.DATABASE_URL);
+        const userRows = await sql`SELECT * FROM auth_users WHERE email = ${email}`;
+        if (userRows.length === 0) {
+          res.writeHead(302, { 'Location': '/account/signin?error=invalid' });
+          res.end();
+          return;
+        }
+        const user = userRows[0];
+        const accountRows = await sql`SELECT * FROM auth_accounts WHERE "userId" = ${user.id} AND provider = 'credentials'`;
+        if (accountRows.length === 0) {
+          res.writeHead(302, { 'Location': '/account/signin?error=invalid' });
+          res.end();
+          return;
+        }
+        const isValid = await verify(accountRows[0].password, password);
+        if (!isValid) {
+          res.writeHead(302, { 'Location': '/account/signin?error=invalid' });
+          res.end();
+          return;
+        }
+        const token = await createJWT({ sub: String(user.id), email: user.email, name: user.name });
+        res.writeHead(302, {
+          'Location': '/dashboard',
+          'Set-Cookie': `__Secure-authjs.session-token=${token}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=${30 * 24 * 60 * 60}`
+        });
+        res.end();
+        return;
+      } catch (err) {
+        console.error('Signin error:', err);
+        res.writeHead(302, { 'Location': '/account/signin?error=server' });
+        res.end();
+        return;
+      }
+    }
+
     // Handle API routes
     if (req.url.startsWith('/api/')) {
       const handled = await handleApiRoute(req, res);
