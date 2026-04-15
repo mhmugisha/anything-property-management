@@ -7,6 +7,8 @@ import { dirname } from 'node:path';
 import { Pool } from '@neondatabase/serverless';
 import { verify } from 'argon2';
 import { createJWT, verifyJWT, getCookieValue } from './src/app/api/utils/jwt.js';
+import { webcrypto } from 'node:crypto';
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT) || 3000;
