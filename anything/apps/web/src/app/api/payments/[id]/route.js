@@ -120,8 +120,8 @@ export async function PUT(request, { params: { id } }) {
     if (isUpfrontPayment) {
       // For upfront payments, just update the payment record
       // No need to update invoice allocation or accounting
-      const txResult = await sql.transaction(async (txn) => {
-        const updatedPaymentRows = await txn`
+      const [updatedPaymentRows] = await sql.transaction((txn) => [
+        txn`
           UPDATE payments
           SET payment_date = ${paymentDate}::date,
               amount = ${amount},
@@ -130,13 +130,12 @@ export async function PUT(request, { params: { id } }) {
               notes = ${notes}
           WHERE id = ${paymentId}
           RETURNING *
-        `;
-
-        return {
-          payment: updatedPaymentRows?.[0] || null,
-          invoice: null,
-        };
-      });
+        `,
+      ]);
+      const txResult = {
+        payment: updatedPaymentRows?.[0] || null,
+        invoice: null,
+      };
 
       await writeAuditLog({
         staffId: perm.staff.id,
@@ -206,66 +205,72 @@ export async function PUT(request, { params: { id } }) {
       }
     }
 
-    const txResult = await sql.transaction(async (txn) => {
-      const updatedPaymentRows = await txn`
-        UPDATE payments
-        SET payment_date = ${paymentDate}::date,
-            amount = ${amount},
-            payment_method = ${paymentMethod},
-            reference_number = ${referenceNumber},
-            notes = ${notes}
-        WHERE id = ${paymentId}
-        RETURNING *
-      `;
+    // Pre-fetch linked accounting transactions before the transaction because the neon()
+    // HTTP client requires transaction() to receive a synchronous array of queries.
+    const linked = await sql`
+      SELECT id, debit_account_id, credit_account_id
+      FROM transactions
+      WHERE source_type = 'payment'
+        AND source_id = ${paymentId}
+        AND COALESCE(is_deleted,false) = false
+    `;
 
-      await txn`
-        UPDATE payment_invoice_allocations
-        SET amount_applied = ${amount}
-        WHERE payment_id = ${paymentId}
-          AND invoice_id = ${invoiceId}
-      `;
+    let rentReceivableId = null;
+    let rentPayableId = null;
+    let mgmtFeesId = null;
 
-      const updatedInvoiceRows = await txn`
-        UPDATE invoices
-        SET paid_amount = paid_amount + ${delta},
-            status = CASE
-              WHEN (paid_amount + ${delta}) >= amount THEN 'paid'
-              ELSE 'open'
-            END
-        WHERE id = ${invoiceId}
-        RETURNING *
-      `;
+    if (linked && linked.length > 0) {
+      const rentRecvRes = await resolveAccountIntent("tenant_receivable");
+      const rentPayableRes = await resolveAccountIntent("landlord_liability");
+      const mgmtIncRes = await resolveAccountIntent("management_fee_income");
 
-      // Update accounting transactions linked to this payment.
-      // New scheme (accrual): receipt is Dr 1130, Cr 1210.
-      // Legacy scheme (older data): receipt is Dr 1130, Cr 2100 and a separate commission row.
-      const linked = await txn`
-        SELECT id, debit_account_id, credit_account_id
-        FROM transactions
-        WHERE source_type = 'payment'
-          AND source_id = ${paymentId}
-          AND COALESCE(is_deleted,false) = false
-      `;
+      rentReceivableId = rentRecvRes.ok ? Number(rentRecvRes.accountId) : null;
+      rentPayableId = rentPayableRes.ok ? Number(rentPayableRes.accountId) : null;
+      mgmtFeesId = mgmtIncRes.ok ? Number(mgmtIncRes.accountId) : null;
+
+      if (!rentReceivableId || !rentPayableId || !mgmtFeesId) {
+        return Response.json(
+          { error: "Accounting bindings missing for payment update" },
+          { status: 500 },
+        );
+      }
+    }
+
+    const txResults = await sql.transaction((txn) => {
+      const queries = [
+        txn`
+          UPDATE payments
+          SET payment_date = ${paymentDate}::date,
+              amount = ${amount},
+              payment_method = ${paymentMethod},
+              reference_number = ${referenceNumber},
+              notes = ${notes}
+          WHERE id = ${paymentId}
+          RETURNING *
+        `,
+        txn`
+          UPDATE payment_invoice_allocations
+          SET amount_applied = ${amount}
+          WHERE payment_id = ${paymentId}
+            AND invoice_id = ${invoiceId}
+        `,
+        txn`
+          UPDATE invoices
+          SET paid_amount = paid_amount + ${delta},
+              status = CASE
+                WHEN (paid_amount + ${delta}) >= amount THEN 'paid'
+                ELSE 'open'
+              END
+          WHERE id = ${invoiceId}
+          RETURNING *
+        `,
+      ];
 
       if (linked && linked.length > 0) {
-        const rentRecvRes = await resolveAccountIntent("tenant_receivable");
-        const rentPayableRes = await resolveAccountIntent("landlord_liability");
-        const mgmtIncRes = await resolveAccountIntent("management_fee_income");
-
-        const rentReceivableId = rentRecvRes.ok
-          ? Number(rentRecvRes.accountId)
-          : null;
-        const rentPayableId = rentPayableRes.ok
-          ? Number(rentPayableRes.accountId)
-          : null;
-        const mgmtFeesId = mgmtIncRes.ok ? Number(mgmtIncRes.accountId) : null;
-
-        if (!rentReceivableId || !rentPayableId || !mgmtFeesId) {
-          throw new Error("Accounting bindings missing for payment update");
-        }
-
         // Update receipt row amount/date and normalize to Cr Rent Receivable.
-        await txn`
+        // New scheme (accrual): receipt is Dr 1130, Cr 1210.
+        // Legacy scheme (older data): receipt is Dr 1130, Cr 2100 and a separate commission row.
+        queries.push(txn`
           UPDATE transactions
           SET transaction_date = ${paymentDate}::date,
               amount = ${amount},
@@ -276,10 +281,10 @@ export async function PUT(request, { params: { id } }) {
             AND debit_account_id = ${undepositedFundsAccountId}
             AND credit_account_id IN (${rentReceivableId}, ${rentPayableId})
             AND COALESCE(is_deleted,false) = false
-        `;
+        `);
 
         // Always remove any legacy commission rows tied to this payment.
-        await txn`
+        queries.push(txn`
           UPDATE transactions
           SET is_deleted = true,
               deleted_at = now(),
@@ -289,14 +294,16 @@ export async function PUT(request, { params: { id } }) {
             AND debit_account_id = ${rentPayableId}
             AND credit_account_id = ${mgmtFeesId}
             AND COALESCE(is_deleted,false) = false
-        `;
+        `);
       }
 
-      return {
-        payment: updatedPaymentRows?.[0] || null,
-        invoice: updatedInvoiceRows?.[0] || null,
-      };
+      return queries;
     });
+
+    const txResult = {
+      payment: txResults[0]?.[0] || null,
+      invoice: txResults[2]?.[0] || null,
+    };
 
     await writeAuditLog({
       staffId: perm.staff.id,

@@ -143,12 +143,12 @@ export async function autoApplyAdvancePaymentsForTenant(tenantId) {
   // Apply allocations in a transaction (best-effort)
   try {
     // STEP 1: Execute INSERT and UPDATE in transaction FIRST
-    await sql.transaction(async (txn) => {
-      const promises = [];
+    await sql.transaction((txn) => {
+      const queries = [];
 
       for (const a of allocations) {
         // Insert allocation
-        promises.push(
+        queries.push(
           txn`
             INSERT INTO payment_invoice_allocations (payment_id, invoice_id, amount_applied)
             VALUES (${a.paymentId}, ${a.invoiceId}, ${a.amount})
@@ -158,7 +158,7 @@ export async function autoApplyAdvancePaymentsForTenant(tenantId) {
         );
 
         // Update invoice
-        promises.push(
+        queries.push(
           txn`
             UPDATE invoices
             SET paid_amount = paid_amount + ${a.amount},
@@ -171,8 +171,7 @@ export async function autoApplyAdvancePaymentsForTenant(tenantId) {
         );
       }
 
-      // CRITICAL FIX: Await all promises before transaction completes
-      await Promise.all(promises);
+      return queries;
     });
 
     // STEP 2: THEN post accounting entries AFTER transaction commits
