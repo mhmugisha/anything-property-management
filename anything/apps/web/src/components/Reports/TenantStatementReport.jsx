@@ -214,6 +214,7 @@ export function TenantStatementReport({
   const statementPayments = tenantStatement?.payments || [];
   const statementLeases = tenantStatement?.leases || [];
   const statementInvoices = tenantStatement?.invoices || [];
+  const statementDeductions = tenantStatement?.deductions || [];
 
   // STATEMENT TOTALS CALCULATION:
   // These totals include ALL invoice types for this tenant:
@@ -592,6 +593,44 @@ export function TenantStatementReport({
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Deductions section */}
+            <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+              <h3 className="text-sm font-semibold text-slate-800 mb-2">
+                Deductions
+              </h3>
+              {statementDeductions.length === 0 ? (
+                <p className="text-sm text-slate-500">No deductions.</p>
+              ) : (
+                <div className="overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b-2 border-slate-700">
+                        <th className="py-2 pr-3">Date</th>
+                        <th className="py-2 pr-3">Description</th>
+                        <th className="py-2 pr-3 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {statementDeductions.map((d) => (
+                        <tr
+                          key={d.id}
+                          className="border-b last:border-b-2 last:border-slate-700"
+                        >
+                          <td className="py-2 pr-3 whitespace-nowrap">
+                            {String(d.deduction_date).slice(0, 10)}
+                          </td>
+                          <td className="py-2 pr-3">{d.description || "—"}</td>
+                          <td className="py-2 pr-3 text-right font-medium text-slate-800">
+                            {formatCurrencyUGX(d.amount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Totals summary at bottom (right-aligned) */}

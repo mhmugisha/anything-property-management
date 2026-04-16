@@ -30,7 +30,8 @@ export async function GET(request) {
     // so upfront payments never showed as "Upfront" in the statement.
     // Invoice generation should happen via scheduled jobs or explicit actions, not on every read.
 
-    const leases = await sql`
+    const [leases, invoices, deductions] = await Promise.all([
+      sql`
       SELECT l.*, u.unit_number, p.property_name
       FROM leases l
       LEFT JOIN units u ON l.unit_id = u.id
@@ -38,7 +39,7 @@ export async function GET(request) {
       WHERE l.tenant_id = ${tenantId}
       ORDER BY l.start_date DESC
       LIMIT 50
-    `;
+    `,
 
     // IMPORTANT: This query includes ALL invoice types for the tenant:
     // 1. Automatic monthly rent invoices (lease_id IS NOT NULL, generated via cron/API)
@@ -46,7 +47,7 @@ export async function GET(request) {
     // 3. Arrears invoices (lease_id IS NULL, created via Post Arrears)
     // The statement totals (Debits, Credits, Closing Balance) are calculated from ALL these invoices.
     // All invoices for this tenant_id will appear in the statement regardless of type or source.
-    const invoices = await sql`
+    sql`
       SELECT
         i.*, 
         (i.amount - i.paid_amount) AS outstanding,
@@ -59,7 +60,16 @@ export async function GET(request) {
         AND COALESCE(i.is_deleted, false) = false
       ORDER BY i.invoice_year DESC, i.invoice_month DESC, i.id DESC
       LIMIT 60
-    `;
+    `,
+
+      sql`
+      SELECT id, deduction_date, description, amount
+      FROM tenant_deductions
+      WHERE tenant_id = ${tenantId}
+        AND COALESCE(is_deleted, false) = false
+      ORDER BY deduction_date DESC, id DESC
+    `,
+    ]);
 
     // Get all payments for this tenant with their allocations (if any)
     // This query returns:
@@ -131,7 +141,7 @@ export async function GET(request) {
       ORDER BY payment_date DESC, id DESC, invoice_id ASC NULLS LAST
     `;
 
-    return Response.json({ tenant, leases, invoices, payments });
+    return Response.json({ tenant, leases, invoices, payments, deductions });
   } catch (error) {
     console.error("GET /api/reports/tenant-statement error", error);
     return Response.json(
