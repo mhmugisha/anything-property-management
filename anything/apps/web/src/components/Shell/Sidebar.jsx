@@ -10,9 +10,9 @@ export default function Sidebar({ active, children }) {
   const isAdmin = staffQuery.data?.role_name === "Admin";
 
   return (
-    <aside className="hidden md:flex fixed top-32 left-0 flex-col w-[270px] h-[calc(100vh-8rem)] bg-[#0E1D33] border-r border-white/10">
+    <aside className="hidden md:flex fixed top-32 left-0 flex-col w-[270px] h-[calc(100vh-8rem)] bg-[#0E1D33] border-r border-white/10 overflow-x-hidden">
       {/* Dynamic content area */}
-      <div className="flex-1 px-3 pt-4 overflow-y-auto">{children}</div>
+      <div className="flex-1 px-3 pt-4 overflow-y-auto overflow-x-hidden">{children}</div>
 
       {/* Bottom section: Settings + Sign Out */}
       <div className="px-3 pb-4 space-y-2">
