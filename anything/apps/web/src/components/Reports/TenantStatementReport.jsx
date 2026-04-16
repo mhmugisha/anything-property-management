@@ -233,10 +233,12 @@ export function TenantStatementReport({
     return sum + Number(amount || 0);
   }, 0);
 
-  const totalsBalanceDue = statementInvoices.reduce(
-    (sum, inv) => sum + Number(inv.outstanding || 0),
+  const totalsDeductions = statementDeductions.reduce(
+    (sum, d) => sum + Number(d.amount || 0),
     0,
   );
+
+  const totalsBalanceDue = totalsInvoiced - totalsPaid - totalsDeductions;
 
   const onExportTenantPayments = useCallback(() => {
     if (!statementTenant) return;
@@ -634,7 +636,7 @@ export function TenantStatementReport({
             </div>
 
             {/* Totals summary at bottom (right-aligned) */}
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
               <SummaryCard
                 label="Debits (UGX)"
                 value={formatCurrencyUGX(totalsInvoiced)}
@@ -643,6 +645,11 @@ export function TenantStatementReport({
               <SummaryCard
                 label="Credits (UGX)"
                 value={formatCurrencyUGX(totalsPaid)}
+                align="right"
+              />
+              <SummaryCard
+                label="Deductions (UGX)"
+                value={formatCurrencyUGX(totalsDeductions)}
                 align="right"
               />
               <SummaryCard
