@@ -333,34 +333,17 @@ export async function GET(request) {
         WHERE status = 'active'
       `,
 
-      // Management fees (this month)
+      // Management fees (this month) — sum credit-side transactions to the
+      // management fee income account (4100) so this matches the P&L exactly,
+      // including fees from landlord_deductions and other non-invoice sources.
       sql`
-        WITH by_property AS (
-          SELECT
-            i.property_id,
-            SUM(i.amount)::numeric(15,2) AS gross,
-            MAX(COALESCE(p.management_fee_percent, 0))::numeric(5,2) AS fee_percent,
-            MAX(COALESCE(p.management_fee_fixed_amount, 0))::numeric(15,2) AS fixed_amount,
-            MAX(COALESCE(p.management_fee_type, 'percent'))::text AS fee_type
-          FROM invoices i
-          JOIN properties p ON p.id = i.property_id
-          WHERE i.invoice_month = ${currentMonth}
-            AND i.invoice_year = ${currentYear}
-            AND i.status <> 'void'
-            AND COALESCE(i.is_deleted, false) = false
-          GROUP BY i.property_id
-        )
-        SELECT COALESCE(
-          SUM(
-            CASE
-              WHEN fee_type = 'percent' THEN ROUND((gross * fee_percent / 100.0)::numeric, 2)
-              WHEN fee_type = 'fixed' THEN LEAST(fixed_amount, gross)
-              ELSE 0
-            END
-          ),
-          0
-        ) AS total
-        FROM by_property
+        SELECT COALESCE(SUM(t.amount), 0) AS total
+        FROM transactions t
+        JOIN chart_of_accounts a ON a.id = t.credit_account_id
+        WHERE a.account_code = '4100'
+          AND COALESCE(t.is_deleted, false) = false
+          AND t.transaction_date >= ${monthStart}::date
+          AND t.transaction_date <= ${todayYmd}::date
       `,
 
       // Income series (last 6 months)
