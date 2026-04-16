@@ -53,20 +53,20 @@ export default function MaintenanceSidebar() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-3 py-3 border-b border-slate-600">
+      <div className="px-4 py-3 border-b border-white/10">
         <div className="text-xs text-slate-400 uppercase tracking-wide font-semibold">
           Maintenance Menu
         </div>
       </div>
 
       {/* Requests list */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
         {error ? (
-          <div className="px-3 py-4 text-rose-300 text-sm">{error}</div>
+          <div className="px-4 py-4 text-rose-300 text-sm">{error}</div>
         ) : loading ? (
-          <div className="px-3 py-4 text-slate-400 text-sm">Loading...</div>
+          <div className="px-4 py-4 text-slate-400 text-sm">Loading...</div>
         ) : requests.length === 0 ? (
-          <div className="px-3 py-4 text-slate-400 text-sm">
+          <div className="px-4 py-4 text-slate-400 text-sm">
             No maintenance requests
           </div>
         ) : (
@@ -78,7 +78,7 @@ export default function MaintenanceSidebar() {
               return (
                 <div
                   key={request.id}
-                  className="px-3 py-2.5 mx-2 mb-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                  className="px-4 py-2.5 mb-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
                 >
                   <div className="flex items-start gap-2">
                     <Wrench className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
