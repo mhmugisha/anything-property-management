@@ -228,9 +228,7 @@ export function TenantStatementReport({
   );
 
   const totalsPaid = statementPayments.reduce((sum, p) => {
-    const applied = p.invoice_amount_applied;
-    const amount = applied != null ? applied : p.amount;
-    return sum + Number(amount || 0);
+    return sum + Number(p.invoice_amount_applied || 0);
   }, 0);
 
   const totalsDeductions = statementDeductions.reduce(
