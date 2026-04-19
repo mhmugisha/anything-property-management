@@ -91,10 +91,22 @@ export function UnitFormModal({
             </>
           )}
 
+          <div>
+            <Field
+              label="Rent (UGX)"
+              value={String(form.monthly_rent_ugx)}
+              onChange={() => {}}
+              type="number"
+              disabled
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              To change rent, edit the tenant&apos;s lease.
+            </p>
+          </div>
           <Field
-            label="Rent (UGX)"
-            value={String(form.monthly_rent_ugx)}
-            onChange={(v) => onChange({ ...form, monthly_rent_ugx: v })}
+            label="Rent (USD)"
+            value={String(form.monthly_rent_usd)}
+            onChange={(v) => onChange({ ...form, monthly_rent_usd: v })}
             type="number"
           />
           <Field

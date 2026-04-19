@@ -44,14 +44,15 @@ export async function PUT(request, { params: { id } }) {
       typeof body?.end_date === "string" ? body.end_date.trim() : "";
     const endDate = rawEndDate || OPEN_ENDED_END_DATE;
     const monthlyRent = toNumber(body?.monthly_rent);
-    const currency = "UGX"; // Hardcoded to UGX only
+    const currency =
+      typeof body?.currency === "string" ? body.currency.trim() : null;
     const depositAmount =
       body?.deposit_amount === "" ? null : toNumber(body?.deposit_amount);
 
-    if (!unitId || !startDate || !monthlyRent) {
+    if (!unitId || !startDate || !monthlyRent || !currency) {
       return Response.json(
         {
-          error: "unit_id, start_date, monthly_rent are required",
+          error: "unit_id, start_date, monthly_rent, currency are required",
         },
         { status: 400 },
       );
@@ -114,6 +115,13 @@ export async function PUT(request, { params: { id } }) {
 
     const lease = updatedRows?.[0] || null;
 
+    // Sync rent back to unit
+    await sql`
+      UPDATE units
+      SET monthly_rent_ugx = ${monthlyRent}
+      WHERE id = ${unitId}
+    `;
+
     // If unit changed, free old unit and occupy new unit
     if (Number(unitId) !== Number(oldLease.unit_id)) {
       await sql`UPDATE units SET status = 'vacant' WHERE id = ${oldLease.unit_id}`;
@@ -164,12 +172,8 @@ export async function PUT(request, { params: { id } }) {
       }
     }
 
-    // Update future invoices only (from NEXT month onwards).
-    // Current and past months remain at their original amounts.
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1; // JavaScript months are 0-based
-
+    // Keep future unpaid invoices in sync (unit/property, amount).
+    // Management fees are no longer stored per invoice line.
     await sql`
       UPDATE invoices
       SET unit_id = ${unitId},
@@ -179,10 +183,8 @@ export async function PUT(request, { params: { id } }) {
           commission_rate = 0,
           commission_amount = 0
       WHERE lease_id = ${leaseId}
-        AND (
-          invoice_year > ${currentYear}
-          OR (invoice_year = ${currentYear} AND invoice_month > ${currentMonth})
-        )
+        AND status <> 'paid'
+        AND paid_amount = 0
     `;
 
     // Ensure invoices exist (handles newly extended date range up to current month)
@@ -232,32 +234,15 @@ export async function PUT(request, { params: { id } }) {
           changes.push("deposit adjusted");
         }
 
-        // Check if dates changed
-        const oldStartDate =
-          oldLease.start_date?.toISOString?.().slice(0, 10) ||
-          oldLease.start_date;
-        const oldEndDate =
-          oldLease.end_date?.toISOString?.().slice(0, 10) || oldLease.end_date;
+        const changeMsg = changes.length > 0 ? ` (${changes.join(", ")})` : "";
 
-        if (startDate !== oldStartDate) {
-          changes.push("start date changed");
-        }
-        if (endDate !== oldEndDate) {
-          changes.push("end date changed");
-        }
-
-        // Only send notification if there were actual changes
-        if (changes.length > 0) {
-          const changeMsg = ` (${changes.join(", ")})`;
-
-          notifyAllAdminsAsync({
-            title: "Lease Updated",
-            message: `Lease updated for ${details.tenant_name} in Unit ${details.unit_number} at ${details.property_name}${changeMsg}. Updated by ${perm.staff.full_name || "Staff"}`,
-            type: "lease",
-            reference_id: leaseId,
-            reference_type: "lease",
-          });
-        }
+        notifyAllAdminsAsync({
+          title: "Lease Updated",
+          message: `Lease updated for ${details.tenant_name} in Unit ${details.unit_number} at ${details.property_name}${changeMsg}. Updated by ${perm.staff.full_name || "Staff"}`,
+          type: "lease",
+          reference_id: leaseId,
+          reference_type: "lease",
+        });
       }
     }
 
