@@ -224,38 +224,23 @@ export async function GET(request) {
         ? ` (${payment.reference_number})`
         : "";
 
-      // Show each allocation as a separate row
-      for (const alloc of payment.allocations) {
-        const desc = `Payment - ${payment.payment_method}${ref} - ${alloc.invoice_description}`;
-        paymentRows.push({
-          kind: "credit",
-          date: toDateStr(payment.payment_date),
-          description: desc,
-          debit: 0,
-          credit: alloc.amount_applied,
-          reference_number: payment.reference_number || null,
-        });
+      let desc;
+      if (payment.allocations.length === 1) {
+        desc = `Payment - ${payment.payment_method}${ref} - ${payment.allocations[0].invoice_description}`;
+      } else if (payment.allocations.length > 1) {
+        desc = `Payment - ${payment.payment_method}${ref} - Multiple invoices`;
+      } else {
+        desc = `Payment - ${payment.payment_method}${ref} - Payment on Account`;
       }
 
-      // Calculate unallocated portion
-      const totalAllocated = payment.allocations.reduce(
-        (sum, a) => sum + a.amount_applied,
-        0,
-      );
-      const unallocated = payment.total_amount - totalAllocated;
-
-      // Show unallocated portion as "Payment on Account"
-      if (unallocated > 0.01) {
-        const desc = `Payment - ${payment.payment_method}${ref} - Payment on Account`;
-        paymentRows.push({
-          kind: "credit",
-          date: toDateStr(payment.payment_date),
-          description: desc,
-          debit: 0,
-          credit: unallocated,
-          reference_number: payment.reference_number || null,
-        });
-      }
+      paymentRows.push({
+        kind: "credit",
+        date: toDateStr(payment.payment_date),
+        description: desc,
+        debit: 0,
+        credit: payment.total_amount,
+        reference_number: payment.reference_number || null,
+      });
     }
 
     const dedWhere = [`tenant_id = $1`];
