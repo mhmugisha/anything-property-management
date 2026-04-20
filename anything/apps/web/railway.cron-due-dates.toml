@@ -1,6 +1,6 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "echo 'cron service — no build required'"
+buildCommand = "npm install --production"
 
 [deploy]
 startCommand = "node scripts/cron-check-due-dates.mjs"
