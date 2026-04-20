@@ -95,13 +95,15 @@ export function UnitFormModal({
             <Field
               label="Rent (UGX)"
               value={String(form.monthly_rent_ugx)}
-              onChange={() => {}}
+              onChange={isEditing ? () => {} : (v) => onChange({ ...form, monthly_rent_ugx: v })}
               type="number"
-              disabled
+              disabled={isEditing}
             />
-            <p className="text-xs text-slate-500 mt-1">
-              To change rent, edit the tenant&apos;s lease.
-            </p>
+            {isEditing && (
+              <p className="text-xs text-slate-500 mt-1">
+                To change rent, edit the tenant&apos;s lease.
+              </p>
+            )}
           </div>
           <Field
             label="Rent (USD)"
