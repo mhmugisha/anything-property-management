@@ -10,6 +10,11 @@
 const APP_URL = process.env.APP_URL?.replace(/\/$/, '');
 const CRON_SECRET = process.env.CRON_SECRET;
 
+console.log('[cron-check-due-dates] Script started');
+console.log(`[cron-check-due-dates] APP_URL: ${APP_URL}`);
+console.log(`[cron-check-due-dates] CRON_SECRET is set: ${!!CRON_SECRET}`);
+console.log(`[cron-check-due-dates] Node version: ${process.version}`);
+
 if (!APP_URL) {
   console.error('[cron-check-due-dates] ERROR: APP_URL env var is not set');
   process.exit(1);
@@ -35,10 +40,12 @@ try {
 }
 
 let body;
+const rawText = await res.text();
+console.log(`[cron-check-due-dates] Raw response:`, rawText.slice(0, 500));
 try {
-  body = await res.json();
+  body = JSON.parse(rawText);
 } catch {
-  body = await res.text();
+  body = rawText;
 }
 
 if (!res.ok) {
