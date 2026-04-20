@@ -252,6 +252,7 @@ export async function GET(request) {
       activeLandlordsRows,
       portfolioRows,
       mgmtFeeRows,
+      mgmtFeeAccruedRows,
       incomeSeriesRows,
       expenseSeriesRows,
       incomeRows,
@@ -344,6 +345,36 @@ export async function GET(request) {
           AND COALESCE(t.is_deleted, false) = false
           AND t.transaction_date >= ${monthStart}::date
           AND t.transaction_date <= ${todayYmd}::date
+      `,
+
+      // Management fees accrued (this month) — based on all invoices regardless of payment
+      sql`
+        WITH by_property AS (
+          SELECT
+            i.property_id,
+            SUM(i.amount)::numeric(15,2) AS gross,
+            MAX(COALESCE(p.management_fee_percent, 0))::numeric(5,2) AS fee_percent,
+            MAX(COALESCE(p.management_fee_fixed_amount, 0))::numeric(15,2) AS fixed_amount,
+            MAX(COALESCE(p.management_fee_type, 'percent'))::text AS fee_type
+          FROM invoices i
+          JOIN properties p ON p.id = i.property_id
+          WHERE i.invoice_month = ${currentMonth}
+            AND i.invoice_year = ${currentYear}
+            AND i.status <> 'void'
+            AND COALESCE(i.is_deleted, false) = false
+          GROUP BY i.property_id
+        )
+        SELECT COALESCE(
+          SUM(
+            CASE
+              WHEN fee_type = 'percent' THEN ROUND((gross * fee_percent / 100.0)::numeric, 2)
+              WHEN fee_type = 'fixed' THEN LEAST(fixed_amount, gross)
+              ELSE 0
+            END
+          ),
+          0
+        ) AS total
+        FROM by_property
       `,
 
       // Income series (last 6 months)
@@ -475,6 +506,7 @@ export async function GET(request) {
     const activeLandlordsCount = Number(activeLandlordsRows?.[0]?.count || 0);
     const portfolio = Number(portfolioRows?.[0]?.total || 0);
     const managementFeesThisMonth = Number(mgmtFeeRows?.[0]?.total || 0);
+    const managementFeesAccrued = Number(mgmtFeeAccruedRows?.[0]?.total || 0);
     const totalIncome = Number(incomeRows?.[0]?.total || 0);
     const totalExpenses = Number(expenseRows?.[0]?.total || 0);
     const netProfit = totalIncome - totalExpenses;
@@ -594,6 +626,7 @@ export async function GET(request) {
       stats: {
         activeTenantsCount,
         activeLandlordsCount,
+        managementFeesAccrued,
         managementFeesThisMonth,
         amountDueToLandlords: Number(amountDueToLandlords || 0), // CRITICAL FIX: Now calculated from invoices/payouts/deductions
         arrearsNotPaidInIssueMonth,

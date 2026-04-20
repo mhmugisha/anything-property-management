@@ -96,8 +96,8 @@ export default function Dashboard() {
   const s = stats?.stats || null;
 
   // KPI row values
-  const activeTenantsCount = s ? Number(s.activeTenantsCount || 0) : 0;
   const portfolio = s ? Number(s.portfolio || 0) : 0;
+  const managementFeesAccrued = s ? Number(s.managementFeesAccrued || 0) : 0;
   const managementFeesThisMonth = s
     ? Number(s.managementFeesThisMonth || 0)
     : 0;
@@ -198,19 +198,19 @@ export default function Dashboard() {
           {/* 1) KPI row */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
             <KpiCard
-              title="Active tenants"
-              value={formatCurrency(activeTenantsCount)}
-            />
-            <KpiCard
               title="Portfolio (UGX)"
               value={formatCurrency(portfolio)}
             />
             <KpiCard
-              title="Management fees (this month) (UGX)"
+              title="Management Fees Accrued (UGX)"
+              value={formatCurrency(managementFeesAccrued)}
+            />
+            <KpiCard
+              title="Management Fees Collected (UGX)"
               value={formatCurrency(managementFeesThisMonth)}
             />
             <KpiCard
-              title="Due to landlords (UGX)"
+              title="Due to Landlords (UGX)"
               value={formatCurrency(amountDueToLandlords)}
             />
             <KpiCard
