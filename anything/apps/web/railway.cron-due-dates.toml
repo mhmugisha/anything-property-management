@@ -2,6 +2,9 @@
 builder = "NIXPACKS"
 buildCommand = "npm install --production"
 
+[build.nixpacksPlan.phases.setup]
+nixPkgs = ["nodejs_20"]
+
 [deploy]
 startCommand = "node scripts/cron-check-due-dates.mjs"
 cronSchedule = "0 0 * * *"
