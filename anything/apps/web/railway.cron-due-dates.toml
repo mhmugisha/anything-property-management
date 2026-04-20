@@ -1,11 +1,11 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm install --production"
+buildCommand = "echo 'no build required'"
 
 [build.nixpacksPlan.phases.setup]
 nixPkgs = ["nodejs_20"]
 
 [deploy]
-startCommand = "node scripts/cron-check-due-dates.mjs"
+startCommand = "node anything/apps/web/scripts/cron-check-due-dates.mjs"
 cronSchedule = "0 0 * * *"
 restartPolicyType = "NEVER"
