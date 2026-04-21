@@ -160,25 +160,27 @@ export default function NewEntryCompanyPage() {
             </p>
           </div>
 
-          <JournalEntryForm
-            date={date}
-            description={description}
-            reference={reference}
-            debitAccount={debitAccount}
-            creditAccount={creditAccount}
-            amount={amount}
-            accountOptions={accountOptions}
-            onDateChange={setDate}
-            onDescriptionChange={setDescription}
-            onReferenceChange={setReference}
-            onDebitChange={setDebitAccount}
-            onCreditChange={setCreditAccount}
-            onAmountChange={setAmount}
-            onSubmit={onSubmit}
-            isPending={createJournalMutation.isPending}
-            error={createJournalMutation.error}
-            successMessage={successMessage}
-          />
+          <div className="max-w-[960px] mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <JournalEntryForm
+              date={date}
+              description={description}
+              reference={reference}
+              debitAccount={debitAccount}
+              creditAccount={creditAccount}
+              amount={amount}
+              accountOptions={accountOptions}
+              onDateChange={setDate}
+              onDescriptionChange={setDescription}
+              onReferenceChange={setReference}
+              onDebitChange={setDebitAccount}
+              onCreditChange={setCreditAccount}
+              onAmountChange={setAmount}
+              onSubmit={onSubmit}
+              isPending={createJournalMutation.isPending}
+              error={createJournalMutation.error}
+              successMessage={successMessage}
+            />
+          </div>
 
           {accountsQuery.isLoading ? (
             <div className="text-sm text-slate-500 text-center mt-4">

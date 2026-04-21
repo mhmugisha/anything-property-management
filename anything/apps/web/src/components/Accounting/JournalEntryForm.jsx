@@ -31,8 +31,8 @@ export function JournalEntryForm({
       </h3>
 
       <div className="space-y-3">
-        {/* Row 1 - 3 fields */}
-        <div className="grid grid-cols-3 gap-3">
+        {/* Row 1: Date | Description */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field label="Date">
             <DatePopoverInput
               value={date}
@@ -41,13 +41,18 @@ export function JournalEntryForm({
               className="bg-white"
             />
           </Field>
-          <Field label="Reference (optional)">
+          <Field label="Description">
             <input
-              value={reference}
-              onChange={(e) => onReferenceChange(e.target.value)}
+              value={description}
+              onChange={(e) => onDescriptionChange(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+              placeholder="e.g. Office rent"
             />
           </Field>
+        </div>
+
+        {/* Row 2: Amount | Reference */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field label="Amount (UGX)">
             <input
               type="number"
@@ -56,10 +61,17 @@ export function JournalEntryForm({
               className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
             />
           </Field>
+          <Field label="Reference (Optional)">
+            <input
+              value={reference}
+              onChange={(e) => onReferenceChange(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+            />
+          </Field>
         </div>
 
-        {/* Row 2 - 3 fields */}
-        <div className="grid grid-cols-3 gap-3">
+        {/* Row 3: Debit Account | Credit Account */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field label="Debit Account">
             <select
               value={debitAccount}
@@ -87,14 +99,6 @@ export function JournalEntryForm({
                 </option>
               ))}
             </select>
-          </Field>
-          <Field label="Description">
-            <input
-              value={description}
-              onChange={(e) => onDescriptionChange(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
-              placeholder="e.g. Office rent"
-            />
           </Field>
         </div>
       </div>
