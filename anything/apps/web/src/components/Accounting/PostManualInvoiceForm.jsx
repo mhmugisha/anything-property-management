@@ -19,6 +19,7 @@ export function PostManualInvoiceForm({
 }) {
   const [leaseSearch, setLeaseSearch] = useState("");
   const [showLeaseDropdown, setShowLeaseDropdown] = useState(false);
+  const [propertyDisplay, setPropertyDisplay] = useState("");
 
   const canSubmit =
     !!leaseId &&
@@ -27,7 +28,6 @@ export function PostManualInvoiceForm({
     String(amount || "").length > 0 &&
     Number(amount) > 0;
 
-  // Filter leases based on search
   const filteredLeases = useMemo(() => {
     if (!leaseSearch.trim()) return leases;
     const lower = leaseSearch.toLowerCase();
@@ -39,17 +39,13 @@ export function PostManualInvoiceForm({
     );
   }, [leases, leaseSearch]);
 
-  const selectedLease = useMemo(() => {
-    if (!leaseId) return null;
-    return leases.find((l) => l.id === Number(leaseId)) || null;
-  }, [leases, leaseId]);
-
   const onSelectLease = useCallback(
     (lease) => {
       onLeaseChange(String(lease.id));
       const tenantTitle = lease.tenant_title ? `${lease.tenant_title} ` : "";
-      setLeaseSearch(
-        `${tenantTitle}${lease.tenant_name} - ${lease.property_name} - Unit ${lease.unit_number}`,
+      setLeaseSearch(`${tenantTitle}${lease.tenant_name}`);
+      setPropertyDisplay(
+        `${lease.property_name} - Unit ${lease.unit_number}`,
       );
       setShowLeaseDropdown(false);
     },
@@ -59,6 +55,7 @@ export function PostManualInvoiceForm({
   const onClearLease = useCallback(() => {
     onLeaseChange("");
     setLeaseSearch("");
+    setPropertyDisplay("");
   }, [onLeaseChange]);
 
   const leaseDropdownVisible = showLeaseDropdown && filteredLeases.length > 0;
@@ -70,9 +67,8 @@ export function PostManualInvoiceForm({
       </h3>
 
       <div className="space-y-3">
-        {/* Two-column grid layout */}
+        {/* Row 1: Tenant search | Property read-only */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Row 1, Col 1 - Tenant dropdown */}
           <Field label="Tenant">
             <div className="relative">
               <div className="relative">
@@ -86,7 +82,7 @@ export function PostManualInvoiceForm({
                     if (!e.target.value.trim()) onClearLease();
                   }}
                   onFocus={() => setShowLeaseDropdown(true)}
-                  placeholder="Search lease by tenant, property, or unit…"
+                  placeholder="Search tenant by name…"
                   className="w-full pl-9 pr-9 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:ring-2 focus:ring-sky-500 text-sm"
                 />
                 {leaseId && (
@@ -132,27 +128,19 @@ export function PostManualInvoiceForm({
             </div>
           </Field>
 
-          {/* Row 1, Col 2 - Invoice Date */}
-          <Field label="Invoice Date">
-            <DatePopoverInput
-              value={date}
-              onChange={onDateChange}
-              placeholder="DD-MM-YYYY"
-              className="bg-white"
-            />
-          </Field>
-
-          {/* Row 2, Col 1 - Description */}
-          <Field label="Description">
+          <Field label="Property">
             <input
-              value={description}
-              onChange={(e) => onDescriptionChange(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
-              placeholder="e.g. Water charges - March 2026, Electricity - March 2026"
+              type="text"
+              value={propertyDisplay}
+              readOnly
+              placeholder="Auto-filled after tenant selection"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 text-slate-600 text-sm outline-none cursor-default"
             />
           </Field>
+        </div>
 
-          {/* Row 2, Col 2 - Amount */}
+        {/* Row 2: Amount | Date */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field label="Amount">
             <input
               type="number"
@@ -162,14 +150,26 @@ export function PostManualInvoiceForm({
               placeholder="e.g. 100000"
             />
           </Field>
+
+          <Field label="Invoice Date">
+            <DatePopoverInput
+              value={date}
+              onChange={onDateChange}
+              placeholder="DD-MM-YYYY"
+              className="bg-white"
+            />
+          </Field>
         </div>
 
-        {/* Currency display (auto-filled) - outside grid, full width */}
-        {selectedLease && (
-          <div className="bg-sky-50 border border-sky-200 rounded-lg px-3 py-2 text-sm text-sky-800">
-            <strong>Currency:</strong> {currency}
-          </div>
-        )}
+        {/* Row 3: Description full width */}
+        <Field label="Description">
+          <input
+            value={description}
+            onChange={(e) => onDescriptionChange(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+            placeholder="e.g. Water charges - March 2026, Electricity - March 2026"
+          />
+        </Field>
       </div>
 
       {/* Close dropdown on outside click */}

@@ -152,20 +152,22 @@ export default function PostManualInvoicePage() {
             </p>
           </div>
 
-          <PostManualInvoiceForm
-            leaseId={leaseId}
-            date={date}
-            description={description}
-            amount={amount}
-            currency={currency}
-            leases={leases}
-            onLeaseChange={setLeaseId}
-            onDateChange={setDate}
-            onDescriptionChange={setDescription}
-            onAmountChange={setAmount}
-            onSubmit={onSubmit}
-            isPending={createManualInvoiceMutation.isPending}
-          />
+          <div className="max-w-[960px] mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <PostManualInvoiceForm
+              leaseId={leaseId}
+              date={date}
+              description={description}
+              amount={amount}
+              currency={currency}
+              leases={leases}
+              onLeaseChange={setLeaseId}
+              onDateChange={setDate}
+              onDescriptionChange={setDescription}
+              onAmountChange={setAmount}
+              onSubmit={onSubmit}
+              isPending={createManualInvoiceMutation.isPending}
+            />
+          </div>
 
           {successMessage ? (
             <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700">

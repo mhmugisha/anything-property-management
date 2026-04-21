@@ -145,22 +145,24 @@ export default function PostArrearsPage() {
             </p>
           </div>
 
-          <PostArrearsForm
-            propertyId={propertyId}
-            tenantId={tenantId}
-            date={date}
-            description={description}
-            amount={amount}
-            properties={properties}
-            tenants={tenants}
-            onPropertyChange={onPropertyChange}
-            onTenantChange={setTenantId}
-            onDateChange={setDate}
-            onDescriptionChange={setDescription}
-            onAmountChange={setAmount}
-            onSubmit={onSubmit}
-            isPending={createArrearsMutation.isPending}
-          />
+          <div className="max-w-[960px] mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <PostArrearsForm
+              propertyId={propertyId}
+              tenantId={tenantId}
+              date={date}
+              description={description}
+              amount={amount}
+              properties={properties}
+              tenants={tenants}
+              onPropertyChange={onPropertyChange}
+              onTenantChange={setTenantId}
+              onDateChange={setDate}
+              onDescriptionChange={setDescription}
+              onAmountChange={setAmount}
+              onSubmit={onSubmit}
+              isPending={createArrearsMutation.isPending}
+            />
+          </div>
 
           {successMessage ? (
             <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700">

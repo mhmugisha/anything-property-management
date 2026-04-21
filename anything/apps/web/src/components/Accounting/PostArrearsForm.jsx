@@ -19,11 +19,9 @@ export function PostArrearsForm({
   onSubmit,
   isPending,
 }) {
-  const [propertySearch, setPropertySearch] = useState("");
-  const [showPropertyDropdown, setShowPropertyDropdown] = useState(false);
-
   const [tenantSearch, setTenantSearch] = useState("");
   const [showTenantDropdown, setShowTenantDropdown] = useState(false);
+  const [propertyDisplay, setPropertyDisplay] = useState("");
 
   const canSubmit =
     !!tenantId &&
@@ -31,18 +29,6 @@ export function PostArrearsForm({
     String(amount || "").length > 0 &&
     Number(amount) > 0;
 
-  // Filter properties based on search
-  const filteredProperties = useMemo(() => {
-    if (!propertySearch.trim()) return properties;
-    const lower = propertySearch.toLowerCase();
-    return properties.filter(
-      (p) =>
-        (p.property_name || "").toLowerCase().includes(lower) ||
-        (p.address || "").toLowerCase().includes(lower),
-    );
-  }, [properties, propertySearch]);
-
-  // Filter tenants based on search
   const filteredTenants = useMemo(() => {
     if (!tenantSearch.trim()) return tenants;
     const lower = tenantSearch.toLowerCase();
@@ -53,35 +39,13 @@ export function PostArrearsForm({
     );
   }, [tenants, tenantSearch]);
 
-  const selectedProperty = useMemo(() => {
-    if (!propertyId) return null;
-    return properties.find((p) => p.id === Number(propertyId)) || null;
-  }, [properties, propertyId]);
-
-  const selectedTenant = useMemo(() => {
-    if (!tenantId) return null;
-    return tenants.find((t) => t.id === Number(tenantId)) || null;
-  }, [tenants, tenantId]);
-
-  const onSelectProperty = useCallback(
-    (prop) => {
-      onPropertyChange(String(prop.id));
-      setPropertySearch(prop.property_name || "");
-      setShowPropertyDropdown(false);
-    },
-    [onPropertyChange],
-  );
-
-  const onClearProperty = useCallback(() => {
-    onPropertyChange("");
-    setPropertySearch("");
-  }, [onPropertyChange]);
-
   const onSelectTenant = useCallback(
     (tenant) => {
       onTenantChange(String(tenant.id));
       const title = tenant.title ? `${tenant.title} ` : "";
       setTenantSearch(`${title}${tenant.full_name} (${tenant.phone})`);
+      const unitPart = tenant.unit_number ? ` - Unit ${tenant.unit_number}` : "";
+      setPropertyDisplay(`${tenant.property_name || ""}${unitPart}`);
       setShowTenantDropdown(false);
     },
     [onTenantChange],
@@ -90,10 +54,9 @@ export function PostArrearsForm({
   const onClearTenant = useCallback(() => {
     onTenantChange("");
     setTenantSearch("");
+    setPropertyDisplay("");
   }, [onTenantChange]);
 
-  const propertyDropdownVisible =
-    showPropertyDropdown && filteredProperties.length > 0;
   const tenantDropdownVisible =
     showTenantDropdown && filteredTenants.length > 0;
 
@@ -104,64 +67,8 @@ export function PostArrearsForm({
       </h3>
 
       <div className="space-y-3">
-        {/* Row 1 */}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Property">
-            <div className="relative">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={propertySearch}
-                  onChange={(e) => {
-                    setPropertySearch(e.target.value);
-                    setShowPropertyDropdown(true);
-                    if (!e.target.value.trim()) onClearProperty();
-                  }}
-                  onFocus={() => setShowPropertyDropdown(true)}
-                  placeholder="Search property…"
-                  className="w-full pl-9 pr-9 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:ring-2 focus:ring-sky-500 text-sm"
-                />
-                {propertyId && (
-                  <button
-                    type="button"
-                    onClick={onClearProperty}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              {propertyDropdownVisible && (
-                <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto">
-                  {filteredProperties.map((p) => {
-                    const isSelected = p.id === Number(propertyId);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => onSelectProperty(p)}
-                        className={`w-full text-left px-3 py-2 text-sm hover:bg-sky-50 ${
-                          isSelected ? "bg-sky-50 font-medium" : ""
-                        }`}
-                      >
-                        <div className="font-medium text-slate-800">
-                          {p.property_name}
-                        </div>
-                        {p.address && (
-                          <div className="text-xs text-slate-500 truncate">
-                            {p.address}
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </Field>
-
+        {/* Row 1: Tenant search | Property read-only */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field label="Tenant">
             <div className="relative">
               <div className="relative">
@@ -214,19 +121,20 @@ export function PostArrearsForm({
               )}
             </div>
           </Field>
-        </div>
 
-        {/* Row 2 */}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Arrears Date">
-            <DatePopoverInput
-              value={date}
-              onChange={onDateChange}
-              placeholder="DD-MM-YYYY"
-              className="bg-white"
+          <Field label="Property">
+            <input
+              type="text"
+              value={propertyDisplay}
+              readOnly
+              placeholder="Auto-filled after tenant selection"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 text-slate-600 text-sm outline-none cursor-default"
             />
           </Field>
+        </div>
 
+        {/* Row 2: Amount | Date */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field label="Amount">
             <input
               type="number"
@@ -236,9 +144,18 @@ export function PostArrearsForm({
               placeholder="e.g. 500000"
             />
           </Field>
+
+          <Field label="Arrears Date">
+            <DatePopoverInput
+              value={date}
+              onChange={onDateChange}
+              placeholder="DD-MM-YYYY"
+              className="bg-white"
+            />
+          </Field>
         </div>
 
-        {/* Row 3 */}
+        {/* Row 3: Description full width */}
         <Field label="Description (Optional)">
           <input
             value={description}
@@ -249,13 +166,7 @@ export function PostArrearsForm({
         </Field>
       </div>
 
-      {/* Close dropdowns on outside click */}
-      {propertyDropdownVisible && (
-        <div
-          className="fixed inset-0 z-10"
-          onClick={() => setShowPropertyDropdown(false)}
-        />
-      )}
+      {/* Close dropdown on outside click */}
       {tenantDropdownVisible && (
         <div
           className="fixed inset-0 z-10"
