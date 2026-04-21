@@ -10,6 +10,7 @@ import MobileMenu from "@/components/Shell/MobileMenu";
 import AccountingSidebar from "@/components/Shell/AccountingSidebar";
 import AccessDenied from "@/components/Shell/AccessDenied";
 import { fetchJson, postJson } from "@/utils/api";
+import DatePopoverInput from "@/components/DatePopoverInput";
 
 export default function AccountingBackfillPage() {
   const { data: user, loading: userLoading } = useUser();
@@ -156,21 +157,19 @@ export default function AccountingBackfillPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="From (optional)">
-                <input
-                  type="date"
+                <DatePopoverInput
                   value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                  placeholder={defaultFrom}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                  onChange={setFrom}
+                  placeholder="DD-MM-YYYY"
+                  className="bg-white"
                 />
               </Field>
               <Field label="To (optional)">
-                <input
-                  type="date"
+                <DatePopoverInput
                   value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  placeholder={defaultTo}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                  onChange={setTo}
+                  placeholder="DD-MM-YYYY"
+                  className="bg-white"
                 />
               </Field>
             </div>

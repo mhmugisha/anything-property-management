@@ -5,6 +5,7 @@ import { useLandlordPayoutsSummary } from "@/hooks/useReports";
 import { formatCurrencyUGX } from "@/utils/formatCurrencyUGX";
 import { Field } from "@/components/Reports/Field";
 import PrintPreviewButtons from "@/components/PrintPreviewButtons";
+import DatePopoverInput from "@/components/DatePopoverInput";
 
 export function LandlordPayoutsSummary({ userLoading, user, canViewReports }) {
   const printRef = useRef(null);
@@ -49,19 +50,19 @@ export function LandlordPayoutsSummary({ userLoading, user, canViewReports }) {
         data-no-print="true"
       >
         <Field label="From (optional)">
-          <input
-            type="date"
+          <DatePopoverInput
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+            onChange={setFrom}
+            placeholder="DD-MM-YYYY"
+            className="bg-white"
           />
         </Field>
         <Field label="To (optional)">
-          <input
-            type="date"
+          <DatePopoverInput
             value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+            onChange={setTo}
+            placeholder="DD-MM-YYYY"
+            className="bg-white"
           />
         </Field>
       </div>

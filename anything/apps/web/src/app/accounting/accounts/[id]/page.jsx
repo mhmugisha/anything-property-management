@@ -465,19 +465,19 @@ export default function AccountStatementPage({ params }) {
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <Field label="From">
-                <input
-                  type="date"
+                <DatePopoverInput
                   value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                  onChange={setFrom}
+                  placeholder="DD-MM-YYYY"
+                  className="bg-white"
                 />
               </Field>
               <Field label="To">
-                <input
-                  type="date"
+                <DatePopoverInput
                   value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                  onChange={setTo}
+                  placeholder="DD-MM-YYYY"
+                  className="bg-white"
                 />
               </Field>
               <div className="text-xs text-slate-500 flex items-end">

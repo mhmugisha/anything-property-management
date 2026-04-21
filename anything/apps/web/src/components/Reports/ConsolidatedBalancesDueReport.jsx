@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import DatePopoverInput from "@/components/DatePopoverInput";
 import { FileSpreadsheet, Printer, Eye, Search, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchJson } from "@/utils/api";
@@ -290,21 +291,21 @@ export function ConsolidatedBalancesDueReport({
 
           {/* From Date */}
           <Field label="From Date">
-            <input
-              type="date"
+            <DatePopoverInput
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none text-sm"
+              onChange={setFrom}
+              placeholder="DD-MM-YYYY"
+              className="bg-white"
             />
           </Field>
 
           {/* To Date */}
           <Field label="To Date">
-            <input
-              type="date"
+            <DatePopoverInput
               value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none text-sm"
+              onChange={setTo}
+              placeholder="DD-MM-YYYY"
+              className="bg-white"
             />
           </Field>
         </div>

@@ -11,6 +11,7 @@ import AccessDenied from "@/components/Shell/AccessDenied";
 import { useBalanceSheet } from "@/hooks/useAccounting";
 import { BalanceSheetStatement } from "@/components/Accounting/BalanceSheetStatement";
 import PrintPreviewButtons from "@/components/PrintPreviewButtons";
+import DatePopoverInput from "@/components/DatePopoverInput";
 
 export default function BalanceSheetPage() {
   const { data: user, loading: userLoading } = useUser();
@@ -103,11 +104,11 @@ export default function BalanceSheetPage() {
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <Field label="As at">
-                <input
-                  type="date"
+                <DatePopoverInput
                   value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                  onChange={setTo}
+                  placeholder="DD-MM-YYYY"
+                  className="bg-white"
                 />
               </Field>
               <div className="text-xs text-slate-500 flex items-end">

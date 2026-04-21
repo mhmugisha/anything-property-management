@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import DatePopoverInput from "@/components/DatePopoverInput";
 import { Download, Search, Pencil, Trash2, X, Save } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatCurrencyUGX } from "@/utils/formatCurrencyUGX";
@@ -697,11 +698,11 @@ export function TenantStatementReport({
                   <div className="text-xs font-medium text-slate-600">
                     Payment date
                   </div>
-                  <input
-                    type="date"
+                  <DatePopoverInput
                     value={editPaymentDate}
-                    onChange={(e) => setEditPaymentDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                    onChange={setEditPaymentDate}
+                    placeholder="DD-MM-YYYY"
+                    className="bg-white"
                   />
                 </div>
 
