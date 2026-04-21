@@ -63,6 +63,7 @@ export async function postAccountingEntryFromIntents({
   expenseScope,
   sourceType,
   sourceId,
+  approvalStatus = 'approved',
   auditContext,
 } = {}) {
   const model = await discoverAccountingModel();
@@ -333,6 +334,9 @@ export async function postAccountingEntryFromIntents({
     cols.push(colIsDeleted);
     values.push(false);
   }
+
+  cols.push('approval_status');
+  values.push(approvalStatus || 'approved');
 
   const placeholders = cols.map((_, idx) => `$${idx + 1}`).join(", ");
 
