@@ -44,8 +44,8 @@ export function PostArrearsForm({
       onTenantChange(String(tenant.id));
       const title = tenant.title ? `${tenant.title} ` : "";
       setTenantSearch(`${title}${tenant.full_name} (${tenant.phone})`);
-      const unitPart = tenant.unit_number ? ` - Unit ${tenant.unit_number}` : "";
-      setPropertyDisplay(`${tenant.property_name || ""}${unitPart}`);
+      const unitPart = tenant.current_unit_number ? ` - Unit ${tenant.current_unit_number}` : "";
+      setPropertyDisplay(`${tenant.current_property_name || ""}${unitPart}`);
       setShowTenantDropdown(false);
     },
     [onTenantChange],
