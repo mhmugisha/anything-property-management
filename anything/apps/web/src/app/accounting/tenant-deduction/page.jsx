@@ -169,25 +169,24 @@ export default function TenantDeductionPage() {
             </p>
           </div>
 
-          <TenantDeductionForm
-            landlordId={landlordId}
-            tenantId={tenantId}
-            date={date}
-            description={description}
-            amount={amount}
-            paymentAccountId={paymentAccountId}
-            landlords={landlords}
-            tenants={tenants}
-            paymentAccounts={paymentAccounts}
-            onLandlordChange={onLandlordChange}
-            onTenantChange={setTenantId}
-            onDateChange={setDate}
-            onDescriptionChange={setDescription}
-            onAmountChange={setAmount}
-            onPaymentAccountChange={setPaymentAccountId}
-            onSubmit={onSubmit}
-            isPending={createTenantDeductionMutation.isPending}
-          />
+          <div className="max-w-[960px] mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <TenantDeductionForm
+              tenantId={tenantId}
+              date={date}
+              description={description}
+              amount={amount}
+              paymentAccountId={paymentAccountId}
+              tenants={tenants}
+              paymentAccounts={paymentAccounts}
+              onTenantChange={setTenantId}
+              onDateChange={setDate}
+              onDescriptionChange={setDescription}
+              onAmountChange={setAmount}
+              onPaymentAccountChange={setPaymentAccountId}
+              onSubmit={onSubmit}
+              isPending={createTenantDeductionMutation.isPending}
+            />
+          </div>
 
           {successMessage ? (
             <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700">
