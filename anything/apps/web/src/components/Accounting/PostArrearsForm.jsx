@@ -114,6 +114,11 @@ export function PostArrearsForm({
                         <div className="font-medium text-slate-800">
                           {label}
                         </div>
+                        {(t.current_property_name || t.current_unit_number) && (
+                          <div className="text-xs text-slate-500">
+                            {t.current_property_name}{t.current_unit_number ? ` - Unit ${t.current_unit_number}` : ""}
+                          </div>
+                        )}
                       </button>
                     );
                   })}
