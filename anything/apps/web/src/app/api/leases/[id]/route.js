@@ -172,8 +172,12 @@ export async function PUT(request, { params: { id } }) {
       }
     }
 
-    // Keep future unpaid invoices in sync (unit/property, amount).
-    // Management fees are no longer stored per invoice line.
+    // Keep current and future rent invoices in sync (unit/property, amount).
+    // Only updates from the current month onwards and only automatic rent invoices.
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
     await sql`
       UPDATE invoices
       SET unit_id = ${unitId},
@@ -183,8 +187,11 @@ export async function PUT(request, { params: { id } }) {
           commission_rate = 0,
           commission_amount = 0
       WHERE lease_id = ${leaseId}
-        AND status <> 'paid'
-        AND paid_amount = 0
+        AND (
+          invoice_year > ${currentYear}
+          OR (invoice_year = ${currentYear} AND invoice_month >= ${currentMonth})
+        )
+        AND description LIKE 'Rent for:%'
     `;
 
     // Ensure invoices exist (handles newly extended date range up to current month)
