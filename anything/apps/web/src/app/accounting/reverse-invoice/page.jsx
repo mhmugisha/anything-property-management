@@ -210,25 +210,26 @@ export default function ReverseInvoicePage() {
             </p>
           </div>
 
-          <ReverseInvoiceForm
-            propertyId={propertyId}
-            tenantId={tenantId}
-            invoiceId={invoiceId}
-            date={date}
-            description={description}
-            amount={amount}
-            properties={properties}
-            tenants={tenants}
-            invoices={invoices}
-            onPropertyChange={onPropertyChange}
-            onTenantChange={onTenantChange}
-            onInvoiceChange={setInvoiceId}
-            onDateChange={setDate}
-            onDescriptionChange={setDescription}
-            onAmountChange={setAmount}
-            onSubmit={onSubmit}
-            isPending={reverseInvoiceMutation.isPending}
-          />
+          <div className="max-w-[960px] mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <ReverseInvoiceForm
+              propertyId={propertyId}
+              tenantId={tenantId}
+              invoiceId={invoiceId}
+              date={date}
+              description={description}
+              amount={amount}
+              properties={properties}
+              tenants={tenants}
+              invoices={invoices}
+              onTenantChange={onTenantChange}
+              onInvoiceChange={setInvoiceId}
+              onDateChange={setDate}
+              onDescriptionChange={setDescription}
+              onAmountChange={setAmount}
+              onSubmit={onSubmit}
+              isPending={reverseInvoiceMutation.isPending}
+            />
+          </div>
 
           {successMessage ? (
             <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700">
