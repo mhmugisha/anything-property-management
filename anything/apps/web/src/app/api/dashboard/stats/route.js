@@ -352,6 +352,8 @@ export async function GET(request) {
             AND pay.is_reversed = false
             AND COALESCE(i.is_deleted, false) = false
             AND COALESCE(p.management_fee_type, 'percent') = 'percent'
+            AND i.invoice_month = ${currentMonth}
+            AND i.invoice_year = ${currentYear}
           GROUP BY i.property_id
         ),
         fixed_accrued AS (
