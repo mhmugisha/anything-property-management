@@ -334,17 +334,47 @@ export async function GET(request) {
         WHERE status = 'active'
       `,
 
-      // Management fees (this month) — sum credit-side transactions to the
-      // management fee income account (4100) so this matches the P&L exactly,
-      // including fees from landlord_deductions and other non-invoice sources.
+      // Management fees collected (this month):
+      // - Percentage fee properties: fees on payments actually received this month
+      // - Fixed fee properties: full fixed fee amount regardless of collections
       sql`
-        SELECT COALESCE(SUM(t.amount), 0) AS total
-        FROM transactions t
-        JOIN chart_of_accounts a ON a.id = t.credit_account_id
-        WHERE a.account_code = '4100'
-          AND COALESCE(t.is_deleted, false) = false
-          AND t.transaction_date >= ${monthStart}::date
-          AND t.transaction_date <= ${todayYmd}::date
+        WITH percent_collected AS (
+          SELECT
+            i.property_id,
+            SUM(pia.amount_applied)::numeric(15,2) AS collected,
+            MAX(COALESCE(p.management_fee_percent, 0))::numeric(5,2) AS fee_percent
+          FROM payment_invoice_allocations pia
+          JOIN invoices i ON i.id = pia.invoice_id
+          JOIN payments pay ON pay.id = pia.payment_id
+          JOIN properties p ON p.id = i.property_id
+          WHERE pay.payment_date >= ${monthStart}::date
+            AND pay.payment_date <= ${todayYmd}::date
+            AND pay.is_reversed = false
+            AND COALESCE(i.is_deleted, false) = false
+            AND COALESCE(p.management_fee_type, 'percent') = 'percent'
+          GROUP BY i.property_id
+        ),
+        fixed_accrued AS (
+          SELECT
+            i.property_id,
+            LEAST(
+              MAX(COALESCE(p.management_fee_fixed_amount, 0))::numeric(15,2),
+              SUM(i.amount)::numeric(15,2)
+            ) AS fee_amount
+          FROM invoices i
+          JOIN properties p ON p.id = i.property_id
+          WHERE i.invoice_month = ${currentMonth}
+            AND i.invoice_year = ${currentYear}
+            AND i.status <> 'void'
+            AND COALESCE(i.is_deleted, false) = false
+            AND COALESCE(p.management_fee_type, 'percent') = 'fixed'
+          GROUP BY i.property_id
+        )
+        SELECT COALESCE(
+          (SELECT SUM(ROUND((collected * fee_percent / 100.0)::numeric, 2)) FROM percent_collected) +
+          (SELECT COALESCE(SUM(fee_amount), 0) FROM fixed_accrued),
+          0
+        ) AS total
       `,
 
       // Management fees accrued (this month) — based on all invoices regardless of payment
