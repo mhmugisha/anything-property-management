@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -81,6 +82,7 @@ export async function POST(request) {
     // Insert the arrears invoice
     // lease_id is NULL because arrears are not tied to a specific lease
     // This invoice will be included in property-month summaries and management fee calculations
+    const approval = getApprovalFields(perm.staff);
     const rows = await sql`
       INSERT INTO invoices (
         lease_id, tenant_id, property_id, unit_id,
@@ -89,7 +91,8 @@ export async function POST(request) {
         description,
         amount, currency,
         commission_rate, commission_amount,
-        paid_amount, status
+        paid_amount, status,
+        approval_status, approved_by, approved_at
       )
       VALUES (
         NULL, ${tenantId}, ${propertyId}, ${unitId},
@@ -98,7 +101,8 @@ export async function POST(request) {
         ${invoiceDescription},
         ${amount}, ${currency},
         0, 0,
-        0, 'open'
+        0, 'open',
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
       RETURNING *
     `;

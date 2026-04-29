@@ -4,6 +4,7 @@ import {
   getAccountById,
   ensureCanCreditAccount,
 } from "@/app/api/utils/accounting";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -96,6 +97,7 @@ export async function POST(request) {
     // Create the transfer transaction
     // Debit the destination account (increases its balance if asset)
     // Credit the source account (decreases its balance if asset)
+    const approval = getApprovalFields(perm.staff);
     const result = await sql`
       INSERT INTO transactions (
         transaction_date,
@@ -106,7 +108,8 @@ export async function POST(request) {
         amount,
         currency,
         created_by,
-        source_type
+        source_type,
+        approval_status, approved_by, approved_at
       )
       VALUES (
         ${transferDate}::date,
@@ -117,7 +120,8 @@ export async function POST(request) {
         ${amount},
         'UGX',
         ${perm.staff.id},
-        'manual'
+        'manual',
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
       RETURNING *
     `;

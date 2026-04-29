@@ -7,6 +7,7 @@ import {
   getDueToLandlordsBalance,
 } from "@/app/api/utils/accounting";
 import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -212,20 +213,23 @@ export async function PUT(request, { params: { id } }) {
         WHERE id = ${oldTx.id}
       `;
     } else {
+      const approval = getApprovalFields(perm.staff);
       await sql`
         INSERT INTO transactions (
           transaction_date, description, reference_number,
           debit_account_id, credit_account_id,
           amount, currency, created_by,
           landlord_id, property_id,
-          source_type, source_id
+          source_type, source_id,
+          approval_status, approved_by, approved_at
         )
         VALUES (
           ${payoutDate}::date, ${desc}, ${referenceNumber},
           ${rentPayableId}, ${creditAccountId},
           ${amount}, 'UGX', ${perm.staff.id},
           ${updatedPayout.landlord_id}, ${updatedPayout.property_id},
-          'landlord_payout', ${payoutId}
+          'landlord_payout', ${payoutId},
+          ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
         )
       `;
     }

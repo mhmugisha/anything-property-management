@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureCanCreditAccount } from "@/app/api/utils/accounting";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -121,6 +122,7 @@ export async function POST(request) {
       );
     }
 
+    const approval = getApprovalFields(perm.staff);
     const undepositedFundsAccountId = await getAccountIdByCode("1130");
     if (!undepositedFundsAccountId) {
       return Response.json(
@@ -199,14 +201,16 @@ export async function POST(request) {
             debit_account_id, credit_account_id,
             amount, currency,
             created_by,
-            source_type
+            source_type,
+            approval_status, approved_by, approved_at
           )
           SELECT
             $3::date, $4, NULL,
             $5::int, $2::int,
             agg.total, agg.currency,
             $6::int,
-            'deposit'
+            'deposit',
+            $8, $9, $10::timestamptz
           FROM agg
           WHERE agg.cnt = $7::int
             AND agg.total > 0
@@ -245,6 +249,9 @@ export async function POST(request) {
         depositToAccountId,
         perm.staff.id,
         expectedCount,
+        approval.approval_status,
+        approval.approved_by,
+        approval.approved_at,
       ]);
 
       const r = rows?.[0];
@@ -378,7 +385,8 @@ export async function POST(request) {
           amount, currency,
           created_by,
           landlord_id, property_id,
-          source_type, source_id
+          source_type, source_id,
+          approval_status, approved_by, approved_at
         )
         SELECT
           inv.payment_date::date,
@@ -388,7 +396,8 @@ export async function POST(request) {
           inv.amount, inv.currency,
           $4::int,
           inv.landlord_id, inv.property_id,
-          'payment', inv.id
+          'payment', inv.id,
+          $5, $6, $7::timestamptz
         FROM inv
         WHERE inv.amount > 0
         RETURNING id, source_id
@@ -401,6 +410,9 @@ export async function POST(request) {
         undepositedFundsAccountId,
         rentReceivableAccountId,
         perm.staff.id,
+        approval.approval_status,
+        approval.approved_by,
+        approval.approved_at,
       ],
     );
 
@@ -458,14 +470,16 @@ export async function POST(request) {
           debit_account_id, credit_account_id,
           amount, currency,
           created_by,
-          source_type
+          source_type,
+          approval_status, approved_by, approved_at
         )
         SELECT
           $2::date, $3, NULL,
           $4::int, $5::int,
           agg.total, agg.currency,
           $6::int,
-          'deposit'
+          'deposit',
+          $8, $9, $10::timestamptz
         FROM agg
         WHERE agg.cnt = $7::int
           AND agg.total > 0
@@ -518,6 +532,9 @@ export async function POST(request) {
       undepositedFundsAccountId,
       perm.staff.id,
       expectedCount,
+      approval.approval_status,
+      approval.approved_by,
+      approval.approved_at,
     ]);
 
     const r = rows?.[0] || null;

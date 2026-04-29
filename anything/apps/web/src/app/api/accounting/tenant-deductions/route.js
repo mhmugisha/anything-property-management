@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureCanCreditAccount } from "@/app/api/utils/accounting";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -101,14 +102,17 @@ export async function POST(request) {
       return Response.json(guard.body, { status: guard.status });
     }
 
+    const approval = getApprovalFields(perm.staff);
     const rows = await sql`
       INSERT INTO tenant_deductions (
         tenant_id, property_id, deduction_date, description, amount, created_by,
-        is_deleted
+        is_deleted,
+        approval_status, approved_by, approved_at
       )
       VALUES (
         ${tenantId}, ${propertyId || null}, ${deductionDate}::date, ${description}, ${amount}, ${perm.staff.id},
-        false
+        false,
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
       RETURNING *
     `;
@@ -134,7 +138,8 @@ export async function POST(request) {
         amount, currency, created_by,
         landlord_id, property_id,
         expense_scope,
-        source_type, source_id
+        source_type, source_id,
+        approval_status, approved_by, approved_at
       )
       VALUES (
         ${deductionDate}::date, ${txDesc}, NULL,
@@ -142,7 +147,8 @@ export async function POST(request) {
         ${amount}, 'UGX', ${perm.staff.id},
         ${landlordId || null}, ${propertyId || null},
         'tenant',
-        'tenant_deduction', ${deduction.id}
+        'tenant_deduction', ${deduction.id},
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
       RETURNING *
     `;

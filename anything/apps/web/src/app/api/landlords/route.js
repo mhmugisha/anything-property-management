@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 const ALLOWED_PAYMENT_METHODS = new Set(["bank", "mobile_money"]);
@@ -196,6 +197,7 @@ export async function POST(request) {
       return Response.json({ error: "full_name is required" }, { status: 400 });
     }
 
+    const approval = getApprovalFields(perm.staff);
     const rows = await sql`
       INSERT INTO landlords (
         title,
@@ -211,7 +213,8 @@ export async function POST(request) {
         bank_account_title,
         bank_account_number,
         mobile_money_name,
-        mobile_money_phone
+        mobile_money_phone,
+        approval_status, approved_by, approved_at
       )
       VALUES (
         ${title},
@@ -230,7 +233,8 @@ export async function POST(request) {
         ${bankAccountTitleToSave},
         ${bankAccountNumberToSave},
         ${mobileMoneyNameToSave},
-        ${mobileMoneyPhoneToSave}
+        ${mobileMoneyPhoneToSave},
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
       RETURNING
         id,

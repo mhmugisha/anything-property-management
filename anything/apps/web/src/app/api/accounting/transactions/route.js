@@ -5,6 +5,7 @@ import {
   getDueToLandlordsBalance,
 } from "@/app/api/utils/accounting";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -177,20 +178,23 @@ export async function POST(request) {
       return Response.json(guard.body, { status: guard.status });
     }
 
+    const approval = getApprovalFields(perm.staff);
     const rows = await sql`
       INSERT INTO transactions (
         transaction_date, description, reference_number,
         debit_account_id, credit_account_id,
         amount, currency,
         created_by,
-        source_type
+        source_type,
+        approval_status, approved_by, approved_at
       )
       VALUES (
         ${transactionDate}::date, ${description}, ${referenceNumber},
         ${debitAccountId}, ${creditAccountId},
         ${amount}, ${currency},
         ${perm.staff.id},
-        'manual'
+        'manual',
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
       RETURNING *
     `;

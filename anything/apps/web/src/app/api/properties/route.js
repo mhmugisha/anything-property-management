@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -156,13 +157,15 @@ export async function POST(request) {
       }
     }
 
+    const approval = getApprovalFields(perm.staff);
     const created = await sql`
       INSERT INTO properties (
         property_name, address, property_type,
         management_fee_type, management_fee_percent, management_fee_fixed_amount,
         notes,
         landlord_id,
-        created_by
+        created_by,
+        approval_status, approved_by, approved_at
       ) VALUES (
         ${property_name.trim()},
         ${address && typeof address === "string" ? address.trim() : null},
@@ -172,7 +175,8 @@ export async function POST(request) {
         ${feeType === "fixed" ? feeFixed : null},
         ${typeof notes === "string" && notes.trim() ? notes.trim() : null},
         ${landlordId},
-        ${perm.staff.id}
+        ${perm.staff.id},
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
       RETURNING *
     `;
