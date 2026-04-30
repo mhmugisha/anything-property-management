@@ -115,11 +115,18 @@ export async function GET(request) {
           NULL::integer AS invoice_id,
           (pa.total_amount - COALESCE(aa.total_allocated, 0)) AS invoice_amount_applied,
           NULL::text AS invoice_description
-        FROM payment_allocations pa
+        FROM (
+          SELECT DISTINCT
+            payment_id,
+            payment_date,
+            total_amount,
+            payment_method,
+            notes,
+            reference_number
+          FROM payment_allocations
+        ) pa
         LEFT JOIN allocated_amounts aa ON aa.payment_id = pa.payment_id
         WHERE (pa.total_amount - COALESCE(aa.total_allocated, 0)) > 0
-        GROUP BY pa.payment_id, pa.payment_date, pa.total_amount, 
-                 pa.payment_method, pa.notes, pa.reference_number, aa.total_allocated
       ),
       allocated_rows AS (
         SELECT DISTINCT
