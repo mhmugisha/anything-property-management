@@ -214,7 +214,8 @@ export async function POST(request) {
         bank_account_number,
         mobile_money_name,
         mobile_money_phone,
-        approval_status, approved_by, approved_at
+        approval_status, approved_by, approved_at,
+        created_by
       )
       VALUES (
         ${title},
@@ -234,7 +235,8 @@ export async function POST(request) {
         ${bankAccountNumberToSave},
         ${mobileMoneyNameToSave},
         ${mobileMoneyPhoneToSave},
-        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at},
+        ${perm.staff.id}
       )
       RETURNING
         id,
