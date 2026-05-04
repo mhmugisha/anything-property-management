@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { getApprovalFields } from "@/app/api/utils/approval";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 
@@ -178,9 +179,10 @@ export async function POST(request) {
     const emergencyPhone = (body?.emergency_phone || "").trim() || null;
     const status = (body?.status || "active").trim();
 
+    const approval = getApprovalFields(perm.staff);
     const rows = await sql`
-      INSERT INTO tenants (title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status)
-      VALUES (${title}, ${fullName}, ${phone}, ${email}, ${nationalId}, ${emergencyContact}, ${emergencyPhone}, ${status})
+      INSERT INTO tenants (title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, approval_status, approved_by, approved_at)
+      VALUES (${title}, ${fullName}, ${phone}, ${email}, ${nationalId}, ${emergencyContact}, ${emergencyPhone}, ${status}, ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at})
       RETURNING id, title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, created_at
     `;
 

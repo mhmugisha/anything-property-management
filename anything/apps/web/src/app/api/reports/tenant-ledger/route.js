@@ -81,6 +81,7 @@ export async function GET(request) {
       FROM invoices
       WHERE tenant_id = ${tenantId}
         AND COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
         AND invoice_date < ${openingFrom}::date
     `;
 
@@ -90,6 +91,7 @@ export async function GET(request) {
       FROM payments
       WHERE tenant_id = ${tenantId}
         AND is_reversed = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
         AND payment_date < ${openingFrom}::date
     `;
 
@@ -98,6 +100,7 @@ export async function GET(request) {
       FROM tenant_deductions
       WHERE tenant_id = ${tenantId}
         AND COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
         AND deduction_date < ${openingFrom}::date
     `;
 
@@ -124,6 +127,7 @@ export async function GET(request) {
     const invoiceWhere = [
       `i.tenant_id = $1`,
       `COALESCE(i.is_deleted, false) = false`,
+      `COALESCE(i.approval_status, 'approved') = 'approved'`,
     ];
     const invoiceValues = [tenantId];
 
@@ -158,7 +162,7 @@ export async function GET(request) {
     }));
 
     // FIX: Show ALL payments including unallocated/upfront payments
-    const payWhere = [`p.tenant_id = $1`, `p.is_reversed = false`];
+    const payWhere = [`p.tenant_id = $1`, `p.is_reversed = false`, `COALESCE(p.approval_status, 'approved') = 'approved'`];
     const payValues = [tenantId];
 
     if (from) {
@@ -243,7 +247,7 @@ export async function GET(request) {
       });
     }
 
-    const dedWhere = [`tenant_id = $1`];
+    const dedWhere = [`tenant_id = $1`, `COALESCE(approval_status, 'approved') = 'approved'`];
     const dedValues = [tenantId];
 
     if (from) {
@@ -355,6 +359,7 @@ export async function GET(request) {
       FROM invoices
       WHERE tenant_id = ${tenantId}
         AND COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
         AND invoice_date <= ${closingTo}::date
     `;
 
@@ -363,6 +368,7 @@ export async function GET(request) {
       FROM payments
       WHERE tenant_id = ${tenantId}
         AND is_reversed = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
         AND payment_date <= ${closingTo}::date
     `;
 
@@ -371,6 +377,7 @@ export async function GET(request) {
       FROM tenant_deductions
       WHERE tenant_id = ${tenantId}
         AND COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
         AND deduction_date <= ${closingTo}::date
     `;
 

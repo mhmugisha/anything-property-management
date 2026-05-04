@@ -68,6 +68,7 @@ export async function GET(request) {
         FROM invoices i
         WHERE i.property_id = $1
           AND i.status <> 'void'
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.due_date <= $2::date
         GROUP BY i.unit_id
       )

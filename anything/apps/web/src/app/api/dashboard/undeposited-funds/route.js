@@ -53,6 +53,7 @@ export async function GET(request) {
       LEFT JOIN payments pm ON pm.id = t.source_id AND t.source_type = 'payment'
       WHERE t.debit_account_id = ${undepositedFundsId}
         AND COALESCE(t.is_deleted,false) = false
+        AND COALESCE(t.approval_status, 'approved') = 'approved'
         AND t.deposited_by_transaction_id IS NULL
         AND (
           t.source_type <> 'payment'

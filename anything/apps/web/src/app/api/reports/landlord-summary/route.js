@@ -74,6 +74,7 @@ export async function GET(request) {
       WHERE i.invoice_month = ${month}
         AND i.invoice_year = ${year}
         AND i.status <> 'void'
+        AND COALESCE(i.approval_status, 'approved') = 'approved'
       ORDER BY l.full_name, p.property_name, t.full_name
     `;
 

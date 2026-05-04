@@ -23,6 +23,7 @@ export async function GET(request) {
     const finalWhere = [];
     finalWhere.push(typeFilter);
     finalWhere.push("COALESCE(t.is_deleted,false) = false");
+    finalWhere.push("COALESCE(t.approval_status, 'approved') = 'approved'");
     if (where.length > 0) {
       finalWhere.push(...where);
     }
@@ -82,7 +83,7 @@ export async function GET(request) {
     }
 
     // Calculate Retained Earnings from P&L
-    const plWhere = ["COALESCE(t.is_deleted,false) = false"];
+    const plWhere = ["COALESCE(t.is_deleted,false) = false", "COALESCE(t.approval_status, 'approved') = 'approved'"];
     const plValues = [];
 
     if (from) {

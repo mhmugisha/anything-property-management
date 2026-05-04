@@ -198,6 +198,7 @@ export async function GET(request) {
         WHERE i.property_id = $1
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.lease_id IS NOT NULL
           AND i.invoice_date < $2::date
         GROUP BY i.invoice_year, i.invoice_month
@@ -213,6 +214,7 @@ export async function GET(request) {
         WHERE i.property_id = $1
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.lease_id IS NULL
           AND i.invoice_date < $2::date
       `,
@@ -275,6 +277,7 @@ export async function GET(request) {
       "i.property_id = $1",
       "i.status <> 'void'",
       "COALESCE(i.is_deleted, false) = false",
+      "COALESCE(i.approval_status, 'approved') = 'approved'",
       "i.lease_id IS NOT NULL",
     ];
     const creditsValues = [propertyId];
@@ -308,6 +311,7 @@ export async function GET(request) {
     const arrearsWhere = [
       "i.property_id = $1",
       "COALESCE(i.is_deleted, false) = false",
+      "COALESCE(i.approval_status, 'approved') = 'approved'",
       "i.lease_id IS NULL",
     ];
     const arrearsValues = [propertyId];
@@ -344,6 +348,7 @@ export async function GET(request) {
       "i.property_id = $1",
       "i.status <> 'void'",
       "COALESCE(i.is_deleted, false) = false",
+      "COALESCE(i.approval_status, 'approved') = 'approved'",
       "i.lease_id IS NOT NULL", // ONLY regular rent
     ];
     const rentOnlyValues = [propertyId];
@@ -604,6 +609,7 @@ export async function GET(request) {
         WHERE i.property_id = $1
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.lease_id IS NOT NULL
           AND i.invoice_date <= $2::date
         GROUP BY i.invoice_year, i.invoice_month
@@ -618,6 +624,7 @@ export async function GET(request) {
         WHERE i.property_id = $1
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.lease_id IS NULL
           AND i.invoice_date <= $2::date
       `,

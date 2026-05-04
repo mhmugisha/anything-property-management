@@ -2,6 +2,7 @@ import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureInvoicesForLease } from "@/app/api/utils/invoices";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
+import { getApprovalFields } from "@/app/api/utils/approval";
 
 const OPEN_ENDED_END_DATE = "2099-12-31";
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
@@ -140,9 +141,10 @@ export async function POST(request) {
     }
 
     // Create tenant first
+    const approval = getApprovalFields(perm.staff);
     const tenantRows = await sql`
-      INSERT INTO tenants (title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status)
-      VALUES (${title}, ${fullName}, ${phone}, ${email}, ${nationalId}, ${emergencyContact}, ${emergencyPhone}, ${status})
+      INSERT INTO tenants (title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, approval_status, approved_by, approved_at)
+      VALUES (${title}, ${fullName}, ${phone}, ${email}, ${nationalId}, ${emergencyContact}, ${emergencyPhone}, ${status}, ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at})
       RETURNING id, title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, created_at
     `;
 

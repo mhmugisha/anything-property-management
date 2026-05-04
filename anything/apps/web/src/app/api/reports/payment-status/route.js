@@ -135,6 +135,7 @@ export async function GET(request) {
          WHERE lease_id = ANY($1)
            AND invoice_month = $2
            AND invoice_year  = $3
+           AND COALESCE(approval_status, 'approved') = 'approved'
          GROUP BY lease_id`,
         [leaseIds, month, year],
       );
@@ -168,6 +169,7 @@ export async function GET(request) {
            OR (i.lease_id IS NULL AND i.tenant_id = ANY($2))
          )
            AND COALESCE(i.is_deleted, false) = false
+           AND COALESCE(i.approval_status, 'approved') = 'approved'
            AND (
              i.invoice_year < $3
              OR (i.invoice_year = $3 AND i.invoice_month < $4)
@@ -204,6 +206,7 @@ export async function GET(request) {
          FROM payments
          WHERE lease_id = ANY($1)
            AND is_reversed = false
+           AND COALESCE(approval_status, 'approved') = 'approved'
            AND payment_date >= $2::date
            AND payment_date <  $3::date
          GROUP BY lease_id`,

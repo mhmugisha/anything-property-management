@@ -43,6 +43,7 @@ export async function GET(request) {
         AND (i.amount - i.paid_amount) > 0
         AND i.status NOT IN ('void', 'paid')
         AND COALESCE(i.is_deleted, false) = false
+        AND COALESCE(i.approval_status, 'approved') = 'approved'
       ORDER BY i.invoice_year DESC, i.invoice_month DESC, i.id DESC
       LIMIT 36
     `;

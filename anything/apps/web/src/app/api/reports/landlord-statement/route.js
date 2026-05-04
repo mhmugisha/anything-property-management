@@ -55,7 +55,7 @@ export async function GET(request) {
       return Response.json({ error: "Landlord not found" }, { status: 404 });
     }
 
-    const where = [`p.landlord_id = $1`, `i.status <> 'void'`];
+    const where = [`p.landlord_id = $1`, `i.status <> 'void'`, `COALESCE(i.approval_status, 'approved') = 'approved'`];
     const values = [landlordId];
 
     if (from) {
@@ -160,6 +160,7 @@ export async function GET(request) {
       LEFT JOIN tenants t ON t.id = i.tenant_id
       WHERE ${paymentsWhere.join(" AND ")}
         AND pay.is_reversed = false
+        AND COALESCE(pay.approval_status, 'approved') = 'approved'
         AND i.lease_id IS NOT NULL
       ORDER BY pay.payment_date DESC, pay.id DESC
       LIMIT 2000
@@ -167,7 +168,7 @@ export async function GET(request) {
 
     const payments = await sql(paymentsQuery, paymentsValues);
 
-    const deductionsWhere = [`d.landlord_id = $1`];
+    const deductionsWhere = [`d.landlord_id = $1`, `COALESCE(d.approval_status, 'approved') = 'approved'`];
     const deductionsValues = [landlordId];
 
     if (from) {
@@ -344,6 +345,7 @@ export async function GET(request) {
       WHERE p.landlord_id = $1
         AND i.status <> 'void'
         AND COALESCE(i.is_deleted, false) = false
+        AND COALESCE(i.approval_status, 'approved') = 'approved'
     `;
     const allTimeInvoices = await sql(allTimeInvoicesQuery, [landlordId]);
 
@@ -381,6 +383,7 @@ export async function GET(request) {
       FROM landlord_deductions
       WHERE landlord_id = $1
         AND COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
     `;
     const allTimeDeductionsRows = await sql(allTimeDeductionsQuery, [
       landlordId,

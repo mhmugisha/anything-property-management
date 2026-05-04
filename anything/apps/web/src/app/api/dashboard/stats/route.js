@@ -84,6 +84,7 @@ async function calculateAmountDueToLandlords() {
         WHERE i.property_id = ${propertyId}
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
       `;
 
       const propertyRent = (invoices || []).reduce((sum, inv) => {
@@ -126,6 +127,7 @@ async function calculateAmountDueToLandlords() {
         WHERE landlord_id = ${llId}
           AND property_id = ${propertyId}
           AND COALESCE(is_deleted, false) = false
+          AND COALESCE(approval_status, 'approved') = 'approved'
       `;
 
       otherDeductionsTotal += Number(deductions?.[0]?.deduction_total || 0);
@@ -267,6 +269,7 @@ export async function GET(request) {
           AND invoice_year = ${currentYear}
           AND status <> 'void'
           AND COALESCE(is_deleted, false) = false
+          AND COALESCE(approval_status, 'approved') = 'approved'
       `,
 
       // Rent collected for current month
@@ -278,7 +281,9 @@ export async function GET(request) {
         WHERE i.invoice_month = ${currentMonth}
           AND i.invoice_year = ${currentYear}
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND p.is_reversed = false
+          AND COALESCE(p.approval_status, 'approved') = 'approved'
       `,
 
       // Outstanding rent (all open invoices)
@@ -288,6 +293,7 @@ export async function GET(request) {
         WHERE (i.amount - i.paid_amount) > 0
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
       `,
 
       // Arrears (not paid in issue month)
@@ -297,6 +303,7 @@ export async function GET(request) {
         WHERE (i.amount - i.paid_amount) > 0
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND (
             i.invoice_year < ${currentYear}
             OR (i.invoice_year = ${currentYear} AND i.invoice_month < ${currentMonth})
@@ -310,6 +317,7 @@ export async function GET(request) {
         WHERE (i.amount - i.paid_amount) > 0
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.due_date < ${monthStart}::date
       `,
 
@@ -362,6 +370,7 @@ export async function GET(request) {
             AND i.invoice_year = ${currentYear}
             AND i.status <> 'void'
             AND COALESCE(i.is_deleted, false) = false
+            AND COALESCE(i.approval_status, 'approved') = 'approved'
           GROUP BY i.property_id
         )
         SELECT COALESCE(
@@ -455,6 +464,7 @@ export async function GET(request) {
             WHERE p.landlord_id = l.id
               AND i.status <> 'void'
               AND COALESCE(i.is_deleted, false) = false
+              AND COALESCE(i.approval_status, 'approved') = 'approved'
             GROUP BY i.property_id, i.invoice_year, i.invoice_month
           ),
           by_prop_month_with_fee AS (
