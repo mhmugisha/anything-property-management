@@ -3,6 +3,7 @@ import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
 import { autoApplyAdvancePaymentsToOpenInvoices } from "@/app/api/utils/payments/autoApply";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -170,6 +171,16 @@ export async function POST(request) {
       newValues: invoice,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Manual Invoice Pending Approval",
+        message: `New manual invoice of ${currency} ${Number(amount).toLocaleString()} for ${lease.tenant_name || "Tenant"} is pending approval. Posted by ${perm.staff.full_name || "Staff"}`,
+        type: "invoice",
+        reference_id: invoice?.id,
+        reference_type: "invoice",
+      });
+    }
 
     return Response.json({ invoice });
   } catch (error) {

@@ -302,6 +302,16 @@ export async function POST(request) {
         reference_type: "payment",
       });
 
+      if (approvalA.approval_status === "pending") {
+        notifyAllAdminsAsync({
+          title: "New Payment Pending Approval",
+          message: `New payment of ${invoice.currency || "UGX"} ${Number(amount).toLocaleString()} from ${invoice.tenant_name || "Tenant"} for ${invoice.description} is pending approval. Recorded by ${perm.staff.full_name || "Staff"}`,
+          type: "payment",
+          reference_id: payment.id,
+          reference_type: "payment",
+        });
+      }
+
       return Response.json({ payment, invoice: updatedInvoice });
     }
 
@@ -427,6 +437,16 @@ export async function POST(request) {
       reference_id: payment.id,
       reference_type: "payment",
     });
+
+    if (approvalB.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Advance Payment Pending Approval",
+        message: `New advance payment of ${lease.currency || "UGX"} ${Number(amount).toLocaleString()} from ${lease.tenant_name || "Tenant"} at ${lease.property_name} is pending approval. Recorded by ${perm.staff.full_name || "Staff"}`,
+        type: "payment",
+        reference_id: payment.id,
+        reference_type: "payment",
+      });
+    }
 
     // ENHANCEMENT: Immediately auto-apply advance payment to outstanding invoices
     let autoApplyResult = null;

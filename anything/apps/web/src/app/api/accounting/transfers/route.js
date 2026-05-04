@@ -5,6 +5,7 @@ import {
   ensureCanCreditAccount,
 } from "@/app/api/utils/accounting";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -137,6 +138,16 @@ export async function POST(request) {
       newValues: transaction,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Transfer Pending Approval",
+        message: `New transfer of UGX ${Number(amount).toLocaleString()} - ${description} is pending approval. Posted by ${perm.staff.full_name || "Staff"}`,
+        type: "transaction",
+        reference_id: transaction?.id,
+        reference_type: "transaction",
+      });
+    }
 
     return Response.json({
       ok: true,

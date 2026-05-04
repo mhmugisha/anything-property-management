@@ -2,6 +2,7 @@ import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureCanCreditAccount } from "@/app/api/utils/accounting";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -174,6 +175,16 @@ export async function POST(request) {
       newValues: tx,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Tenant Deduction Pending Approval",
+        message: `New tenant deduction of UGX ${Number(amount).toLocaleString()} - ${description} is pending approval. Posted by ${perm.staff.full_name || "Staff"}`,
+        type: "deduction",
+        reference_id: deduction?.id,
+        reference_type: "tenant_deduction",
+      });
+    }
 
     return Response.json({ deduction, transaction: tx });
   } catch (error) {

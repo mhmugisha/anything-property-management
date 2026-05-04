@@ -2,6 +2,7 @@ import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureCanCreditAccount } from "@/app/api/utils/accounting";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -316,6 +317,16 @@ export async function POST(request) {
         ipAddress: perm.ipAddress,
       });
 
+      if (approval.approval_status === "pending") {
+        notifyAllAdminsAsync({
+          title: "New Deposit Pending Approval",
+          message: `New deposit of ${r?.currency || "UGX"} ${Number(r?.amount || 0).toLocaleString()} - ${description} is pending approval. Posted by ${perm.staff.full_name || "Staff"}`,
+          type: "transaction",
+          reference_id: depositTxn?.id,
+          reference_type: "transaction",
+        });
+      }
+
       return Response.json({
         transaction: depositTxn,
         deposited_transaction_ids: markedIds,
@@ -604,6 +615,16 @@ export async function POST(request) {
       },
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Deposit Pending Approval",
+        message: `New deposit of ${r?.currency || "UGX"} ${Number(r?.amount || 0).toLocaleString()} - ${description} is pending approval. Posted by ${perm.staff.full_name || "Staff"}`,
+        type: "transaction",
+        reference_id: tx?.id,
+        reference_type: "transaction",
+      });
+    }
 
     return Response.json({
       transaction: tx,

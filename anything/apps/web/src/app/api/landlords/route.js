@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 const ALLOWED_PAYMENT_METHODS = new Set(["bank", "mobile_money"]);
@@ -269,6 +270,16 @@ export async function POST(request) {
       newValues: landlord,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Landlord Pending Approval",
+        message: `New landlord ${fullName} has been created and is pending approval. Added by ${perm.staff.full_name || "Staff"}`,
+        type: "landlord",
+        reference_id: landlord?.id,
+        reference_type: "landlord",
+      });
+    }
 
     return Response.json({ landlord });
   } catch (error) {

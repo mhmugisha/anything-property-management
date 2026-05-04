@@ -6,6 +6,7 @@ import {
 } from "@/app/api/utils/accounting";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -185,6 +186,16 @@ export async function POST(request) {
       newValues: post.transaction,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Landlord Deduction Pending Approval",
+        message: `New landlord deduction of UGX ${Number(amount).toLocaleString()} - ${description} is pending approval. Posted by ${perm.staff.full_name || "Staff"}`,
+        type: "deduction",
+        reference_id: deduction?.id,
+        reference_type: "landlord_deduction",
+      });
+    }
 
     return Response.json({ deduction, transaction: post.transaction });
   } catch (error) {

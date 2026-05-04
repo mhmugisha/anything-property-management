@@ -229,6 +229,16 @@ export async function POST(request) {
       reference_type: "transaction",
     });
 
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Transaction Pending Approval",
+        message: `New manual transaction of ${currency} ${Number(amount).toLocaleString()} - ${description} is pending approval. Posted by ${perm.staff.full_name || "Staff"}`,
+        type: "transaction",
+        reference_id: tx?.id,
+        reference_type: "transaction",
+      });
+    }
+
     return Response.json({ transaction: tx });
   } catch (error) {
     console.error("POST /api/accounting/transactions error", error);

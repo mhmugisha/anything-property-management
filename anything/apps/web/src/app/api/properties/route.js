@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -192,6 +193,16 @@ export async function POST(request) {
       newValues: property,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Property Pending Approval",
+        message: `New property ${property_name.trim()} has been created and is pending approval. Added by ${perm.staff.full_name || "Staff"}`,
+        type: "property",
+        reference_id: property?.id,
+        reference_type: "property",
+      });
+    }
 
     return Response.json({ property });
   } catch (error) {

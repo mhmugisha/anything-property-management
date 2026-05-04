@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getApprovalFields } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 
@@ -197,6 +198,16 @@ export async function POST(request) {
       newValues: tenant,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Tenant Pending Approval",
+        message: `New tenant ${fullName} has been created and is pending approval. Added by ${perm.staff.full_name || "Staff"}`,
+        type: "tenant",
+        reference_id: tenant?.id,
+        reference_type: "tenant",
+      });
+    }
 
     return Response.json({ tenant });
   } catch (error) {
