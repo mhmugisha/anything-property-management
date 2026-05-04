@@ -1,9 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { safeIdentifier } from "./sanitize";
 
-let cached = null;
-let cachedAt = 0;
-const CACHE_MS = 60_000;
 
 function scoreAccountsTable(columns) {
   const colSet = new Set(columns);
@@ -96,12 +93,7 @@ function pickColumn(columns, candidates) {
   return null;
 }
 
-export async function discoverAccountingModel({ force = false } = {}) {
-  const now = Date.now();
-  if (!force && cached && now - cachedAt < CACHE_MS) {
-    return cached;
-  }
-
+export async function discoverAccountingModel() {
   const tables = await listPublicTables();
 
   const meta = [];
@@ -124,14 +116,12 @@ export async function discoverAccountingModel({ force = false } = {}) {
     transactionCandidates?.[0]?.score >= 7 ? transactionCandidates[0] : null;
 
   if (!accountsTable || !transactionsTable) {
-    cached = {
+    return {
       ok: false,
       error: "Could not discover accounting storage tables",
       accountsTable: accountsTable?.table || null,
       transactionsTable: transactionsTable?.table || null,
     };
-    cachedAt = now;
-    return cached;
   }
 
   const accountsPk = await getPrimaryKeyColumn(accountsTable.table);
@@ -203,7 +193,5 @@ export async function discoverAccountingModel({ force = false } = {}) {
     if (v) model.transactions[k] = safeIdentifier(v);
   }
 
-  cached = model;
-  cachedAt = now;
   return model;
 }
