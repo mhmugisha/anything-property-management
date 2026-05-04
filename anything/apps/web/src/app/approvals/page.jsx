@@ -31,6 +31,9 @@ const TYPE_LABELS = {
   transactions: "Transactions",
   tenantDeductions: "Tenant Deductions",
   landlordDeductions: "Landlord Deductions",
+  landlords: "Landlords",
+  properties: "Properties",
+  tenants: "Tenants",
 };
 
 const TYPE_API_KEYS = {
@@ -39,6 +42,9 @@ const TYPE_API_KEYS = {
   transactions: "transactions",
   tenantDeductions: "tenant_deductions",
   landlordDeductions: "landlord_deductions",
+  landlords: "landlords",
+  properties: "properties",
+  tenants: "tenants",
 };
 
 function formatAmount(amount, currency) {
@@ -145,7 +151,7 @@ function EntryCard({ entry, typeKey, onApprove, onReject, isPending }) {
   );
 }
 
-function SectionGroup({ label, entries, typeKey, onApprove, onReject, isPending }) {
+function SectionGroup({ label, entries, typeKey, onApprove, onReject, isPending, CardComponent = EntryCard }) {
   if (!entries || entries.length === 0) return null;
 
   return (
@@ -155,7 +161,7 @@ function SectionGroup({ label, entries, typeKey, onApprove, onReject, isPending 
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {entries.map((entry) => (
-          <EntryCard
+          <CardComponent
             key={entry.id}
             entry={entry}
             typeKey={typeKey}
@@ -165,6 +171,110 @@ function SectionGroup({ label, entries, typeKey, onApprove, onReject, isPending 
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+function EntityCard({ entry, typeKey, onApprove, onReject, isPending }) {
+  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const handleReject = () => {
+    onReject(entry.id, rejectReason);
+    setShowRejectInput(false);
+    setRejectReason("");
+  };
+
+  const createdBy = entry.created_by_name || "—";
+
+  let title = "—";
+  let details = [];
+
+  if (typeKey === "landlords") {
+    title = entry.full_name || "—";
+    details = [
+      entry.phone && `Phone: ${entry.phone}`,
+      entry.email && `Email: ${entry.email}`,
+    ].filter(Boolean);
+  } else if (typeKey === "properties") {
+    title = entry.property_name || "—";
+    const feeType = String(entry.management_fee_type || "percent").toLowerCase();
+    const feeDisplay =
+      feeType === "fixed"
+        ? `Fixed UGX ${Number(entry.management_fee_fixed_amount || 0).toLocaleString()}`
+        : `${Number(entry.management_fee_percent || 0)}% of rent`;
+    details = [
+      entry.landlord_name && `Landlord: ${entry.landlord_name}`,
+      `Fee: ${feeDisplay}`,
+    ].filter(Boolean);
+  } else if (typeKey === "tenants") {
+    title = entry.full_name || "—";
+    details = [
+      entry.phone && `Phone: ${entry.phone}`,
+      entry.email && `Email: ${entry.email}`,
+    ].filter(Boolean);
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+      <div className="min-w-0">
+        <div className="font-medium text-slate-800 truncate">{title}</div>
+        {details.length > 0 && (
+          <div className="text-xs text-slate-500 mt-0.5 space-y-0.5">
+            {details.map((d, i) => <div key={i}>{d}</div>)}
+          </div>
+        )}
+      </div>
+
+      <div className="text-xs text-slate-500">
+        Created by: <span className="font-medium text-slate-700">{createdBy}</span>
+      </div>
+
+      {showRejectInput ? (
+        <div className="space-y-2">
+          <input
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Reason for rejection (optional)"
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none text-sm"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleReject}
+              disabled={isPending}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 text-sm font-medium"
+            >
+              <XCircle className="w-4 h-4" />
+              Confirm Reject
+            </button>
+            <button
+              onClick={() => { setShowRejectInput(false); setRejectReason(""); }}
+              className="px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <button
+            onClick={() => onApprove(entry.id)}
+            disabled={isPending}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 text-sm font-medium"
+          >
+            <CheckCircle className="w-4 h-4" />
+            Approve
+          </button>
+          <button
+            onClick={() => setShowRejectInput(true)}
+            disabled={isPending}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50 text-sm font-medium"
+          >
+            <XCircle className="w-4 h-4" />
+            Reject
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -234,13 +344,19 @@ export default function ApprovalsPage() {
   const transactions = data.transactions || [];
   const tenantDeductions = data.tenantDeductions || [];
   const landlordDeductions = data.landlordDeductions || [];
+  const landlords = data.landlords || [];
+  const properties = data.properties || [];
+  const tenants = data.tenants || [];
 
   const totalPending =
     payments.length +
     invoices.length +
     transactions.length +
     tenantDeductions.length +
-    landlordDeductions.length;
+    landlordDeductions.length +
+    landlords.length +
+    properties.length +
+    tenants.length;
 
   return (
     <div className="min-h-screen bg-slate-200 font-inter">
@@ -333,6 +449,33 @@ export default function ApprovalsPage() {
                 onApprove={handleApprove(TYPE_API_KEYS.landlordDeductions)}
                 onReject={handleReject(TYPE_API_KEYS.landlordDeductions)}
                 isPending={approvalMutation.isPending}
+              />
+              <SectionGroup
+                label={TYPE_LABELS.landlords}
+                entries={landlords}
+                typeKey="landlords"
+                onApprove={handleApprove(TYPE_API_KEYS.landlords)}
+                onReject={handleReject(TYPE_API_KEYS.landlords)}
+                isPending={approvalMutation.isPending}
+                CardComponent={EntityCard}
+              />
+              <SectionGroup
+                label={TYPE_LABELS.properties}
+                entries={properties}
+                typeKey="properties"
+                onApprove={handleApprove(TYPE_API_KEYS.properties)}
+                onReject={handleReject(TYPE_API_KEYS.properties)}
+                isPending={approvalMutation.isPending}
+                CardComponent={EntityCard}
+              />
+              <SectionGroup
+                label={TYPE_LABELS.tenants}
+                entries={tenants}
+                typeKey="tenants"
+                onApprove={handleApprove(TYPE_API_KEYS.tenants)}
+                onReject={handleReject(TYPE_API_KEYS.tenants)}
+                isPending={approvalMutation.isPending}
+                CardComponent={EntityCard}
               />
             </div>
           )}

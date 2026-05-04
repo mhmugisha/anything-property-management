@@ -11,7 +11,16 @@ export async function GET(request) {
   }
 
   try {
-    const [payments, invoices, transactions, tenantDeductions, landlordDeductions] = await Promise.all([
+    const [
+      payments,
+      invoices,
+      transactions,
+      tenantDeductions,
+      landlordDeductions,
+      landlordRows,
+      propertyRows,
+      tenantRows,
+    ] = await Promise.all([
       sql`
         SELECT p.*, s.full_name AS created_by_name, t.full_name AS tenant_name,
                pr.property_name
@@ -64,7 +73,34 @@ export async function GET(request) {
           AND COALESCE(ld.is_deleted, false) = false
         ORDER BY ld.created_at DESC
       `,
+      sql`
+        SELECT l.*, s.full_name AS created_by_name
+        FROM landlords l
+        LEFT JOIN staff_users s ON s.id = l.created_by
+        WHERE l.approval_status = 'pending'
+        ORDER BY l.created_at DESC
+      `,
+      sql`
+        SELECT p.*, s.full_name AS created_by_name,
+               l.full_name AS landlord_name
+        FROM properties p
+        LEFT JOIN staff_users s ON s.id = p.created_by
+        LEFT JOIN landlords l ON l.id = p.landlord_id
+        WHERE p.approval_status = 'pending'
+        ORDER BY p.created_at DESC
+      `,
+      sql`
+        SELECT t.*, s.full_name AS created_by_name
+        FROM tenants t
+        LEFT JOIN staff_users s ON s.id = t.created_by
+        WHERE t.approval_status = 'pending'
+        ORDER BY t.created_at DESC
+      `,
     ]);
+
+    const landlords = landlordRows || [];
+    const properties = propertyRows || [];
+    const tenants = tenantRows || [];
 
     return Response.json({
       payments,
@@ -72,6 +108,9 @@ export async function GET(request) {
       transactions,
       tenantDeductions,
       landlordDeductions,
+      landlords,
+      properties,
+      tenants,
     });
   } catch (error) {
     console.error('GET /api/approvals error', error);
