@@ -34,12 +34,7 @@ export default function DashboardSidebar() {
         >
           Payment Status
         </a>
-        <a
-          href="/approvals"
-          className="flex items-center px-4 py-2.5 rounded-lg text-slate-200 hover:bg-white/10 transition-colors text-sm font-medium"
-        >
-          Pending Approvals
-        </a>
+
       </div>
     </div>
   );
