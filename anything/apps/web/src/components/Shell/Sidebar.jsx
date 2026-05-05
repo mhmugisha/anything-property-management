@@ -3,6 +3,7 @@
 import { LogOut, Settings } from "lucide-react";
 import useUser from "@/utils/useUser";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
+import { PendingApprovalsLink } from "@/components/Shell/PendingApprovalsLink";
 
 export default function Sidebar({ active, children }) {
   const { data: user, loading: userLoading } = useUser();
@@ -14,8 +15,9 @@ export default function Sidebar({ active, children }) {
       {/* Dynamic content area */}
       <div className="flex-1 px-3 pt-4 overflow-y-auto overflow-x-hidden">{children}</div>
 
-      {/* Bottom section: Settings + Sign Out */}
+      {/* Bottom section: Pending Approvals + Settings + Sign Out */}
       <div className="px-3 pb-4 space-y-2">
+        <PendingApprovalsLink isAdmin={isAdmin} enabled={!userLoading && !!user} />
         {isAdmin ? (
           <a
             href="/settings"

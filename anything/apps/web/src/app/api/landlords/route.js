@@ -1,5 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 const ALLOWED_PAYMENT_METHODS = new Set(["bank", "mobile_money"]);
@@ -196,6 +198,7 @@ export async function POST(request) {
       return Response.json({ error: "full_name is required" }, { status: 400 });
     }
 
+    const approval = getApprovalFields(perm.staff);
     const rows = await sql`
       INSERT INTO landlords (
         title,
@@ -211,7 +214,9 @@ export async function POST(request) {
         bank_account_title,
         bank_account_number,
         mobile_money_name,
-        mobile_money_phone
+        mobile_money_phone,
+        approval_status, approved_by, approved_at,
+        created_by
       )
       VALUES (
         ${title},
@@ -230,7 +235,9 @@ export async function POST(request) {
         ${bankAccountTitleToSave},
         ${bankAccountNumberToSave},
         ${mobileMoneyNameToSave},
-        ${mobileMoneyPhoneToSave}
+        ${mobileMoneyPhoneToSave},
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at},
+        ${perm.staff.id}
       )
       RETURNING
         id,
@@ -263,6 +270,16 @@ export async function POST(request) {
       newValues: landlord,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Landlord Pending Approval",
+        message: `New landlord ${fullName} has been created and is pending approval. Added by ${perm.staff.full_name || "Staff"}`,
+        type: "landlord",
+        reference_id: landlord?.id,
+        reference_type: "landlord",
+      });
+    }
 
     return Response.json({ landlord });
   } catch (error) {

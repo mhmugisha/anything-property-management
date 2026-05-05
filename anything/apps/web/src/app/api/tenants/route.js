@@ -1,5 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { getApprovalFields } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 
@@ -178,9 +180,10 @@ export async function POST(request) {
     const emergencyPhone = (body?.emergency_phone || "").trim() || null;
     const status = (body?.status || "active").trim();
 
+    const approval = getApprovalFields(perm.staff);
     const rows = await sql`
-      INSERT INTO tenants (title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status)
-      VALUES (${title}, ${fullName}, ${phone}, ${email}, ${nationalId}, ${emergencyContact}, ${emergencyPhone}, ${status})
+      INSERT INTO tenants (title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, approval_status, approved_by, approved_at)
+      VALUES (${title}, ${fullName}, ${phone}, ${email}, ${nationalId}, ${emergencyContact}, ${emergencyPhone}, ${status}, ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at})
       RETURNING id, title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, created_at
     `;
 
@@ -195,6 +198,16 @@ export async function POST(request) {
       newValues: tenant,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Tenant Pending Approval",
+        message: `New tenant ${fullName} has been created and is pending approval. Added by ${perm.staff.full_name || "Staff"}`,
+        type: "tenant",
+        reference_id: tenant?.id,
+        reference_type: "tenant",
+      });
+    }
 
     return Response.json({ tenant });
   } catch (error) {

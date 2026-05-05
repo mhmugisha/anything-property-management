@@ -23,6 +23,7 @@ export async function GET(request) {
         WHERE (i.amount - i.paid_amount) > 0
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.due_date < CURRENT_DATE
       )
       SELECT

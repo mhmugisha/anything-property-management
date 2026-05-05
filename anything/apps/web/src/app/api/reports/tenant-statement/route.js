@@ -58,6 +58,7 @@ export async function GET(request) {
       LEFT JOIN units u ON u.id = i.unit_id
       WHERE i.tenant_id = ${tenantId}
         AND COALESCE(i.is_deleted, false) = false
+        AND COALESCE(i.approval_status, 'approved') = 'approved'
       ORDER BY i.invoice_year DESC, i.invoice_month DESC, i.id DESC
       LIMIT 60
     `,
@@ -67,6 +68,7 @@ export async function GET(request) {
       FROM tenant_deductions
       WHERE tenant_id = ${tenantId}
         AND COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
       ORDER BY deduction_date DESC, id DESC
     `,
     ]);
@@ -95,6 +97,7 @@ export async function GET(request) {
         LEFT JOIN invoices i ON i.id = pia.invoice_id
         WHERE p.tenant_id = ${tenantId}
           AND p.is_reversed = false
+          AND COALESCE(p.approval_status, 'approved') = 'approved'
       ),
       allocated_amounts AS (
         SELECT

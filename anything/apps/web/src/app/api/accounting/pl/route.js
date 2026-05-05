@@ -10,7 +10,7 @@ export async function GET(request) {
     const from = (searchParams.get("from") || "").trim();
     const to = (searchParams.get("to") || "").trim();
 
-    const where = ["COALESCE(t.is_deleted,false) = false"];
+    const where = ["COALESCE(t.is_deleted,false) = false", "COALESCE(t.approval_status, 'approved') = 'approved'"];
     const values = [];
 
     if (from) {

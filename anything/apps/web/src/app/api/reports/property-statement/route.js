@@ -52,7 +52,7 @@ export async function GET(request) {
       return Response.json({ error: "Property not found" }, { status: 404 });
     }
 
-    const where = [`i.property_id = $1`, `i.status <> 'void'`];
+    const where = [`i.property_id = $1`, `i.status <> 'void'`, `COALESCE(i.approval_status, 'approved') = 'approved'`];
     const values = [propertyId];
 
     if (from) {
@@ -121,7 +121,7 @@ export async function GET(request) {
       managementFeesTotal += Number(feeTotal || 0);
     }
 
-    const paymentsWhere = [`i.property_id = $1`, `pay.is_reversed = false`];
+    const paymentsWhere = [`i.property_id = $1`, `pay.is_reversed = false`, `COALESCE(pay.approval_status, 'approved') = 'approved'`];
     const paymentsValues = [propertyId];
 
     if (from) {

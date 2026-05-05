@@ -28,6 +28,7 @@ export async function GET(request) {
       "(i.amount - i.paid_amount) > 0",
       "i.status NOT IN ('void', 'paid')",
       "COALESCE(i.is_deleted, false) = false",
+      "COALESCE(i.approval_status, 'approved') = 'approved'",
     ];
     const params = [];
 

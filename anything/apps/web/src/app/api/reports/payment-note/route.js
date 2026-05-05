@@ -146,6 +146,7 @@ export async function GET(request) {
       WHERE i.property_id = $1
         AND i.status <> 'void'
         AND COALESCE(i.is_deleted, false) = false
+        AND COALESCE(i.approval_status, 'approved') = 'approved'
         AND i.lease_id IS NOT NULL
         AND i.invoice_date >= $2::date
         AND i.invoice_date <= $3::date
@@ -181,6 +182,7 @@ export async function GET(request) {
         AND i.lease_id IS NULL
         AND COALESCE(i.is_deleted, false) = false
         AND p.is_reversed = false
+        AND COALESCE(p.approval_status, 'approved') = 'approved'
         AND p.payment_date >= $2::date
         AND p.payment_date <= $3::date
       ORDER BY i.invoice_year ASC, i.invoice_month ASC, pia.id ASC

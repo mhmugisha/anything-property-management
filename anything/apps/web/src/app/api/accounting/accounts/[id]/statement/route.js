@@ -38,6 +38,7 @@ export async function GET(request, { params: { id } }) {
       FROM transactions t
       WHERE (t.debit_account_id = $1 OR t.credit_account_id = $1)
         AND COALESCE(t.is_deleted, false) = false
+        AND COALESCE(t.approval_status, 'approved') = 'approved'
       ORDER BY t.transaction_date ASC, t.id ASC
     `;
 
@@ -64,6 +65,7 @@ export async function GET(request, { params: { id } }) {
     const where = [
       `(t.debit_account_id = $1 OR t.credit_account_id = $1)`,
       `COALESCE(t.is_deleted,false) = false`,
+      `COALESCE(t.approval_status, 'approved') = 'approved'`,
     ];
     const values = [accountId];
 

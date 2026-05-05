@@ -57,6 +57,7 @@ export async function GET(request) {
             WHERE i.property_id = ${propertyId}
               AND i.status <> 'void'
               AND COALESCE(i.is_deleted, false) = false
+              AND COALESCE(i.approval_status, 'approved') = 'approved'
               AND i.invoice_date >= ${fromDate}::date
               AND i.invoice_date <= ${toDate}::date
           `;
@@ -121,6 +122,7 @@ export async function GET(request) {
             WHERE landlord_id = ${llId}
               AND property_id = ${propertyId}
               AND COALESCE(is_deleted, false) = false
+              AND COALESCE(approval_status, 'approved') = 'approved'
               AND deduction_date >= ${fromDate}::date
               AND deduction_date <= ${toDate}::date
           `;
@@ -246,6 +248,7 @@ export async function GET(request) {
         WHERE i.property_id = ${propertyId}
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.invoice_date >= ${fromDate}::date
           AND i.invoice_date <= ${toDate}::date
         ORDER BY i.invoice_year ASC, i.invoice_month ASC
@@ -310,6 +313,7 @@ export async function GET(request) {
         WHERE landlord_id = ${landlordId}
           AND property_id = ${propertyId}
           AND COALESCE(is_deleted, false) = false
+          AND COALESCE(approval_status, 'approved') = 'approved'
           AND deduction_date >= ${fromDate}::date
           AND deduction_date <= ${toDate}::date
       `;

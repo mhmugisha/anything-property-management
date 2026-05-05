@@ -1,6 +1,8 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -81,6 +83,7 @@ export async function POST(request) {
     // Insert the arrears invoice
     // lease_id is NULL because arrears are not tied to a specific lease
     // This invoice will be included in property-month summaries and management fee calculations
+    const approval = getApprovalFields(perm.staff);
     const rows = await sql`
       INSERT INTO invoices (
         lease_id, tenant_id, property_id, unit_id,
@@ -89,7 +92,8 @@ export async function POST(request) {
         description,
         amount, currency,
         commission_rate, commission_amount,
-        paid_amount, status
+        paid_amount, status,
+        approval_status, approved_by, approved_at
       )
       VALUES (
         NULL, ${tenantId}, ${propertyId}, ${unitId},
@@ -98,7 +102,8 @@ export async function POST(request) {
         ${invoiceDescription},
         ${amount}, ${currency},
         0, 0,
-        0, 'open'
+        0, 'open',
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
       RETURNING *
     `;
@@ -123,6 +128,16 @@ export async function POST(request) {
       newValues: invoice,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Arrears Invoice Pending Approval",
+        message: `New arrears invoice of UGX ${Number(amount).toLocaleString()} is pending approval. Posted by ${perm.staff.full_name || "Staff"}`,
+        type: "invoice",
+        reference_id: invoice?.id,
+        reference_type: "invoice",
+      });
+    }
 
     return Response.json({ invoice });
   } catch (error) {

@@ -5,6 +5,8 @@ import {
   getDueToLandlordsBalance,
 } from "@/app/api/utils/accounting";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -110,16 +112,19 @@ export async function POST(request) {
       );
     }
 
+    const approval = getApprovalFields(perm.staff);
     const deductionRows = await sql`
       INSERT INTO landlord_deductions (
         landlord_id, property_id, deduction_date,
         description, amount, created_by,
-        is_deleted
+        is_deleted,
+        approval_status, approved_by, approved_at
       )
       VALUES (
         ${landlordId}, ${propertyId}, ${deductionDate}::date,
         ${description}, ${amount}, ${perm.staff.id},
-        false
+        false,
+        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
       RETURNING *
     `;
@@ -144,6 +149,7 @@ export async function POST(request) {
       expenseScope: "landlord",
       sourceType: "landlord_deduction",
       sourceId: deduction.id,
+      approvalStatus: approval.approval_status,
       auditContext: {
         sourceModule: "accounting",
         businessEvent: "LANDLORD_DEDUCTION",
@@ -180,6 +186,16 @@ export async function POST(request) {
       newValues: post.transaction,
       ipAddress: perm.ipAddress,
     });
+
+    if (approval.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Landlord Deduction Pending Approval",
+        message: `New landlord deduction of UGX ${Number(amount).toLocaleString()} - ${description} is pending approval. Posted by ${perm.staff.full_name || "Staff"}`,
+        type: "deduction",
+        reference_id: deduction?.id,
+        reference_type: "landlord_deduction",
+      });
+    }
 
     return Response.json({ deduction, transaction: post.transaction });
   } catch (error) {

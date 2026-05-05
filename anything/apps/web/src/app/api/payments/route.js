@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
+import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 import { autoApplyAdvancePaymentsForTenant } from "@/app/api/utils/payments/autoApply";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 import { createArrearsRecoveryFee } from "@/app/api/utils/payments/arrearsFeesHandler";
@@ -171,6 +172,7 @@ export async function POST(request) {
       }
 
       // Create payment
+      const approvalA = getApprovalFields(perm.staff);
       const paymentRows = await sql`
         INSERT INTO payments (
           lease_id, tenant_id, property_id,
@@ -178,7 +180,8 @@ export async function POST(request) {
           reference_number,
           recorded_by, notes,
           period_month, period_year,
-          description
+          description,
+          approval_status, approved_by, approved_at
         )
         VALUES (
           ${invoice.lease_id}, ${invoice.tenant_id}, ${invoice.property_id},
@@ -186,7 +189,8 @@ export async function POST(request) {
           ${referenceNumber},
           ${perm.staff.id}, ${notes},
           NULL, NULL,
-          ${description || invoice.description || null}
+          ${description || invoice.description || null},
+          ${approvalA.approval_status}, ${approvalA.approved_by}, ${approvalA.approved_at}
         )
         RETURNING *
       `;
@@ -230,6 +234,7 @@ export async function POST(request) {
         propertyId: invoice.property_id,
         sourceType: "payment",
         sourceId: payment.id,
+        approvalStatus: getApprovalStatus(perm.staff),
         auditContext: {
           sourceModule: "property",
           businessEvent: "TENANT_PAYMENT_RECEIVED",
@@ -297,6 +302,16 @@ export async function POST(request) {
         reference_type: "payment",
       });
 
+      if (approvalA.approval_status === "pending") {
+        notifyAllAdminsAsync({
+          title: "New Payment Pending Approval",
+          message: `New payment of ${invoice.currency || "UGX"} ${Number(amount).toLocaleString()} from ${invoice.tenant_name || "Tenant"} for ${invoice.description} is pending approval. Recorded by ${perm.staff.full_name || "Staff"}`,
+          type: "payment",
+          reference_id: payment.id,
+          reference_type: "payment",
+        });
+      }
+
       return Response.json({ payment, invoice: updatedInvoice });
     }
 
@@ -347,6 +362,7 @@ export async function POST(request) {
 
     const advDesc = description || "Payment on Account";
 
+    const approvalB = getApprovalFields(perm.staff);
     const paymentRows = await sql`
       INSERT INTO payments (
         lease_id, tenant_id, property_id,
@@ -354,7 +370,8 @@ export async function POST(request) {
         reference_number,
         recorded_by, notes,
         period_month, period_year,
-        description
+        description,
+        approval_status, approved_by, approved_at
       )
       VALUES (
         ${lease.lease_id}, ${tenantId}, ${propertyId},
@@ -362,7 +379,8 @@ export async function POST(request) {
         ${referenceNumber},
         ${perm.staff.id}, ${notes},
         NULL, NULL,
-        ${advDesc}
+        ${advDesc},
+        ${approvalB.approval_status}, ${approvalB.approved_by}, ${approvalB.approved_at}
       )
       RETURNING *
     `;
@@ -387,6 +405,7 @@ export async function POST(request) {
       propertyId: propertyId,
       sourceType: "payment_advance",
       sourceId: payment.id,
+      approvalStatus: getApprovalStatus(perm.staff),
       auditContext: {
         sourceModule: "property",
         businessEvent: "TENANT_ADVANCE_PAYMENT_RECEIVED",
@@ -418,6 +437,16 @@ export async function POST(request) {
       reference_id: payment.id,
       reference_type: "payment",
     });
+
+    if (approvalB.approval_status === "pending") {
+      notifyAllAdminsAsync({
+        title: "New Advance Payment Pending Approval",
+        message: `New advance payment of ${lease.currency || "UGX"} ${Number(amount).toLocaleString()} from ${lease.tenant_name || "Tenant"} at ${lease.property_name} is pending approval. Recorded by ${perm.staff.full_name || "Staff"}`,
+        type: "payment",
+        reference_id: payment.id,
+        reference_type: "payment",
+      });
+    }
 
     // ENHANCEMENT: Immediately auto-apply advance payment to outstanding invoices
     let autoApplyResult = null;

@@ -73,6 +73,7 @@ export async function GET(request) {
       LEFT JOIN staff_users su ON su.id = t.created_by
       WHERE t.debit_account_id = ${undepositedFundsId}
         AND COALESCE(t.is_deleted, false) = false
+        AND COALESCE(t.approval_status, 'approved') = 'approved'
         AND t.deposited_by_transaction_id IS NULL
         AND (
           t.source_type NOT IN ('payment', 'payment_advance')
