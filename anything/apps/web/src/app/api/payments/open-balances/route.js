@@ -48,11 +48,11 @@ export async function GET(request) {
       whereClauses.push(`i.invoice_date <= $${params.length}`);
     }
 
-    // Date filter: overdue or current
+    // Date filter: overdue or current (month-based)
     if (dateFilter === "overdue") {
-      whereClauses.push("i.due_date < CURRENT_DATE");
+      whereClauses.push("(i.invoice_year < EXTRACT(YEAR FROM CURRENT_DATE)::int OR (i.invoice_year = EXTRACT(YEAR FROM CURRENT_DATE)::int AND i.invoice_month < EXTRACT(MONTH FROM CURRENT_DATE)::int))");
     } else if (dateFilter === "current") {
-      whereClauses.push("i.due_date >= CURRENT_DATE");
+      whereClauses.push("(i.invoice_year > EXTRACT(YEAR FROM CURRENT_DATE)::int OR (i.invoice_year = EXTRACT(YEAR FROM CURRENT_DATE)::int AND i.invoice_month >= EXTRACT(MONTH FROM CURRENT_DATE)::int))");
     }
     // "all" = no additional date filter
 
@@ -74,7 +74,10 @@ export async function GET(request) {
         u.unit_number,
         p.property_name,
         CASE
-          WHEN i.due_date < CURRENT_DATE THEN 'overdue'
+          WHEN (i.invoice_year < EXTRACT(YEAR FROM CURRENT_DATE)::int
+            OR (i.invoice_year = EXTRACT(YEAR FROM CURRENT_DATE)::int
+                AND i.invoice_month < EXTRACT(MONTH FROM CURRENT_DATE)::int))
+          THEN 'overdue'
           ELSE 'current'
         END AS status
       FROM invoices i

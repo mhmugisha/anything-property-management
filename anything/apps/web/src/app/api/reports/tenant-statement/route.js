@@ -8,6 +8,8 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const tenantId = Number(searchParams.get("tenantId"));
+    const from = (searchParams.get("from") || "").trim();
+    const to = (searchParams.get("to") || "").trim();
 
     if (!tenantId) {
       return Response.json({ error: "tenantId is required" }, { status: 400 });
@@ -29,6 +31,47 @@ export async function GET(request) {
     // This was auto-allocating upfront payments every time the statement was viewed,
     // so upfront payments never showed as "Upfront" in the statement.
     // Invoice generation should happen via scheduled jobs or explicit actions, not on every read.
+
+    // Calculate opening balance — all activity before the 'from' date
+    let openingBalance = 0;
+    if (from) {
+      const [obInvoices, obPayments, obDeductions] = await Promise.all([
+        sql`
+          SELECT COALESCE(SUM(amount), 0) AS total
+          FROM invoices
+          WHERE tenant_id = ${tenantId}
+            AND COALESCE(is_deleted, false) = false
+            AND COALESCE(approval_status, 'approved') = 'approved'
+            AND invoice_date < ${from}::date
+        `,
+        sql`
+          SELECT COALESCE(SUM(invoice_amount_applied), 0) AS total
+          FROM (
+            SELECT
+              pia.amount_applied AS invoice_amount_applied
+            FROM payments p
+            JOIN payment_invoice_allocations pia ON pia.payment_id = p.id
+            WHERE p.tenant_id = ${tenantId}
+              AND p.is_reversed = false
+              AND COALESCE(p.approval_status, 'approved') = 'approved'
+              AND p.payment_date < ${from}::date
+          ) sub
+        `,
+        sql`
+          SELECT COALESCE(SUM(amount), 0) AS total
+          FROM tenant_deductions
+          WHERE tenant_id = ${tenantId}
+            AND COALESCE(is_deleted, false) = false
+            AND COALESCE(approval_status, 'approved') = 'approved'
+            AND deduction_date < ${from}::date
+        `,
+      ]);
+
+      openingBalance =
+        Number(obInvoices[0]?.total || 0) -
+        Number(obPayments[0]?.total || 0) +
+        Number(obDeductions[0]?.total || 0);
+    }
 
     const [leases, invoices, deductions] = await Promise.all([
       sql`
@@ -151,7 +194,7 @@ export async function GET(request) {
       ORDER BY payment_date DESC, id DESC, invoice_id ASC NULLS LAST
     `;
 
-    return Response.json({ tenant, leases, invoices, payments, deductions });
+    return Response.json({ tenant, leases, invoices, payments, deductions, openingBalance, from, to });
   } catch (error) {
     console.error("GET /api/reports/tenant-statement error", error);
     return Response.json(
