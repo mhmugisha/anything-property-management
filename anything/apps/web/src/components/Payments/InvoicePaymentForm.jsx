@@ -30,9 +30,10 @@ export function InvoicePaymentForm({
 
   // Filter tenants based on search text
   const filteredTenants = useMemo(() => {
-    if (!form.tenantSearch) return tenants;
+    const list = tenants || [];
+    if (!form.tenantSearch) return list;
     const searchLower = form.tenantSearch.toLowerCase();
-    return tenants.filter((t) => {
+    return list.filter((t) => {
       const fullName = (t.full_name || "").toLowerCase();
       const phone = (t.phone || "").toLowerCase();
       const email = (t.email || "").toLowerCase();
