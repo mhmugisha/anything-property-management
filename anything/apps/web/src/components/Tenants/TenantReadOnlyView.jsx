@@ -56,7 +56,13 @@ export function TenantReadOnlyView({ selectedTenant }) {
       ...payments.map((p) => ({
         date: p.payment_date ? String(p.payment_date).slice(0, 10) : "",
         reference_number: p.reference_number || "",
-        description: p.notes || "Payment",
+        description: (() => {
+          const method = p.payment_method || "";
+          const ref = p.reference_number ? ` (${p.reference_number})` : "";
+          const invoice = p.invoice_description ? ` - ${p.invoice_description}` : "";
+          const methodPart = method ? `Payment - ${method}${ref}` : `Payment${ref}`;
+          return `${methodPart}${invoice}`;
+        })(),
         debit: 0,
         credit: Number(p.invoice_amount_applied || 0),
         kind: "payment",
