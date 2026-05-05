@@ -1,6 +1,5 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
-import { ensureInvoicesForAllActiveLeasesUpToCurrentMonth } from "@/app/api/utils/invoices";
 
 function round2(n) {
   const x = Number(n || 0);
@@ -36,8 +35,6 @@ export async function GET(request) {
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
-    await ensureInvoicesForAllActiveLeasesUpToCurrentMonth();
-
     const { searchParams } = new URL(request.url);
     const monthParam = Number(searchParams.get("month"));
     const yearParam = Number(searchParams.get("year"));

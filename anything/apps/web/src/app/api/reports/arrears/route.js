@@ -1,15 +1,11 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
-import { ensureInvoicesForAllActiveLeasesUpToCurrentMonth } from "@/app/api/utils/invoices";
 
 export async function GET(request) {
   const perm = await requirePermission(request, "reports");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
-    // Ensure invoices exist so arrears is based on real invoices
-    await ensureInvoicesForAllActiveLeasesUpToCurrentMonth();
-
     const rows = await sql`
       WITH unpaid AS (
         SELECT
