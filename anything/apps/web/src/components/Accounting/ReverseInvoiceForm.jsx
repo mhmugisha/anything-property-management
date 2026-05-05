@@ -44,9 +44,7 @@ export function ReverseInvoiceForm({
 
   const filteredInvoices = useMemo(() => {
     if (!tenantId) return [];
-    return (invoices || []).filter(
-      (inv) => inv.tenant_id === Number(tenantId),
-    );
+    return invoices || [];
   }, [invoices, tenantId]);
 
   const selectedInvoice = useMemo(() => {

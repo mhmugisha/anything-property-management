@@ -1,8 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export function useDeleteInvoice() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   const deleteInvoice = async (invoiceId) => {
     if (!invoiceId) {
