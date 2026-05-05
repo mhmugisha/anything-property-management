@@ -1,6 +1,5 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
-import { ensureInvoicesForAllActiveLeasesUpToCurrentMonth } from "@/app/api/utils/invoices";
 
 function toNumber(value) {
   const n = Number(value);
@@ -108,17 +107,6 @@ export async function GET(request) {
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
-    // IMPORTANT: invoice generation can be expensive and can fail due to DB locks/timeouts.
-    // The statement should still render using existing invoices even if this sync fails.
-    try {
-      await ensureInvoicesForAllActiveLeasesUpToCurrentMonth();
-    } catch (syncError) {
-      console.error(
-        "ensureInvoicesForAllActiveLeasesUpToCurrentMonth failed (continuing)",
-        syncError,
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const landlordId = toNumber(searchParams.get("landlordId"));
     const propertyId = toNumber(searchParams.get("propertyId"));
