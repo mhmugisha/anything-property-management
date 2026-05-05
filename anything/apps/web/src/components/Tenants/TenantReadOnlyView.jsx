@@ -22,21 +22,71 @@ export function TenantReadOnlyView({ selectedTenant }) {
   });
 
   const statementQuery = useQuery({
-    queryKey: ["reports", "tenantLedger", selectedTenant?.id, from, to],
+    queryKey: ["reports", "tenantStatement", selectedTenant?.id, from, to],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("tenantId", String(selectedTenant.id));
       if (from) params.set("from", from);
       if (to) params.set("to", to);
-      return await fetchJson(`/api/reports/tenant-ledger?${params.toString()}`);
+      return await fetchJson(`/api/reports/tenant-statement?${params.toString()}`);
     },
     enabled: !!selectedTenant?.id,
   });
 
   const statement = statementQuery.data || null;
-  const rows = statement?.rows || [];
-  const unitNumber = statement?.unit_number || null;
-  const propertyName = statement?.property_name || null;
+  const invoices = statement?.invoices || [];
+  const payments = statement?.payments || [];
+  const deductions = statement?.deductions || [];
+  const leases = statement?.leases || [];
+  const openingBalance = Number(statement?.openingBalance ?? 0);
+  const unitNumber = leases[0]?.unit_number || null;
+  const propertyName = leases[0]?.property_name || null;
+
+  // Merge invoices, payments, deductions into flat rows filtered by from/to, sorted ascending
+  const mergedRows = useMemo(() => {
+    const all = [
+      ...invoices.map((i) => ({
+        date: i.invoice_date ? String(i.invoice_date).slice(0, 10) : "",
+        reference_number: "",
+        description: i.description || `Invoice #${i.id}`,
+        debit: Number(i.amount || 0),
+        credit: 0,
+        kind: "invoice",
+      })),
+      ...payments.map((p) => ({
+        date: p.payment_date ? String(p.payment_date).slice(0, 10) : "",
+        reference_number: p.reference_number || "",
+        description: p.notes || "Payment",
+        debit: 0,
+        credit: Number(p.invoice_amount_applied || 0),
+        kind: "payment",
+      })),
+      ...deductions.map((d) => ({
+        date: d.deduction_date ? String(d.deduction_date).slice(0, 10) : "",
+        reference_number: "",
+        description: d.description || "Deduction",
+        debit: Number(d.amount || 0),
+        credit: 0,
+        kind: "deduction",
+      })),
+    ].filter((r) => {
+      if (from && r.date && r.date < from) return false;
+      if (to && r.date && r.date > to) return false;
+      return true;
+    });
+
+    all.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    return all;
+  }, [invoices, payments, deductions, from, to]);
+
+  // Add running balance to each row, starting from openingBalance
+  const rows = useMemo(() => {
+    let bal = openingBalance;
+    return mergedRows.map((r) => {
+      bal = bal + r.debit - r.credit;
+      return { ...r, balance: bal };
+    });
+  }, [mergedRows, openingBalance]);
 
   const safeFilenameBase = useMemo(() => {
     const name = `${selectedTenant?.full_name || "tenant"}-statement`;
@@ -52,34 +102,49 @@ export function TenantReadOnlyView({ selectedTenant }) {
   const onExport = useCallback(() => {
     if (!canExport) return;
 
-    const exportRows = rows.map((r) => {
-      const dateValue = r?.date ? String(r.date).slice(0, 10) : "";
-      return {
-        Date: dateValue,
-        Description: r?.description || "",
-        "Debit (UGX)":
-          r?.debit != null && r.debit !== "" ? Number(r.debit) : "",
-        "Credit (UGX)":
-          r?.credit != null && r.credit !== "" ? Number(r.credit) : "",
-        "Balance (UGX)":
-          r?.balance != null && r.balance !== "" ? Number(r.balance) : "",
-      };
-    });
+    const openingRow = from
+      ? [
+          {
+            Date: from,
+            "Receipt #": "",
+            Description: "Opening Balance",
+            "Debit (UGX)": "",
+            "Credit (UGX)": "",
+            "Balance (UGX)": openingBalance,
+          },
+        ]
+      : [];
+
+    const exportRows = [
+      ...openingRow,
+      ...rows.map((r) => {
+        const dateValue = r?.date ? String(r.date).slice(0, 10) : "";
+        return {
+          Date: dateValue,
+          "Receipt #": r?.reference_number || "",
+          Description: r?.description || "",
+          "Debit (UGX)":
+            r?.debit != null && r.debit !== "" ? Number(r.debit) : "",
+          "Credit (UGX)":
+            r?.credit != null && r.credit !== "" ? Number(r.credit) : "",
+          "Balance (UGX)":
+            r?.balance != null && r.balance !== "" ? Number(r.balance) : "",
+        };
+      }),
+    ];
 
     const fromPart = from ? String(from).slice(0, 10) : "";
     const toPart = to ? String(to).slice(0, 10) : "";
     const rangeSuffix = fromPart && toPart ? `-${fromPart}-to-${toPart}` : "";
     const filename = `${safeFilenameBase}${rangeSuffix}.csv`;
     downloadCsv(filename, exportRows);
-  }, [canExport, rows, from, to, safeFilenameBase]);
+  }, [canExport, rows, from, to, openingBalance, safeFilenameBase]);
 
   // totals (aligned right like reports)
   const totalDebits = rows.reduce((sum, r) => sum + Number(r.debit || 0), 0);
   const totalCredits = rows.reduce((sum, r) => sum + Number(r.credit || 0), 0);
-
-  // Use closing_balance from API response instead of calculating from last row
-  // This ensures the balance remains constant regardless of the selected 'from' date
-  const closingBalance = statement?.closing_balance ?? 0;
+  const closingBalance =
+    rows.length > 0 ? rows[rows.length - 1].balance : openingBalance;
 
   const titlePrefix = selectedTenant?.title ? `${selectedTenant.title} ` : "";
   const tenantName = selectedTenant?.full_name || "";
@@ -309,6 +374,20 @@ export function TenantReadOnlyView({ selectedTenant }) {
                   </tr>
                 </thead>
                 <tbody>
+                  {from && (
+                    <tr className="border-b bg-slate-50 text-slate-500 italic">
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        {formatDate(from)}
+                      </td>
+                      <td className="py-2 pr-3">—</td>
+                      <td className="py-2 pr-3">Opening Balance</td>
+                      <td className="py-2 pr-3 text-right" />
+                      <td className="py-2 pr-3 text-right" />
+                      <td className="py-2 pr-3 text-right font-medium">
+                        {formatCurrencyUGX(openingBalance)}
+                      </td>
+                    </tr>
+                  )}
                   {rows.map((r, idx) => {
                     const dateText = formatDate(r.date);
                     const debitText = r.debit ? formatCurrencyUGX(r.debit) : "";
