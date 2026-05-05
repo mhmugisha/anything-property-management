@@ -1,6 +1,5 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
-import { ensureInvoicesForTenant } from "@/app/api/utils/invoices";
 
 export async function GET(request) {
   const perm = await requirePermission(request, "payments");
@@ -13,9 +12,6 @@ export async function GET(request) {
     if (!tenantId) {
       return Response.json({ invoices: [] });
     }
-
-    // Make sure monthly invoices exist (includes current month)
-    await ensureInvoicesForTenant(tenantId);
 
     const invoices = await sql`
       SELECT
