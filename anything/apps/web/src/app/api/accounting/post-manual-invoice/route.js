@@ -145,7 +145,7 @@ export async function POST(request) {
     // Dr 1210 (Rent Receivable), Cr 4200 (Rent Revenue)
     // and include this invoice in the property-month summary for management fee calculation
     try {
-      await ensureInvoiceAccrualLedgerEntries({ force: true });
+      await ensureInvoiceAccrualLedgerEntries({ force: true, leaseId });
     } catch (e) {
       console.error(
         "ensureInvoiceAccrualLedgerEntries failed for manual invoice",

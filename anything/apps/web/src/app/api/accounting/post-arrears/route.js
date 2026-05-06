@@ -113,7 +113,7 @@ export async function POST(request) {
     // Trigger accounting sync: this will create the accrual entries
     // and include this arrears invoice in the property-month summary for management fee calculation
     try {
-      await ensureInvoiceAccrualLedgerEntries({ force: true });
+      await ensureInvoiceAccrualLedgerEntries({ force: true, tenantId });
     } catch (e) {
       console.error("ensureInvoiceAccrualLedgerEntries failed for arrears", e);
       // Continue - the invoice is created, accounting can sync later
