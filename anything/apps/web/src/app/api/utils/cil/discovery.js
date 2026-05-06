@@ -1,6 +1,10 @@
 import sql from "@/app/api/utils/sql";
 import { safeIdentifier } from "./sanitize";
 
+let cached = null;
+let cachedAt = 0;
+const CACHE_MS = 5 * 60 * 1000; // 5 minutes
+
 
 function scoreAccountsTable(columns) {
   const colSet = new Set(columns);
@@ -94,6 +98,11 @@ function pickColumn(columns, candidates) {
 }
 
 export async function discoverAccountingModel() {
+  const now = Date.now();
+  if (cached && now - cachedAt < CACHE_MS) {
+    return cached;
+  }
+
   const tables = await listPublicTables();
 
   const meta = [];
@@ -192,6 +201,9 @@ export async function discoverAccountingModel() {
     if (k === "table") continue;
     if (v) model.transactions[k] = safeIdentifier(v);
   }
+
+  cached = model;
+  cachedAt = now;
 
   return model;
 }
