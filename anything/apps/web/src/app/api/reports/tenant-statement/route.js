@@ -42,6 +42,7 @@ export async function GET(request) {
           WHERE tenant_id = ${tenantId}
             AND COALESCE(is_deleted, false) = false
             AND COALESCE(approval_status, 'approved') = 'approved'
+            AND COALESCE(status, '') <> 'void'
             AND invoice_date < ${from}::date
         `,
         sql`
@@ -102,6 +103,7 @@ export async function GET(request) {
       WHERE i.tenant_id = ${tenantId}
         AND COALESCE(i.is_deleted, false) = false
         AND COALESCE(i.approval_status, 'approved') = 'approved'
+        AND COALESCE(i.status, '') <> 'void'
       ORDER BY i.invoice_year DESC, i.invoice_month DESC, i.id DESC
       LIMIT 60
     `,
