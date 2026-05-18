@@ -27,6 +27,7 @@ import {
   useEndTenantLease,
   useDeleteTenant,
   useOpenTenantLease,
+  useLeaseFlags,
 } from "@/hooks/useTenants";
 import { TenantDetails } from "@/components/Tenants/TenantDetails";
 import { TenantReadOnlyView } from "@/components/Tenants/TenantReadOnlyView";
@@ -89,6 +90,7 @@ export default function TenantsPage() {
   const [selectedTenantId, setSelectedTenantId] = useState(null);
 
   const [showArchived, setShowArchived] = useState(false);
+  const [showFlaggedOnly, setShowFlaggedOnly] = useState(false);
 
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -228,6 +230,12 @@ export default function TenantsPage() {
   const endLeaseMutation = useEndTenantLease();
   const openLeaseMutation = useOpenTenantLease();
   const deleteTenantMutation = useDeleteTenant();
+
+  const leaseFlagsQuery = useLeaseFlags(!userLoading && !!user && canManageTenants);
+  const flaggedTenantIds = useMemo(() => {
+    const flags = leaseFlagsQuery.data || [];
+    return new Set(flags.map((f) => Number(f.tenant_id)));
+  }, [leaseFlagsQuery.data]);
 
   const tenants = tenantsQuery.data || [];
   const selectedTenant = tenantDetailQuery.data || null;
@@ -449,6 +457,7 @@ export default function TenantsPage() {
     setTenantForm(INITIAL_TENANT);
     setLeaseForm(INITIAL_LEASE);
     setShowArchived(false);
+    setShowFlaggedOnly(false);
     setActionError(null);
     setActionSuccess(false);
   }, []);
@@ -769,6 +778,9 @@ export default function TenantsPage() {
           tenantsLoading={tenantsQuery.isLoading}
           showArchived={showArchived}
           onToggleShowArchived={setShowArchived}
+          flaggedTenantIds={flaggedTenantIds}
+          showFlaggedOnly={showFlaggedOnly}
+          onToggleShowFlaggedOnly={setShowFlaggedOnly}
           onPrefetchProperty={prefetchTenantsForProperty}
         />
       </Sidebar>

@@ -281,3 +281,26 @@ export function useDeleteTenant() {
     },
   });
 }
+
+export function useLeaseFlags(enabled = true) {
+  return useQuery({
+    queryKey: ["leases", "flags"],
+    queryFn: async () => {
+      const data = await fetchJson("/api/leases/flags");
+      return data.flags || [];
+    },
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useResolveLeaseFlag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ flagId, resolution_note }) =>
+      postJson(`/api/leases/flags/${flagId}/resolve`, { resolution_note }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["leases", "flags"] });
+    },
+  });
+}
