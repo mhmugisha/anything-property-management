@@ -7,7 +7,7 @@ function toNumber(v) {
   return n;
 }
 
-async function endActiveLeasesForLandlord({ landlordId }) {
+async function endActiveLeasesForLandlord({ landlordId, staffId }) {
   const activeLeaseRows = await sql(
     `
       SELECT l.id, l.unit_id
@@ -63,6 +63,19 @@ async function endActiveLeasesForLandlord({ landlordId }) {
       `,
       [leaseIds],
     ),
+
+    // Resolve any open review flags for these leases
+    txn(
+      `
+        UPDATE lease_review_flags
+        SET resolved_at     = NOW(),
+            resolved_by     = $2,
+            resolution_note = 'Leases ended: landlord archived'
+        WHERE lease_id = ANY($1::int[])
+          AND resolved_at IS NULL
+      `,
+      [leaseIds, staffId],
+    ),
   ]);
 
   return { endedLeases: leaseIds.length };
@@ -90,8 +103,8 @@ export async function POST(request, { params }) {
       return Response.json({ error: "Landlord not found" }, { status: 404 });
     }
 
-    // End any active leases under this landlord (same idea as Tenant archive)
-    const ended = await endActiveLeasesForLandlord({ landlordId });
+    // End any active leases under this landlord and resolve their review flags.
+    const ended = await endActiveLeasesForLandlord({ landlordId, staffId: perm.staff.id });
 
     const updatedRows = await sql`
       UPDATE landlords
