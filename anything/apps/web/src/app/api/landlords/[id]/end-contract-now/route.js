@@ -39,73 +39,30 @@ export async function POST(request, { params }) {
       );
     }
 
-    // End contract immediately (manual override):
-    // - landlord becomes ended now
-    // - all their active leases end now
-    // - all future unpaid invoices are voided
-    await sql.transaction((txn) => [
-      txn(
-        `
-          UPDATE landlords
-          SET end_date = CURRENT_DATE,
-              status = 'ended'
-          WHERE id = $1
-        `,
-        [landlordId],
-      ),
+    // End the landlord's contract. Leases are NOT automatically ended —
+    // the system raises review flags and a human decides what to do with each lease.
+    await sql`
+      UPDATE landlords
+      SET end_date = CURRENT_DATE,
+          status   = 'ended'
+      WHERE id = ${landlordId}
+    `;
 
-      txn(
-        `
-          UPDATE leases l
-          SET status = 'ended',
-              auto_renew = false,
-              end_date = CASE
-                WHEN l.end_date > CURRENT_DATE THEN CURRENT_DATE
-                ELSE l.end_date
-              END
-          FROM units u
-          JOIN properties p ON p.id = u.property_id
-          WHERE l.unit_id = u.id
-            AND p.landlord_id = $1
-            AND l.status = 'active'
-        `,
-        [landlordId],
-      ),
-
-      // Make units vacant only if they truly have no active lease
-      txn(
-        `
-          UPDATE units u
-          SET status = 'vacant'
-          FROM properties p
-          WHERE u.property_id = p.id
-            AND p.landlord_id = $1
-            AND NOT EXISTS (
-              SELECT 1
-              FROM leases l
-              WHERE l.unit_id = u.id
-                AND l.status = 'active'
-            )
-        `,
-        [landlordId],
-      ),
-
-      txn(
-        `
-          UPDATE invoices i
-          SET status = 'void'
-          FROM leases l
-          JOIN units u ON u.id = l.unit_id
-          JOIN properties p ON p.id = u.property_id
-          WHERE i.lease_id = l.id
-            AND p.landlord_id = $1
-            AND i.invoice_date > CURRENT_DATE
-            AND i.paid_amount = 0
-            AND i.status <> 'paid'
-        `,
-        [landlordId],
-      ),
-    ]);
+    // Immediately raise 'landlord_ended' flags for all active leases under this landlord.
+    // The partial unique index prevents duplicates if a flag already exists.
+    const flagged = await sql`
+      INSERT INTO lease_review_flags (lease_id, reason, reason_detail)
+      SELECT l.id,
+             'landlord_ended',
+             'Landlord ' || ${oldLandlord.full_name} || ' contract ended'
+      FROM leases l
+      JOIN units      u  ON u.id  = l.unit_id
+      JOIN properties p  ON p.id  = u.property_id
+      WHERE p.landlord_id = ${landlordId}
+        AND l.status = 'active'
+      ON CONFLICT (lease_id, reason) WHERE resolved_at IS NULL DO NOTHING
+      RETURNING id
+    `;
 
     const landlordRows = await sql`
       SELECT
@@ -126,21 +83,7 @@ export async function POST(request, { params }) {
     `;
 
     const landlord = landlordRows?.[0] || null;
-
-    const countRows = await sql(
-      `
-        SELECT COUNT(*)::int AS ended_leases
-        FROM leases l
-        JOIN units u ON u.id = l.unit_id
-        JOIN properties p ON p.id = u.property_id
-        WHERE p.landlord_id = $1
-          AND l.status = 'ended'
-          AND l.end_date = CURRENT_DATE
-      `,
-      [landlordId],
-    );
-
-    const endedLeases = Number(countRows?.[0]?.ended_leases || 0);
+    const flaggedLeases = flagged.length;
 
     await writeAuditLog({
       staffId: perm.staff.id,
@@ -148,11 +91,11 @@ export async function POST(request, { params }) {
       entityType: "landlord",
       entityId: landlordId,
       oldValues: oldLandlord,
-      newValues: { landlord, endedLeases },
+      newValues: { landlord, flaggedLeases },
       ipAddress: perm.ipAddress,
     });
 
-    return Response.json({ ok: true, landlord, endedLeases });
+    return Response.json({ ok: true, landlord, flaggedLeases });
   } catch (error) {
     console.error("POST /api/landlords/[id]/end-contract-now error", error);
     return Response.json({ error: "Failed to end contract" }, { status: 500 });

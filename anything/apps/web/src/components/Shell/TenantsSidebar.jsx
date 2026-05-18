@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Plus, Users } from "lucide-react";
+import { Search, Plus, Users, Flag } from "lucide-react";
 
 function getDisplayStatus(tenant) {
   const tenantStatus = (tenant?.status || "active").toLowerCase();
@@ -35,10 +35,16 @@ export default function TenantsSidebar({
   showArchived = false,
   onToggleShowArchived,
 
+  /* Flags */
+  flaggedTenantIds = new Set(),
+  showFlaggedOnly = false,
+  onToggleShowFlaggedOnly,
+
   /* Prefetch */
   onPrefetchProperty,
 }) {
   const filteredTenants = tenants.filter((t) => {
+    if (showFlaggedOnly && !flaggedTenantIds.has(Number(t.id))) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -49,6 +55,7 @@ export default function TenantsSidebar({
   });
 
   const hasPropertySelected = !!selectedPropertyId;
+  const flagCount = flaggedTenantIds.size;
 
   return (
     <div className="flex flex-col h-full">
@@ -69,6 +76,23 @@ export default function TenantsSidebar({
           <span>New Tenant</span>
         </button>
       </div>
+
+      {/* Flagged leases alert (shown whenever there are flags, regardless of property selection) */}
+      {flagCount > 0 ? (
+        <button
+          onClick={() => onToggleShowFlaggedOnly?.(!showFlaggedOnly)}
+          className={`mx-3 mt-3 flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+            showFlaggedOnly
+              ? "bg-red-500 text-white"
+              : "bg-red-500/20 text-red-300 hover:bg-red-500/30"
+          }`}
+        >
+          <Flag className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="font-medium">
+            {flagCount} lease{flagCount === 1 ? "" : "s"} need review
+          </span>
+        </button>
+      ) : null}
 
       {/* Landlord dropdown */}
       <div className="px-3 py-3 border-b border-white/10">
@@ -164,6 +188,17 @@ export default function TenantsSidebar({
               />
               <span>Show archived / ended</span>
             </label>
+            {flagCount > 0 ? (
+              <label className="flex items-center gap-2 mt-1.5 text-xs text-red-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showFlaggedOnly}
+                  onChange={(e) => onToggleShowFlaggedOnly?.(e.target.checked)}
+                  className="rounded"
+                />
+                <span>Show flagged only</span>
+              </label>
+            ) : null}
           </div>
 
           <div className="flex-1 overflow-y-auto overflow-x-hidden">
@@ -171,7 +206,7 @@ export default function TenantsSidebar({
               <div className="px-4 py-4 text-slate-400 text-sm">Loading…</div>
             ) : filteredTenants.length === 0 ? (
               <div className="px-4 py-4 text-slate-400 text-sm">
-                {search ? "No tenants found" : "No tenants yet"}
+                {search || showFlaggedOnly ? "No tenants found" : "No tenants yet"}
               </div>
             ) : (
               <div className="py-2">
@@ -181,6 +216,7 @@ export default function TenantsSidebar({
                     Number(tenant.id) === Number(selectedTenantId);
                   const displayStatus = getDisplayStatus(tenant);
                   const isInactive = displayStatus !== "active";
+                  const isFlagged = flaggedTenantIds.has(Number(tenant.id));
 
                   const statusColor = isInactive
                     ? "text-amber-400"
@@ -190,13 +226,19 @@ export default function TenantsSidebar({
                     <button
                       key={tenant.id}
                       onClick={() => onSelectTenant?.(tenant)}
+                      title={isFlagged ? "This tenant's lease needs review" : undefined}
                       className={`w-full text-left flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${
                         isSelected
                           ? "bg-white/15 text-white"
                           : "text-slate-200 hover:bg-white/10"
                       }`}
                     >
-                      <Users className="w-4 h-4 flex-shrink-0" />
+                      <div className="relative flex-shrink-0">
+                        <Users className="w-4 h-4" />
+                        {isFlagged ? (
+                          <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500" />
+                        ) : null}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <div className="text-sm font-medium truncate">

@@ -57,6 +57,16 @@ export async function POST(request, { params: { id } }) {
         AND status <> 'paid'
     `;
 
+    // Resolve any open review flags for this lease
+    await sql`
+      UPDATE lease_review_flags
+      SET resolved_at     = NOW(),
+          resolved_by     = ${perm.staff.id},
+          resolution_note = 'Lease manually ended'
+      WHERE lease_id    = ${lease.id}
+        AND resolved_at IS NULL
+    `;
+
     await writeAuditLog({
       staffId: perm.staff.id,
       action: "lease.end",

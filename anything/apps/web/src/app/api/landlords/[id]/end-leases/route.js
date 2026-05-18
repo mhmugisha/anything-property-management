@@ -63,6 +63,19 @@ async function endActiveLeasesForLandlord({ landlordId, staffId, ipAddress }) {
       `,
       [leaseIds],
     ),
+
+    // Resolve any open review flags for these leases
+    txn(
+      `
+        UPDATE lease_review_flags
+        SET resolved_at     = NOW(),
+            resolved_by     = $2,
+            resolution_note = 'Leases ended by landlord action'
+        WHERE lease_id = ANY($1::int[])
+          AND resolved_at IS NULL
+      `,
+      [leaseIds, staffId],
+    ),
   ]);
 
   await writeAuditLog({
