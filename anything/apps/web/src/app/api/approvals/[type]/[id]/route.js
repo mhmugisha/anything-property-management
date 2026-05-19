@@ -135,6 +135,23 @@ export async function POST(request, { params }) {
         console.log(`Rejected landlord_deductions ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}`);
       }
 
+      else if (type === 'invoices') {
+        // Note: the accrual ledger uses source_type='rent_accrual_summary'/'mgmt_fee_summary'
+        // keyed by property+month, not individual invoice id. The query below will
+        // match 0 rows for those (harmless). Any directly-linked invoice txns are covered.
+        const [deletedInvoice, deletedTxns, deletedAllocations] = await sql.transaction([
+          sql`UPDATE invoices SET is_deleted = true WHERE id = ${entryId} RETURNING id`,
+          sql`UPDATE transactions SET is_deleted = true WHERE source_type = 'invoice' AND source_id = ${entryId} RETURNING id`,
+          sql`DELETE FROM payment_invoice_allocations WHERE invoice_id = ${entryId} RETURNING id`,
+        ]);
+        cleanupSummary = {
+          invoice_deleted: deletedInvoice?.length ?? 0,
+          ledger_txns_deleted: deletedTxns?.length ?? 0,
+          allocations_deleted: deletedAllocations?.length ?? 0,
+        };
+        console.log(`Rejected invoices ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}`);
+      }
+
       await writeAuditLog({
         staffId: perm.staff.id,
         action: `approval.${action}`,
