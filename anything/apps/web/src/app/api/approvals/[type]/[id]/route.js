@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { createNotification } from "@/app/api/utils/notifications";
 
 const ALLOWED_TYPES = ['payments', 'invoices', 'transactions', 'tenant_deductions', 'landlord_deductions', 'landlords', 'properties', 'tenants'];
@@ -31,7 +31,23 @@ export async function POST(request, { params }) {
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
     const now = new Date().toISOString();
 
-    const query = `
+    // Fetch current entry to capture old approval_status before modifying it
+    const existingRows = await sql(`SELECT * FROM ${type} WHERE id = $1`, [entryId]);
+    const existing = existingRows?.[0] || null;
+    if (!existing) {
+      return Response.json({ error: 'Entry not found' }, { status: 404 });
+    }
+
+    // Guard: reject only if the entry is not already approved
+    if (action === 'reject' && existing.approval_status === 'approved') {
+      return Response.json({
+        error: 'Cannot reject an already-approved entry. This indicates an unexpected state; please contact support.',
+      }, { status: 409 });
+    }
+
+    const previousApprovalStatus = existing.approval_status;
+
+    const updateQuery = `
       UPDATE ${type}
       SET approval_status = $1,
           approved_by = $2,
@@ -41,7 +57,7 @@ export async function POST(request, { params }) {
       RETURNING *
     `;
 
-    const rows = await sql(query, [
+    const rows = await sql(updateQuery, [
       newStatus,
       perm.staff.id,
       now,
@@ -52,6 +68,131 @@ export async function POST(request, { params }) {
     const entry = rows?.[0] || null;
     if (!entry) {
       return Response.json({ error: 'Entry not found' }, { status: 404 });
+    }
+
+    // Rejection cleanup: undo downstream effects so the entry exits the books entirely
+    if (action === 'reject') {
+      let cleanupSummary = {};
+
+      if (type === 'payments') {
+        const [deletedTxns, updatedInvoices, deletedAllocations] = await sql.transaction([
+          sql`UPDATE transactions SET is_deleted = true
+              WHERE source_type = ANY(ARRAY['payment','payment_advance']::text[])
+                AND source_id = ${entryId}
+              RETURNING id`,
+          sql`UPDATE invoices i
+              SET paid_amount = GREATEST(0, i.paid_amount - pia.total_applied),
+                  status = CASE
+                    WHEN GREATEST(0, i.paid_amount - pia.total_applied) < i.amount THEN 'open'
+                    ELSE i.status
+                  END
+              FROM (
+                SELECT invoice_id, SUM(amount_applied) AS total_applied
+                FROM payment_invoice_allocations
+                WHERE payment_id = ${entryId}
+                GROUP BY invoice_id
+              ) pia
+              WHERE i.id = pia.invoice_id
+              RETURNING i.id`,
+          sql`DELETE FROM payment_invoice_allocations WHERE payment_id = ${entryId} RETURNING id`,
+          sql`UPDATE payments SET is_reversed = true WHERE id = ${entryId}`,
+        ]);
+        cleanupSummary = {
+          ledger_txns_deleted: deletedTxns?.length ?? 0,
+          invoices_restored: updatedInvoices?.length ?? 0,
+          allocations_deleted: deletedAllocations?.length ?? 0,
+        };
+        console.log(`Rejected payments ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}, invoices updated=${cleanupSummary.invoices_restored}`);
+      }
+
+      else if (type === 'transactions') {
+        const deleted = await sql`UPDATE transactions SET is_deleted = true WHERE id = ${entryId} RETURNING id`;
+        cleanupSummary = { ledger_txns_deleted: deleted?.length ?? 0 };
+        console.log(`Rejected transactions ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}`);
+      }
+
+      else if (type === 'tenant_deductions') {
+        const [deletedDeduction, deletedTxns] = await sql.transaction([
+          sql`UPDATE tenant_deductions SET is_deleted = true WHERE id = ${entryId} RETURNING id`,
+          sql`UPDATE transactions SET is_deleted = true WHERE source_type = 'tenant_deduction' AND source_id = ${entryId} RETURNING id`,
+        ]);
+        cleanupSummary = {
+          deduction_deleted: deletedDeduction?.length ?? 0,
+          ledger_txns_deleted: deletedTxns?.length ?? 0,
+        };
+        console.log(`Rejected tenant_deductions ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}`);
+      }
+
+      else if (type === 'landlord_deductions') {
+        const [deletedDeduction, deletedTxns] = await sql.transaction([
+          sql`UPDATE landlord_deductions SET is_deleted = true WHERE id = ${entryId} RETURNING id`,
+          sql`UPDATE transactions SET is_deleted = true WHERE source_type = 'landlord_deduction' AND source_id = ${entryId} RETURNING id`,
+        ]);
+        cleanupSummary = {
+          deduction_deleted: deletedDeduction?.length ?? 0,
+          ledger_txns_deleted: deletedTxns?.length ?? 0,
+        };
+        console.log(`Rejected landlord_deductions ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}`);
+      }
+
+      else if (type === 'invoices') {
+        // Note: the accrual ledger uses source_type='rent_accrual_summary'/'mgmt_fee_summary'
+        // keyed by property+month, not individual invoice id. The query below will
+        // match 0 rows for those (harmless). Any directly-linked invoice txns are covered.
+        const [deletedInvoice, deletedTxns, deletedAllocations] = await sql.transaction([
+          sql`UPDATE invoices SET is_deleted = true WHERE id = ${entryId} RETURNING id`,
+          sql`UPDATE transactions SET is_deleted = true WHERE source_type = 'invoice' AND source_id = ${entryId} RETURNING id`,
+          sql`DELETE FROM payment_invoice_allocations WHERE invoice_id = ${entryId} RETURNING id`,
+        ]);
+        cleanupSummary = {
+          invoice_deleted: deletedInvoice?.length ?? 0,
+          ledger_txns_deleted: deletedTxns?.length ?? 0,
+          allocations_deleted: deletedAllocations?.length ?? 0,
+        };
+        console.log(`Rejected invoices ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}`);
+      }
+
+      else if (['landlords', 'properties', 'tenants'].includes(type)) {
+        // Warn if related financial records already exist (rejection at this stage is unexpected)
+        let relatedWarning = null;
+        if (type === 'landlords') {
+          const rel = await sql`SELECT 1 FROM properties WHERE landlord_id = ${entryId} AND COALESCE(is_deleted, false) = false LIMIT 1`;
+          if (rel?.length > 0) relatedWarning = 'has active properties';
+        } else if (type === 'properties') {
+          const rel = await sql`SELECT 1 FROM leases WHERE property_id = ${entryId} LIMIT 1`;
+          if (rel?.length > 0) relatedWarning = 'has leases';
+        } else if (type === 'tenants') {
+          const rel = await sql`SELECT 1 FROM leases WHERE tenant_id = ${entryId} LIMIT 1`;
+          if (rel?.length > 0) relatedWarning = 'has leases';
+        }
+        if (relatedWarning) {
+          console.warn(`REJECTION WARN: Rejecting ${type} ${entryId} but it ${relatedWarning}. Entities should only be rejectable before any data is attached.`);
+        }
+
+        // is_deleted may not yet exist on these tables; log a warning and skip rather than crashing
+        try {
+          await sql(`UPDATE ${type} SET is_deleted = true WHERE id = $1`, [entryId]);
+          cleanupSummary = { soft_deleted: true };
+        } catch (e) {
+          if (e?.message?.toLowerCase().includes('is_deleted')) {
+            console.warn(`Rejection cleanup: is_deleted column not present on ${type}, skipping soft-delete for ${type} ${entryId}`);
+            cleanupSummary = { soft_deleted: false, skip_reason: 'column_missing' };
+          } else {
+            throw e;
+          }
+        }
+        console.log(`Rejected ${type} ${entryId}: soft_deleted=${cleanupSummary.soft_deleted}`);
+      }
+
+      await writeAuditLog({
+        staffId: perm.staff.id,
+        action: `approval.${action}`,
+        entityType: type,
+        entityId: entryId,
+        oldValues: { previous_approval_status: previousApprovalStatus },
+        newValues: { rejected_reason: rejectedReason, cleanup_summary: cleanupSummary },
+        ipAddress: perm.ipAddress,
+      });
     }
 
     if (action === 'reject' && type !== 'invoices') {
