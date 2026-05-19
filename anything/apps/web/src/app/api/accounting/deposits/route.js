@@ -232,6 +232,18 @@ export async function POST(request) {
           WHERE t.id = s.id
             AND EXISTS (SELECT 1 FROM ins_deposit)
           RETURNING t.id
+        ),
+        upd_payments AS (
+          UPDATE payments p
+          SET deposited_at = now(),
+              deposited_to_account_id = $5::int,
+              deposit_transaction_id = (SELECT id FROM ins_deposit)
+          FROM selected s
+          JOIN transactions t ON t.id = s.id
+          WHERE t.source_type = 'payment'
+            AND p.id = t.source_id
+            AND EXISTS (SELECT 1 FROM ins_deposit)
+          RETURNING p.id
         )
         SELECT
           (SELECT to_jsonb(d.*) FROM ins_deposit d) AS deposit_txn,
@@ -239,7 +251,8 @@ export async function POST(request) {
           (SELECT currency FROM agg) AS currency,
           (SELECT cnt FROM agg) AS selected_cnt,
           (SELECT currency_cnt FROM agg) AS currency_cnt,
-          (SELECT COALESCE(array_agg(id ORDER BY id), '{}'::int[]) FROM mark_deposited) AS marked_ids;
+          (SELECT COALESCE(array_agg(id ORDER BY id), '{}'::int[]) FROM mark_deposited) AS marked_ids,
+          (SELECT COALESCE(array_agg(id ORDER BY id), '{}'::int[]) FROM upd_payments) AS deposited_payment_ids;
       `;
 
       const rows = await sql(query, [
@@ -289,6 +302,9 @@ export async function POST(request) {
       }
 
       const markedIds = (r?.marked_ids || []).map((x) => Number(x));
+      const depositedPaymentIds = (r?.deposited_payment_ids || []).map((x) =>
+        Number(x),
+      );
 
       // CRITICAL VALIDATION: Verify all source transactions were marked
       if (markedIds.length !== expectedCount) {
@@ -330,6 +346,7 @@ export async function POST(request) {
       return Response.json({
         transaction: depositTxn,
         deposited_transaction_ids: markedIds,
+        deposited_payment_ids: depositedPaymentIds,
         amount: Number(r?.amount || 0),
         currency: r?.currency || "UGX",
       });
