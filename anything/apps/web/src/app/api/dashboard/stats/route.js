@@ -26,11 +26,13 @@ async function getAccountBalancesByIds(accountIds) {
         FROM transactions
         WHERE debit_account_id = ANY($1)
           AND COALESCE(is_deleted,false) = false
+          AND COALESCE(approval_status,'approved') = 'approved'
         UNION ALL
         SELECT credit_account_id AS account_id, -amount
         FROM transactions
         WHERE credit_account_id = ANY($1)
           AND COALESCE(is_deleted,false) = false
+          AND COALESCE(approval_status,'approved') = 'approved'
       ) t
       GROUP BY account_id
     `,
@@ -428,6 +430,7 @@ export async function GET(request) {
         JOIN chart_of_accounts a ON a.id = t.credit_account_id
         WHERE a.account_type = 'Income'
           AND COALESCE(t.is_deleted,false) = false
+          AND COALESCE(t.approval_status,'approved') = 'approved'
           AND t.transaction_date >= ${seriesStartYmd}::date
         GROUP BY year, month
       `,
@@ -442,6 +445,7 @@ export async function GET(request) {
         JOIN chart_of_accounts a ON a.id = t.debit_account_id
         WHERE a.account_type = 'Expense'
           AND COALESCE(t.is_deleted,false) = false
+          AND COALESCE(t.approval_status,'approved') = 'approved'
           AND t.transaction_date >= ${seriesStartYmd}::date
         GROUP BY year, month
       `,
@@ -453,6 +457,7 @@ export async function GET(request) {
         JOIN chart_of_accounts a ON a.id = t.credit_account_id
         WHERE a.account_type = 'Income'
           AND COALESCE(t.is_deleted,false) = false
+          AND COALESCE(t.approval_status,'approved') = 'approved'
           AND t.transaction_date >= ${monthStart}::date
           AND t.transaction_date <= ${todayYmd}::date
       `,
@@ -464,6 +469,7 @@ export async function GET(request) {
         JOIN chart_of_accounts a ON a.id = t.debit_account_id
         WHERE a.account_type = 'Expense'
           AND COALESCE(t.is_deleted,false) = false
+          AND COALESCE(t.approval_status,'approved') = 'approved'
           AND t.transaction_date >= ${monthStart}::date
           AND t.transaction_date <= ${todayYmd}::date
       `,
@@ -588,6 +594,7 @@ export async function GET(request) {
             SELECT COALESCE(SUM(t.amount), 0) AS total
             FROM transactions t
             WHERE COALESCE(t.is_deleted,false) = false
+              AND COALESCE(t.approval_status,'approved') = 'approved'
               AND t.transaction_date >= $1::date
               AND t.transaction_date <= $2::date
               AND t.debit_account_id = ANY($3)
