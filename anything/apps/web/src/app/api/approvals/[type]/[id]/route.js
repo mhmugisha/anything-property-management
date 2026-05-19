@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { createNotification } from "@/app/api/utils/notifications";
 
 const ALLOWED_TYPES = ['payments', 'invoices', 'transactions', 'tenant_deductions', 'landlord_deductions', 'landlords', 'properties', 'tenants'];
@@ -31,7 +31,23 @@ export async function POST(request, { params }) {
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
     const now = new Date().toISOString();
 
-    const query = `
+    // Fetch current entry to capture old approval_status before modifying it
+    const existingRows = await sql(`SELECT * FROM ${type} WHERE id = $1`, [entryId]);
+    const existing = existingRows?.[0] || null;
+    if (!existing) {
+      return Response.json({ error: 'Entry not found' }, { status: 404 });
+    }
+
+    // Guard: reject only if the entry is not already approved
+    if (action === 'reject' && existing.approval_status === 'approved') {
+      return Response.json({
+        error: 'Cannot reject an already-approved entry. This indicates an unexpected state; please contact support.',
+      }, { status: 409 });
+    }
+
+    const previousApprovalStatus = existing.approval_status;
+
+    const updateQuery = `
       UPDATE ${type}
       SET approval_status = $1,
           approved_by = $2,
@@ -41,7 +57,7 @@ export async function POST(request, { params }) {
       RETURNING *
     `;
 
-    const rows = await sql(query, [
+    const rows = await sql(updateQuery, [
       newStatus,
       perm.staff.id,
       now,
@@ -52,6 +68,52 @@ export async function POST(request, { params }) {
     const entry = rows?.[0] || null;
     if (!entry) {
       return Response.json({ error: 'Entry not found' }, { status: 404 });
+    }
+
+    // Rejection cleanup: undo downstream effects so the entry exits the books entirely
+    if (action === 'reject') {
+      let cleanupSummary = {};
+
+      if (type === 'payments') {
+        const [deletedTxns, updatedInvoices, deletedAllocations] = await sql.transaction([
+          sql`UPDATE transactions SET is_deleted = true
+              WHERE source_type = ANY(ARRAY['payment','payment_advance']::text[])
+                AND source_id = ${entryId}
+              RETURNING id`,
+          sql`UPDATE invoices i
+              SET paid_amount = GREATEST(0, i.paid_amount - pia.total_applied),
+                  status = CASE
+                    WHEN GREATEST(0, i.paid_amount - pia.total_applied) < i.amount THEN 'open'
+                    ELSE i.status
+                  END
+              FROM (
+                SELECT invoice_id, SUM(amount_applied) AS total_applied
+                FROM payment_invoice_allocations
+                WHERE payment_id = ${entryId}
+                GROUP BY invoice_id
+              ) pia
+              WHERE i.id = pia.invoice_id
+              RETURNING i.id`,
+          sql`DELETE FROM payment_invoice_allocations WHERE payment_id = ${entryId} RETURNING id`,
+          sql`UPDATE payments SET is_reversed = true WHERE id = ${entryId}`,
+        ]);
+        cleanupSummary = {
+          ledger_txns_deleted: deletedTxns?.length ?? 0,
+          invoices_restored: updatedInvoices?.length ?? 0,
+          allocations_deleted: deletedAllocations?.length ?? 0,
+        };
+        console.log(`Rejected payments ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}, invoices updated=${cleanupSummary.invoices_restored}`);
+      }
+
+      await writeAuditLog({
+        staffId: perm.staff.id,
+        action: `approval.${action}`,
+        entityType: type,
+        entityId: entryId,
+        oldValues: { previous_approval_status: previousApprovalStatus },
+        newValues: { rejected_reason: rejectedReason, cleanup_summary: cleanupSummary },
+        ipAddress: perm.ipAddress,
+      });
     }
 
     if (action === 'reject' && type !== 'invoices') {
