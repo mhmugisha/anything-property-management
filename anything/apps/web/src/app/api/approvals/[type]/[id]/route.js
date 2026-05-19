@@ -152,6 +152,38 @@ export async function POST(request, { params }) {
         console.log(`Rejected invoices ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}`);
       }
 
+      else if (['landlords', 'properties', 'tenants'].includes(type)) {
+        // Warn if related financial records already exist (rejection at this stage is unexpected)
+        let relatedWarning = null;
+        if (type === 'landlords') {
+          const rel = await sql`SELECT 1 FROM properties WHERE landlord_id = ${entryId} AND COALESCE(is_deleted, false) = false LIMIT 1`;
+          if (rel?.length > 0) relatedWarning = 'has active properties';
+        } else if (type === 'properties') {
+          const rel = await sql`SELECT 1 FROM leases WHERE property_id = ${entryId} LIMIT 1`;
+          if (rel?.length > 0) relatedWarning = 'has leases';
+        } else if (type === 'tenants') {
+          const rel = await sql`SELECT 1 FROM leases WHERE tenant_id = ${entryId} LIMIT 1`;
+          if (rel?.length > 0) relatedWarning = 'has leases';
+        }
+        if (relatedWarning) {
+          console.warn(`REJECTION WARN: Rejecting ${type} ${entryId} but it ${relatedWarning}. Entities should only be rejectable before any data is attached.`);
+        }
+
+        // is_deleted may not yet exist on these tables; log a warning and skip rather than crashing
+        try {
+          await sql(`UPDATE ${type} SET is_deleted = true WHERE id = $1`, [entryId]);
+          cleanupSummary = { soft_deleted: true };
+        } catch (e) {
+          if (e?.message?.toLowerCase().includes('is_deleted')) {
+            console.warn(`Rejection cleanup: is_deleted column not present on ${type}, skipping soft-delete for ${type} ${entryId}`);
+            cleanupSummary = { soft_deleted: false, skip_reason: 'column_missing' };
+          } else {
+            throw e;
+          }
+        }
+        console.log(`Rejected ${type} ${entryId}: soft_deleted=${cleanupSummary.soft_deleted}`);
+      }
+
       await writeAuditLog({
         staffId: perm.staff.id,
         action: `approval.${action}`,
