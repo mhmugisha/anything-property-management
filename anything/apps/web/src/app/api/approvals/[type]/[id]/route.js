@@ -111,6 +111,18 @@ export async function POST(request, { params }) {
         console.log(`Rejected transactions ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}`);
       }
 
+      else if (type === 'tenant_deductions') {
+        const [deletedDeduction, deletedTxns] = await sql.transaction([
+          sql`UPDATE tenant_deductions SET is_deleted = true WHERE id = ${entryId} RETURNING id`,
+          sql`UPDATE transactions SET is_deleted = true WHERE source_type = 'tenant_deduction' AND source_id = ${entryId} RETURNING id`,
+        ]);
+        cleanupSummary = {
+          deduction_deleted: deletedDeduction?.length ?? 0,
+          ledger_txns_deleted: deletedTxns?.length ?? 0,
+        };
+        console.log(`Rejected tenant_deductions ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}`);
+      }
+
       await writeAuditLog({
         staffId: perm.staff.id,
         action: `approval.${action}`,
