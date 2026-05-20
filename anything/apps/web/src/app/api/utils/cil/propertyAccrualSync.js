@@ -45,40 +45,6 @@ export async function ensurePropertyAccrualLedgerViaCIL(options = {}) {
   const leaseId =
     Number.isFinite(leaseIdRaw) && leaseIdRaw > 0 ? leaseIdRaw : null;
 
-  // Discover which property-months are affected by this lease (so we can delete stale rows safely)
-  const affected = leaseId
-    ? await sql(
-        `
-          SELECT DISTINCT
-            i.property_id,
-            i.invoice_year,
-            i.invoice_month,
-            COALESCE(i.currency,'UGX')::text AS currency
-          FROM invoices i
-          WHERE i.lease_id = $1
-            AND i.status <> 'void'
-            AND COALESCE(i.is_deleted, false) = false
-        `,
-        [leaseId],
-      )
-    : [];
-
-  const affectedRefs = {
-    rent: new Set(),
-    fee: new Set(),
-  };
-
-  for (const a of affected || []) {
-    const propertyId = toNumber(a.property_id);
-    const year = toNumber(a.invoice_year);
-    const month = toNumber(a.invoice_month);
-    const currency = String(a.currency || "UGX").trim() || "UGX";
-
-    if (!propertyId || !year || !month) continue;
-    affectedRefs.rent.add(makeRentRef({ propertyId, year, month, currency }));
-    affectedRefs.fee.add(makeFeeRef({ propertyId, year, month, currency }));
-  }
-
   // Build required monthly property summaries
   const where = ["i.status <> 'void'", "COALESCE(i.is_deleted, false) = false"];
   const values = [];
@@ -128,6 +94,19 @@ export async function ensurePropertyAccrualLedgerViaCIL(options = {}) {
     `,
     values,
   );
+
+  // Build scope refs from every property-month returned by 'required' — cleanup is restricted to exactly these.
+  const scopeRentRefs = new Set();
+  const scopeFeeRefs = new Set();
+  for (const r of required || []) {
+    const propertyId = toNumber(r.property_id);
+    const year = toNumber(r.invoice_year);
+    const month = toNumber(r.invoice_month);
+    const currency = String(r.currency || "UGX").trim() || "UGX";
+    if (!propertyId || !year || !month) continue;
+    scopeRentRefs.add(makeRentRef({ propertyId, year, month, currency }));
+    scopeFeeRefs.add(makeFeeRef({ propertyId, year, month, currency }));
+  }
 
   const keepRentRefs = [];
   const keepFeeRefs = [];
@@ -237,9 +216,11 @@ export async function ensurePropertyAccrualLedgerViaCIL(options = {}) {
     }
   }
 
-  // Soft-delete stale summary rows
-  const restrictRent = leaseId ? Array.from(affectedRefs.rent) : null;
-  const restrictFee = leaseId ? Array.from(affectedRefs.fee) : null;
+  // Soft-delete stale summary rows, always restricted to the property-months we just processed.
+  // Passing an empty array (not null) when scopeRefs is empty ensures no rows outside the current
+  // run are touched — null would mean "no restriction" in softDeleteBySourceAndRefs.
+  const restrictRent = Array.from(scopeRentRefs);
+  const restrictFee = Array.from(scopeFeeRefs);
 
   const rentDel = await softDeleteBySourceAndRefs({
     sourceType: "rent_accrual_summary",
