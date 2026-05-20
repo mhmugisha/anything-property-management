@@ -174,8 +174,36 @@ export async function autoApplyAdvancePaymentsForTenant(tenantId) {
       return queries;
     });
 
+    // Fetch allocation ids for the (payment_id, invoice_id) pairs we just upserted.
+    // Each allocation row has a unique id — use it as sourceId so the postingAdapter
+    // idempotency key is unique per allocation, not shared across all allocations of
+    // the same payment.
+    const paymentIds = allocations.map((a) => a.paymentId);
+    const invoiceIds = allocations.map((a) => a.invoiceId);
+    const allocationRows = await sql(
+      `SELECT id, payment_id, invoice_id
+       FROM payment_invoice_allocations
+       WHERE payment_id = ANY($1::int[]) AND invoice_id = ANY($2::int[])`,
+      [paymentIds, invoiceIds],
+    );
+    const allocationIdByPair = new Map();
+    for (const row of allocationRows || []) {
+      allocationIdByPair.set(`${row.payment_id}-${row.invoice_id}`, row.id);
+    }
+    for (const a of allocations) {
+      a.allocationId = allocationIdByPair.get(`${a.paymentId}-${a.invoiceId}`);
+    }
+
     // STEP 2: THEN post accounting entries AFTER transaction commits
     const postPromises = allocations.map((a) => {
+      if (!a.allocationId) {
+        console.error("autoApply: allocationId missing, skipping GL posting", {
+          paymentId: a.paymentId,
+          invoiceId: a.invoiceId,
+        });
+        return Promise.resolve({ ok: false, error: "missing allocationId" });
+      }
+
       const receiptDesc = `Payment on Account Applied - ${a.tenantName || "Tenant"} - ${a.description || "Rent"}`;
 
       return postAccountingEntryFromIntents({
@@ -190,7 +218,7 @@ export async function autoApplyAdvancePaymentsForTenant(tenantId) {
         landlordId: a.landlordId || null,
         propertyId: a.propertyId,
         sourceType: "payment_auto_apply",
-        sourceId: a.paymentId,
+        sourceId: a.allocationId,
         auditContext: {
           sourceModule: "property",
           businessEvent: "TENANT_ADVANCE_PAYMENT_AUTO_APPLIED",
