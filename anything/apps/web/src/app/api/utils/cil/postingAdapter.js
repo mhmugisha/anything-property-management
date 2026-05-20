@@ -164,22 +164,41 @@ export async function postAccountingEntryFromIntents({
   const propertyNum = propertyId !== undefined ? toNumber(propertyId) : null;
   const sourceIdNum = sourceId !== undefined ? toNumber(sourceId) : null;
 
-  const hasIdempotency = Boolean(ref && srcType && colSourceType && colRef);
+  const hasIdempotencyBySourceId = Boolean(srcType && sourceIdNum && colSourceType && colSourceId);
+  const hasIdempotencyByRef = Boolean(ref && srcType && colSourceType && colRef);
+  const hasIdempotency = hasIdempotencyBySourceId || hasIdempotencyByRef;
 
   let saved = null;
 
-  // Upsert-like behavior (update existing by source_type+reference_number; otherwise insert)
+  // Upsert-like behavior: prefer (source_type, source_id) when sourceId is present — it is
+  // unique per source row and safe to use as an idempotency key. Fall back to
+  // (source_type, reference_number) only when sourceId is absent (e.g. accrual summaries),
+  // where the reference is guaranteed deterministic by the caller.
   if (hasIdempotency) {
-    const existing = await sql(
-      `
-        SELECT *
-        FROM ${table}
-        WHERE ${colSourceType} = $1
-          AND ${colRef} = $2
-        LIMIT 1
-      `,
-      [srcType, ref],
-    );
+    let existing;
+    if (hasIdempotencyBySourceId) {
+      existing = await sql(
+        `
+          SELECT *
+          FROM ${table}
+          WHERE ${colSourceType} = $1
+            AND ${colSourceId} = $2
+          LIMIT 1
+        `,
+        [srcType, sourceIdNum],
+      );
+    } else {
+      existing = await sql(
+        `
+          SELECT *
+          FROM ${table}
+          WHERE ${colSourceType} = $1
+            AND ${colRef} = $2
+          LIMIT 1
+        `,
+        [srcType, ref],
+      );
+    }
 
     const existingRow = existing?.[0] || null;
     const existingPk = existingRow ? toNumber(existingRow[pkCol]) : null;
