@@ -168,7 +168,7 @@ export async function PUT(request, { params: { id } }) {
       return Response.json(
         {
           error:
-            "Editing split payments (those allocated to multiple invoices) is not supported. Please delete and re-create the payment instead.",
+            "Editing split payments (allocated to multiple invoices) is not supported. To make changes: click Delete to reverse this payment cleanly, then record fresh payments for each invoice.",
         },
         { status: 400 },
       );
