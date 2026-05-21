@@ -171,53 +171,65 @@ export async function POST(request) {
         );
       }
 
-      // Create payment
+      // STEP 1: Wrap local writes in a transaction so they commit atomically.
       const approvalA = getApprovalFields(perm.staff);
-      const paymentRows = await sql`
-        INSERT INTO payments (
-          lease_id, tenant_id, property_id,
-          payment_date, amount, currency, payment_method,
-          reference_number,
-          recorded_by, notes,
-          period_month, period_year,
-          description,
-          approval_status, approved_by, approved_at
-        )
-        VALUES (
-          ${invoice.lease_id}, ${invoice.tenant_id}, ${invoice.property_id},
-          ${paymentDate}::date, ${amount}, ${invoice.currency || "UGX"}, ${paymentMethod},
-          ${referenceNumber},
-          ${perm.staff.id}, ${notes},
-          NULL, NULL,
-          ${description || invoice.description || null},
-          ${approvalA.approval_status}, ${approvalA.approved_by}, ${approvalA.approved_at}
-        )
-        RETURNING *
-      `;
+      let payment;
+      let updatedInvoice;
+      try {
+        const results = await sql.transaction((txn) => [
+          txn`
+            INSERT INTO payments (
+              lease_id, tenant_id, property_id,
+              payment_date, amount, currency, payment_method,
+              reference_number,
+              recorded_by, notes,
+              period_month, period_year,
+              description,
+              approval_status, approved_by, approved_at
+            )
+            VALUES (
+              ${invoice.lease_id}, ${invoice.tenant_id}, ${invoice.property_id},
+              ${paymentDate}::date, ${amount}, ${invoice.currency || "UGX"}, ${paymentMethod},
+              ${referenceNumber},
+              ${perm.staff.id}, ${notes},
+              NULL, NULL,
+              ${description || invoice.description || null},
+              ${approvalA.approval_status}, ${approvalA.approved_by}, ${approvalA.approved_at}
+            )
+            RETURNING *
+          `,
+          txn`
+            INSERT INTO payment_invoice_allocations (payment_id, invoice_id, amount_applied)
+            VALUES (lastval(), ${invoiceId}, ${amount})
+          `,
+          txn`
+            UPDATE invoices
+            SET paid_amount = paid_amount + ${amount},
+                status = CASE
+                  WHEN (paid_amount + ${amount}) >= amount THEN 'paid'
+                  ELSE 'open'
+                END
+            WHERE id = ${invoiceId}
+            RETURNING *
+          `,
+        ]);
+        payment = results[0]?.[0] || null;
+        updatedInvoice = results[2]?.[0] || null;
+      } catch (txnErr) {
+        return Response.json(
+          { error: `Database write failed: ${txnErr.message}` },
+          { status: 500 },
+        );
+      }
 
-      const payment = paymentRows?.[0] || null;
+      if (!payment) {
+        return Response.json(
+          { error: "Payment creation returned no row" },
+          { status: 500 },
+        );
+      }
 
-      // Allocate payment to invoice
-      await sql`
-        INSERT INTO payment_invoice_allocations (payment_id, invoice_id, amount_applied)
-        VALUES (${payment.id}, ${invoiceId}, ${amount})
-      `;
-
-      // Update invoice paid + status
-      const updatedRows = await sql`
-        UPDATE invoices
-        SET paid_amount = paid_amount + ${amount},
-            status = CASE
-              WHEN (paid_amount + ${amount}) >= amount THEN 'paid'
-              ELSE 'open'
-            END
-        WHERE id = ${invoiceId}
-        RETURNING *
-      `;
-
-      const updatedInvoice = updatedRows?.[0] || null;
-
-      // Post accounting via CIL:
+      // STEP 2: Post accounting. If it fails, compensate by reversing the DB writes.
       // Receipt: Dr Undeposited Funds, Cr Rent Receivable
       const receiptDesc = `Rent Collection - ${invoice.tenant_name || "Tenant"} - ${invoice.description}`;
 
@@ -243,8 +255,35 @@ export async function POST(request) {
       });
 
       if (!post.ok) {
-        throw new Error(
-          `Accounting posting failed: ${post.error || "unknown error"}`,
+        try {
+          await sql.transaction((txn) => [
+            txn`DELETE FROM payment_invoice_allocations WHERE payment_id = ${payment.id}`,
+            txn`
+              UPDATE invoices
+              SET paid_amount = paid_amount - ${amount},
+                  status = CASE
+                    WHEN (paid_amount - ${amount}) >= amount THEN 'paid'
+                    ELSE 'open'
+                  END
+              WHERE id = ${invoiceId}
+            `,
+            txn`DELETE FROM payments WHERE id = ${payment.id}`,
+          ]);
+        } catch (rollbackErr) {
+          console.error(
+            "CRITICAL: GL post failed AND rollback failed. Manual cleanup required.",
+            {
+              paymentId: payment.id,
+              glError: post.error,
+              rollbackError: rollbackErr.message,
+            },
+          );
+        }
+        return Response.json(
+          {
+            error: `Accounting posting failed; payment was rolled back: ${post.error || "unknown error"}`,
+          },
+          { status: 500 },
         );
       }
 
@@ -362,32 +401,47 @@ export async function POST(request) {
 
     const advDesc = description || "Payment on Account";
 
+    // STEP 1: Insert payment row.
     const approvalB = getApprovalFields(perm.staff);
-    const paymentRows = await sql`
-      INSERT INTO payments (
-        lease_id, tenant_id, property_id,
-        payment_date, amount, currency, payment_method,
-        reference_number,
-        recorded_by, notes,
-        period_month, period_year,
-        description,
-        approval_status, approved_by, approved_at
-      )
-      VALUES (
-        ${lease.lease_id}, ${tenantId}, ${propertyId},
-        ${paymentDate}::date, ${amount}, ${lease.currency || "UGX"}, ${paymentMethod},
-        ${referenceNumber},
-        ${perm.staff.id}, ${notes},
-        NULL, NULL,
-        ${advDesc},
-        ${approvalB.approval_status}, ${approvalB.approved_by}, ${approvalB.approved_at}
-      )
-      RETURNING *
-    `;
+    let payment;
+    try {
+      const paymentRows = await sql`
+        INSERT INTO payments (
+          lease_id, tenant_id, property_id,
+          payment_date, amount, currency, payment_method,
+          reference_number,
+          recorded_by, notes,
+          period_month, period_year,
+          description,
+          approval_status, approved_by, approved_at
+        )
+        VALUES (
+          ${lease.lease_id}, ${tenantId}, ${propertyId},
+          ${paymentDate}::date, ${amount}, ${lease.currency || "UGX"}, ${paymentMethod},
+          ${referenceNumber},
+          ${perm.staff.id}, ${notes},
+          NULL, NULL,
+          ${advDesc},
+          ${approvalB.approval_status}, ${approvalB.approved_by}, ${approvalB.approved_at}
+        )
+        RETURNING *
+      `;
+      payment = paymentRows?.[0] || null;
+    } catch (insertErr) {
+      return Response.json(
+        { error: `Payment creation failed: ${insertErr.message}` },
+        { status: 500 },
+      );
+    }
 
-    const payment = paymentRows?.[0] || null;
+    if (!payment) {
+      return Response.json(
+        { error: "Payment creation returned no row" },
+        { status: 500 },
+      );
+    }
 
-    // Post accounting entry for advance payment
+    // STEP 2: Post accounting. If it fails, delete the payment row to avoid an orphan.
     // Dr Undeposited Funds (Asset - cash received)
     // Cr Tenant Prepayments (Liability - obligation to provide future rent)
     const prepaymentDesc = `Payment on Account - ${lease.tenant_name || "Tenant"} - ${lease.property_name}`;
@@ -414,8 +468,23 @@ export async function POST(request) {
     });
 
     if (!post.ok) {
-      throw new Error(
-        `Accounting posting failed for advance payment: ${post.error || "unknown error"}`,
+      try {
+        await sql`DELETE FROM payments WHERE id = ${payment.id}`;
+      } catch (rollbackErr) {
+        console.error(
+          "CRITICAL: GL post failed AND payment delete failed. Manual cleanup required.",
+          {
+            paymentId: payment.id,
+            glError: post.error,
+            rollbackError: rollbackErr.message,
+          },
+        );
+      }
+      return Response.json(
+        {
+          error: `Accounting posting failed; payment was rolled back: ${post.error || "unknown error"}`,
+        },
+        { status: 500 },
       );
     }
 
