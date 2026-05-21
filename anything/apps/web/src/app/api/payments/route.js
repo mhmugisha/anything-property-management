@@ -171,13 +171,15 @@ export async function POST(request) {
         );
       }
 
-      // STEP 1: Wrap local writes in a transaction so they commit atomically.
+      // STEP 1: Single CTE chains all three writes atomically — PostgreSQL
+      // guarantees all commit or none do, and the payment.id flows through
+      // RETURNING without relying on lastval() across separate statements.
       const approvalA = getApprovalFields(perm.staff);
       let payment;
       let updatedInvoice;
       try {
-        const results = await sql.transaction((txn) => [
-          txn`
+        const results = await sql`
+          WITH new_payment AS (
             INSERT INTO payments (
               lease_id, tenant_id, property_id,
               payment_date, amount, currency, payment_method,
@@ -197,12 +199,13 @@ export async function POST(request) {
               ${approvalA.approval_status}, ${approvalA.approved_by}, ${approvalA.approved_at}
             )
             RETURNING *
-          `,
-          txn`
+          ),
+          new_allocation AS (
             INSERT INTO payment_invoice_allocations (payment_id, invoice_id, amount_applied)
-            VALUES (lastval(), ${invoiceId}, ${amount})
-          `,
-          txn`
+            SELECT id, ${invoiceId}, ${amount} FROM new_payment
+            RETURNING *
+          ),
+          updated_invoice AS (
             UPDATE invoices
             SET paid_amount = paid_amount + ${amount},
                 status = CASE
@@ -211,10 +214,13 @@ export async function POST(request) {
                 END
             WHERE id = ${invoiceId}
             RETURNING *
-          `,
-        ]);
-        payment = results[0]?.[0] || null;
-        updatedInvoice = results[2]?.[0] || null;
+          )
+          SELECT
+            (SELECT row_to_json(p) FROM new_payment p) AS payment,
+            (SELECT row_to_json(i) FROM updated_invoice i) AS invoice
+        `;
+        payment = results?.[0]?.payment || null;
+        updatedInvoice = results?.[0]?.invoice || null;
       } catch (txnErr) {
         return Response.json(
           { error: `Database write failed: ${txnErr.message}` },
