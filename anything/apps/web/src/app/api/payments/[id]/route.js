@@ -113,18 +113,32 @@ export async function PUT(request, { params: { id } }) {
       return Response.json({ error: "Amount must be > 0" }, { status: 400 });
     }
 
-    const invoiceId = toNumber(oldPayment.invoice_id);
-    const isUpfrontPayment = !invoiceId;
+    // payments has no invoice_id column — allocations live in their own table.
+    const allocations = await sql`
+      SELECT id, invoice_id, amount_applied
+      FROM payment_invoice_allocations
+      WHERE payment_id = ${paymentId}
+    `;
 
-    // If this is an upfront payment (no invoice allocation), handle separately
-    if (isUpfrontPayment) {
-      // For upfront payments, just update the payment record
-      // No need to update invoice allocation or accounting
+    const allocationCount = allocations?.length || 0;
+
+    if (allocationCount === 0) {
+      // No invoice linked: only metadata fields may change, not amount.
+      const oldAmount = Number(oldPayment.amount || 0);
+      if (Number(amount) !== oldAmount) {
+        return Response.json(
+          {
+            error:
+              "Cannot change amount on a payment with no invoice allocation. Delete and re-create the payment instead.",
+          },
+          { status: 400 },
+        );
+      }
+
       const [updatedPaymentRows] = await sql.transaction((txn) => [
         txn`
           UPDATE payments
           SET payment_date = ${paymentDate}::date,
-              amount = ${amount},
               payment_method = ${paymentMethod},
               reference_number = ${referenceNumber},
               notes = ${notes}
@@ -150,7 +164,21 @@ export async function PUT(request, { params: { id } }) {
       return Response.json(txResult);
     }
 
-    // Handle invoice payment update (existing logic)
+    if (allocationCount >= 2) {
+      return Response.json(
+        {
+          error:
+            "Editing split payments (those allocated to multiple invoices) is not supported. Please delete and re-create the payment instead.",
+        },
+        { status: 400 },
+      );
+    }
+
+    // allocationCount === 1: full edit — update payment, allocation, invoice, and ledger.
+    const allocation = allocations[0];
+    const invoiceId = Number(allocation.invoice_id);
+
+    // Handle invoice payment update
     const invoiceRows = await sql`
       SELECT *
       FROM invoices
@@ -251,8 +279,7 @@ export async function PUT(request, { params: { id } }) {
         txn`
           UPDATE payment_invoice_allocations
           SET amount_applied = ${amount}
-          WHERE payment_id = ${paymentId}
-            AND invoice_id = ${invoiceId}
+          WHERE id = ${allocation.id}
         `,
         txn`
           UPDATE invoices
