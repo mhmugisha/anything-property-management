@@ -420,58 +420,98 @@ export async function DELETE(request, { params: { id } }) {
       );
     }
 
-    // Fetch all allocations for this payment (a payment might be allocated to 1+ invoices).
-    const allocRows = await sql`
-      SELECT invoice_id, amount_applied
+    // Capture allocation ids + per-invoice deltas BEFORE we delete anything,
+    // so we can soft-delete payment_auto_apply entries by allocation_id even
+    // after the allocation rows are gone.
+    const allocations = await sql`
+      SELECT id, invoice_id, amount_applied
       FROM payment_invoice_allocations
       WHERE payment_id = ${paymentId}
     `;
 
-    const allocations = Array.isArray(allocRows) ? allocRows : [];
+    const allocationIds = (allocations || []).map((a) => a.id);
 
-    // Mark payment reversed
-    await sql`
-      UPDATE payments
-      SET is_reversed = true,
-          reversed_by = ${staffId},
-          reversed_at = now()
-      WHERE id = ${paymentId}
-    `;
+    try {
+      await sql.transaction((txn) => {
+        const queries = [];
 
-    // Reverse invoice paid_amount for each allocation (if any)
-    for (const a of allocations) {
-      const invoiceId = toNumber(a?.invoice_id);
-      const applied = Number(a?.amount_applied || 0);
-      if (!invoiceId || !Number.isFinite(applied) || applied <= 0) continue;
+        // 1. Mark payment reversed.
+        queries.push(txn`
+          UPDATE payments
+          SET is_reversed = true,
+              reversed_by = ${staffId},
+              reversed_at = now()
+          WHERE id = ${paymentId}
+        `);
 
-      await sql`
-        UPDATE invoices
-        SET paid_amount = GREATEST(0, paid_amount - ${applied}),
-            status = CASE
-              WHEN (GREATEST(0, paid_amount - ${applied})) >= amount THEN 'paid'
-              ELSE 'open'
-            END
-        WHERE id = ${invoiceId}
-      `;
+        // 2. Reverse each invoice's paid_amount and status.
+        for (const a of allocations || []) {
+          const invoiceId = toNumber(a?.invoice_id);
+          const applied = Number(a?.amount_applied || 0);
+          if (!invoiceId || !Number.isFinite(applied) || applied <= 0) continue;
+
+          queries.push(txn`
+            UPDATE invoices
+            SET paid_amount = GREATEST(0, paid_amount - ${applied}),
+                status = CASE
+                  WHEN (GREATEST(0, paid_amount - ${applied})) >= amount THEN 'paid'
+                  ELSE 'open'
+                END
+            WHERE id = ${invoiceId}
+          `);
+        }
+
+        // 3. Delete the allocation rows.
+        queries.push(txn`
+          DELETE FROM payment_invoice_allocations
+          WHERE payment_id = ${paymentId}
+        `);
+
+        // 4. Soft-delete 'payment' ledger entries (Pay Invoice flow).
+        queries.push(txn`
+          UPDATE transactions
+          SET is_deleted = true,
+              deleted_at = now(),
+              deleted_by = ${staffId}
+          WHERE source_type = 'payment'
+            AND source_id = ${paymentId}
+            AND COALESCE(is_deleted, false) = false
+        `);
+
+        // 5. Soft-delete 'payment_advance' ledger entries (Pay-on-Account credit).
+        queries.push(txn`
+          UPDATE transactions
+          SET is_deleted = true,
+              deleted_at = now(),
+              deleted_by = ${staffId}
+          WHERE source_type = 'payment_advance'
+            AND source_id = ${paymentId}
+            AND COALESCE(is_deleted, false) = false
+        `);
+
+        // 6. Soft-delete 'payment_auto_apply' ledger entries (keyed by allocation_id).
+        if (allocationIds.length > 0) {
+          queries.push(txn`
+            UPDATE transactions
+            SET is_deleted = true,
+                deleted_at = now(),
+                deleted_by = ${staffId}
+            WHERE source_type = 'payment_auto_apply'
+              AND source_id = ANY(${allocationIds}::int[])
+              AND COALESCE(is_deleted, false) = false
+          `);
+        }
+
+        return queries;
+      });
+    } catch (txnErr) {
+      return Response.json(
+        { error: `Payment deletion failed: ${txnErr.message}` },
+        { status: 500 },
+      );
     }
 
-    // Remove allocations (whether 0, 1, or many)
-    await sql`
-      DELETE FROM payment_invoice_allocations
-      WHERE payment_id = ${paymentId}
-    `;
-
-    // Soft-delete accounting transactions tied to this payment (if any)
-    await sql`
-      UPDATE transactions
-      SET is_deleted = true,
-          deleted_at = now(),
-          deleted_by = ${staffId}
-      WHERE source_type = 'payment'
-        AND source_id = ${paymentId}
-        AND COALESCE(is_deleted,false) = false
-    `;
-
+    // Audit log runs only after the transaction commits successfully.
     await writeAuditLog({
       staffId: staffId,
       action: "payment.delete",
