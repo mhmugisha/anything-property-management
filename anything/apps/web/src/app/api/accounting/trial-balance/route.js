@@ -7,16 +7,14 @@ export async function GET(request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const from = (searchParams.get("from") || "").trim();
     const to = (searchParams.get("to") || "").trim();
 
-    const where = ["COALESCE(t.is_deleted,false) = false"];
+    const where = [
+      "COALESCE(t.is_deleted,false) = false",
+      "COALESCE(t.approval_status,'approved') = 'approved'",
+    ];
     const values = [];
 
-    if (from) {
-      where.push(`t.transaction_date >= $${values.length + 1}::date`);
-      values.push(from);
-    }
     if (to) {
       where.push(`t.transaction_date <= $${values.length + 1}::date`);
       values.push(to);
@@ -45,10 +43,22 @@ export async function GET(request) {
     const mapped = rows.map((r) => {
       const debitTotal = Number(r.debit_total);
       const creditTotal = Number(r.credit_total);
-      const net = debitTotal - creditTotal; // positive = debit balance, negative = credit balance
+      const net = debitTotal - creditTotal;
 
-      const debit_balance = net > 0 ? net : 0;
-      const credit_balance = net < 0 ? Math.abs(net) : 0;
+      // Classify by normal balance side based on account type.
+      // Debit-normal (Asset, Expense): balance = debits − credits.
+      // Credit-normal (Liability, Income, Equity): balance = credits − debits.
+      const isDebitNormal = ["Asset", "Expense"].includes(r.account_type);
+      let debit_balance, credit_balance;
+      if (isDebitNormal) {
+        const balance = debitTotal - creditTotal;
+        debit_balance = balance > 0 ? balance : 0;
+        credit_balance = balance < 0 ? -balance : 0;
+      } else {
+        const balance = creditTotal - debitTotal;
+        credit_balance = balance > 0 ? balance : 0;
+        debit_balance = balance < 0 ? -balance : 0;
+      }
 
       return {
         id: r.id,

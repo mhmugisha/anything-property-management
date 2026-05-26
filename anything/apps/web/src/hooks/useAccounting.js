@@ -155,7 +155,6 @@ export function useTrialBalance(filters, enabled) {
     queryKey: ["accounting", "trialBalance", safeFilters],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (safeFilters.from) params.set("from", safeFilters.from);
       if (safeFilters.to) params.set("to", safeFilters.to);
       const qs = params.toString();
       const url = qs

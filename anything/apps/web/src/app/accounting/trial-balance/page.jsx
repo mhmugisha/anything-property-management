@@ -22,27 +22,19 @@ export default function TrialBalancePage() {
   const canUseAccounting = staffQuery.data?.permissions?.accounting === true;
 
   const now = useMemo(() => new Date(), []);
-  const defaultFrom = useMemo(() => {
-    const d = new Date(now);
-    d.setMonth(d.getMonth() - 1);
-    return d.toISOString().slice(0, 10);
-  }, [now]);
   const defaultTo = useMemo(() => now.toISOString().slice(0, 10), [now]);
 
-  const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
-    const qFrom = sp.get("from");
     const qTo = sp.get("to");
-    if (qFrom) setFrom(qFrom);
     if (qTo) setTo(qTo);
   }, []);
 
   const trialBalanceQuery = useTrialBalance(
-    { from, to },
+    { to },
     !userLoading && !!user && canUseAccounting,
   );
 
@@ -113,16 +105,8 @@ export default function TrialBalancePage() {
           </div>
 
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <Field label="From">
-                <DatePopoverInput
-                  value={from}
-                  onChange={setFrom}
-                  placeholder="DD-MM-YYYY"
-                  className="bg-white"
-                />
-              </Field>
-              <Field label="To">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="As at">
                 <DatePopoverInput
                   value={to}
                   onChange={setTo}
@@ -131,7 +115,7 @@ export default function TrialBalancePage() {
                 />
               </Field>
               <div className="text-xs text-slate-500 flex items-end">
-                Totals per account.
+                Cumulative account balances as at the selected date.
               </div>
             </div>
           </div>
