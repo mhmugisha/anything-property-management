@@ -480,7 +480,6 @@ export async function GET(request) {
       "1110",
       "1120",
       "1130",
-      "2100",
       "5160",
       "5210",
     ]);
@@ -488,7 +487,6 @@ export async function GET(request) {
     const cashId = codeToId["1110"] || null;
     const bankId = codeToId["1120"] || null;
     const undepositedFundsId = codeToId["1130"] || null;
-    const rentPayableId = codeToId["2100"] || null;
     const salariesId = codeToId["5160"] || null;
     const officeExpensesId = codeToId["5210"] || null;
 
@@ -497,7 +495,6 @@ export async function GET(request) {
         cashId,
         bankId,
         undepositedFundsId,
-        rentPayableId,
       ]),
 
       // Salary + Office Expenses (this month)
