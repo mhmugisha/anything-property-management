@@ -4,7 +4,6 @@ import {
   ensureCanCreditAccount,
   getAssetAccountBalance,
   getAccountById,
-  getDueToLandlordsBalance,
 } from "@/app/api/utils/accounting";
 import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
@@ -136,17 +135,25 @@ export async function PUT(request, { params: { id } }) {
       );
     }
 
-    // NEW: Prevent overpaying landlords when editing a payout.
-    // Compute due excluding this payout row (so we can safely compare the updated amount).
-    const dueExcludingThis = await getDueToLandlordsBalance({
-      landlordId: oldPayout.landlord_id,
-      propertyId: oldPayout.property_id,
-      excludePayoutId: payoutId,
-    });
-    if (amount > Number(dueExcludingThis || 0)) {
+    // Prevent overpaying landlords — read from ledger account 2100 (id = 7).
+    // Exclude the current payout's GL entry so the balance reflects what it would
+    // be after this edit, not before (same logic as the old excludePayoutId pattern).
+    const balanceRows = await sql`
+      SELECT
+        COALESCE(SUM(CASE WHEN credit_account_id = 7 THEN amount ELSE 0 END), 0)
+        - COALESCE(SUM(CASE WHEN debit_account_id = 7 THEN amount ELSE 0 END), 0)
+        AS balance
+      FROM transactions
+      WHERE COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
+        AND (debit_account_id = 7 OR credit_account_id = 7)
+        AND NOT (source_type = 'landlord_payout' AND source_id = ${payoutId})
+    `;
+    const dueExcludingThis = Number(balanceRows?.[0]?.balance || 0);
+    if (amount > dueExcludingThis) {
       return Response.json(
         {
-          error: `Overpayment blocked. Due to landlords for this property is ${Number(dueExcludingThis || 0)} UGX.`,
+          error: `Overpayment blocked. Due to landlords balance is ${dueExcludingThis} UGX.`,
         },
         { status: 400 },
       );
@@ -184,55 +191,57 @@ export async function PUT(request, { params: { id } }) {
     `;
     const landlordName = landlordRows?.[0]?.full_name || "Unknown Landlord";
 
-    // Update the payout record
-    const updatedPayoutRows = await sql`
-      UPDATE landlord_payouts
-      SET payout_date = ${payoutDate}::date,
-          amount = ${amount},
-          payment_method = ${method},
-          reference_number = ${referenceNumber},
-          notes = ${notes}
-      WHERE id = ${payoutId}
-      RETURNING *
-    `;
-
-    const updatedPayout = updatedPayoutRows?.[0] || null;
-
     const desc = `Landlord payout - ${landlordName}`;
+    let updatedPayout = null;
 
-    // Update or insert the corresponding transaction
-    if (oldTx) {
-      await sql`
-        UPDATE transactions
-        SET transaction_date = ${payoutDate}::date,
-            description = ${desc},
+    // Atomically update the payout record and its GL entry so they cannot diverge.
+    await sql.transaction(async (txn) => {
+      const updatedPayoutRows = await txn`
+        UPDATE landlord_payouts
+        SET payout_date = ${payoutDate}::date,
+            amount = ${amount},
+            payment_method = ${method},
             reference_number = ${referenceNumber},
-            debit_account_id = ${rentPayableId},
-            credit_account_id = ${creditAccountId},
-            amount = ${amount}
-        WHERE id = ${oldTx.id}
+            notes = ${notes}
+        WHERE id = ${payoutId}
+        RETURNING *
       `;
-    } else {
-      const approval = getApprovalFields(perm.staff);
-      await sql`
-        INSERT INTO transactions (
-          transaction_date, description, reference_number,
-          debit_account_id, credit_account_id,
-          amount, currency, created_by,
-          landlord_id, property_id,
-          source_type, source_id,
-          approval_status, approved_by, approved_at
-        )
-        VALUES (
-          ${payoutDate}::date, ${desc}, ${referenceNumber},
-          ${rentPayableId}, ${creditAccountId},
-          ${amount}, 'UGX', ${perm.staff.id},
-          ${updatedPayout.landlord_id}, ${updatedPayout.property_id},
-          'landlord_payout', ${payoutId},
-          ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
-        )
-      `;
-    }
+
+      updatedPayout = updatedPayoutRows?.[0] || null;
+
+      if (oldTx) {
+        await txn`
+          UPDATE transactions
+          SET transaction_date = ${payoutDate}::date,
+              description = ${desc},
+              reference_number = ${referenceNumber},
+              debit_account_id = ${rentPayableId},
+              credit_account_id = ${creditAccountId},
+              amount = ${amount}
+          WHERE id = ${oldTx.id}
+        `;
+      } else {
+        const approval = getApprovalFields(perm.staff);
+        await txn`
+          INSERT INTO transactions (
+            transaction_date, description, reference_number,
+            debit_account_id, credit_account_id,
+            amount, currency, created_by,
+            landlord_id, property_id,
+            source_type, source_id,
+            approval_status, approved_by, approved_at
+          )
+          VALUES (
+            ${payoutDate}::date, ${desc}, ${referenceNumber},
+            ${rentPayableId}, ${creditAccountId},
+            ${amount}, 'UGX', ${perm.staff.id},
+            ${updatedPayout.landlord_id}, ${updatedPayout.property_id},
+            'landlord_payout', ${payoutId},
+            ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
+          )
+        `;
+      }
+    });
 
     await writeAuditLog({
       staffId: perm.staff.id,

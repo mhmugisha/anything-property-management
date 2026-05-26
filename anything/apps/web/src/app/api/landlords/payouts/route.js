@@ -1,9 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
-import {
-  ensureCanCreditAccount,
-  getDueToLandlordsBalance,
-} from "@/app/api/utils/accounting";
+import { ensureCanCreditAccount } from "@/app/api/utils/accounting";
 import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
@@ -75,15 +72,23 @@ export async function POST(request) {
       return Response.json(guard.body, { status: guard.status });
     }
 
-    // Prevent overpaying landlords (cannot pay more than currently due).
-    const due = await getDueToLandlordsBalance({
-      landlordId,
-      propertyId,
-    });
-    if (amount > Number(due || 0)) {
+    // Prevent overpaying landlords — read from ledger account 2100 (id = 7)
+    // to stay consistent with the dashboard's single source of truth.
+    const balanceRows = await sql`
+      SELECT
+        COALESCE(SUM(CASE WHEN credit_account_id = 7 THEN amount ELSE 0 END), 0)
+        - COALESCE(SUM(CASE WHEN debit_account_id = 7 THEN amount ELSE 0 END), 0)
+        AS balance
+      FROM transactions
+      WHERE COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
+        AND (debit_account_id = 7 OR credit_account_id = 7)
+    `;
+    const due = Number(balanceRows?.[0]?.balance || 0);
+    if (amount > due) {
       return Response.json(
         {
-          error: `Overpayment blocked. Due to landlords for this property is ${Number(due || 0)} UGX.`,
+          error: `Overpayment blocked. Due to landlords balance is ${due} UGX.`,
         },
         { status: 400 },
       );
@@ -130,8 +135,25 @@ export async function POST(request) {
     });
 
     if (!post.ok) {
-      throw new Error(
-        `Accounting posting failed: ${post.error || "unknown error"}`,
+      // postAccountingEntryFromIntents cannot run inside sql.transaction(), so
+      // compensate by deleting the orphaned payout row (same pattern as payments/route.js).
+      try {
+        await sql`DELETE FROM landlord_payouts WHERE id = ${payout.id}`;
+      } catch (rollbackErr) {
+        console.error(
+          "CRITICAL: GL post failed AND compensating delete failed. Manual cleanup required.",
+          {
+            payoutId: payout.id,
+            glError: post.error,
+            rollbackError: rollbackErr.message,
+          },
+        );
+      }
+      return Response.json(
+        {
+          error: `Accounting posting failed; payout was rolled back: ${post.error || "unknown error"}`,
+        },
+        { status: 500 },
       );
     }
 
