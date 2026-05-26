@@ -94,6 +94,28 @@ export async function POST(request) {
       );
     }
 
+    const dupeRows = await sql`
+      SELECT id FROM landlord_payouts
+      WHERE landlord_id = ${landlordId}
+        AND property_id = ${propertyId}
+        AND amount = ${amount}
+        AND payout_date = ${payoutDate}::date
+        AND payment_method = ${method}
+        AND COALESCE(is_deleted, false) = false
+        AND created_at >= NOW() - INTERVAL '60 seconds'
+      LIMIT 1
+    `;
+
+    if (dupeRows?.length > 0) {
+      return Response.json(
+        {
+          error:
+            "Duplicate payout detected. A payout with identical details was recorded within the last 60 seconds. If this is intentional, wait a moment and try again.",
+        },
+        { status: 409 },
+      );
+    }
+
     const rows = await sql`
       INSERT INTO landlord_payouts (
         landlord_id, property_id, payout_date,
