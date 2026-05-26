@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
+import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
 
 function toNumber(val) {
   const n = Number(val);
@@ -30,10 +31,17 @@ export async function POST(request) {
       );
     }
 
-    // Fetch invoice details including paid_amount to calculate unpaid balance
+    // Fetch invoice details + property management fee config in one query
     const invoiceRows = await sql`
-      SELECT i.tenant_id, i.property_id, i.amount, i.currency, i.description, i.paid_amount, i.status
+      SELECT
+        i.tenant_id, i.property_id, i.lease_id,
+        i.amount, i.currency, i.description, i.paid_amount, i.status,
+        p.landlord_id,
+        COALESCE(p.management_fee_type, 'percent')::text AS management_fee_type,
+        COALESCE(p.management_fee_percent, 0)::numeric AS management_fee_percent,
+        COALESCE(p.management_fee_fixed_amount, 0)::numeric AS management_fee_fixed_amount
       FROM invoices i
+      LEFT JOIN properties p ON p.id = i.property_id
       WHERE i.id = ${invoiceId}
         AND COALESCE(i.is_deleted, false) = false
       LIMIT 1
@@ -81,9 +89,9 @@ export async function POST(request) {
       );
     }
 
-    // Create ONLY ONE accounting entry: Reverse the rent accrual (no management fee reversal)
-    // Original invoice created: Debit 1210 (Rent Receivable), Credit 2100 (Due to Landlords)
-    // Reversal entry: Debit 2100 (Due to Landlords), Credit 1210 (Rent Receivable)
+    // Reverse the rent accrual half of the original invoice entry.
+    // Original rent_accrual_summary: Dr 1210 (Rent Receivable) / Cr 2100 (Due to Landlords)
+    // Reversal:                      Dr 2100 (Due to Landlords) / Cr 1210 (Rent Receivable)
     const rentReversalPost = await postAccountingEntryFromIntents({
       transactionDate: reversalDate,
       description: `${description} - ${invoice.description}`,
@@ -114,6 +122,62 @@ export async function POST(request) {
       );
     }
 
+    // GAP 1: Reverse the management fee proportionally.
+    // Original mgmt_fee_summary: Dr 2100 (Due to Landlords) / Cr 4100 (Management Fee Income)
+    // Reversal:                  Dr 4100 (Management Fee Income) / Cr 2100 (Due to Landlords)
+    let mgmtFeeReversed = null;
+    try {
+      const feeType = invoice.management_fee_type;
+      const feePercent = Number(invoice.management_fee_percent || 0);
+      const feeFixed = Number(invoice.management_fee_fixed_amount || 0);
+
+      let feeAmount = 0;
+      if (feeType === "percent" && feePercent > 0) {
+        feeAmount = amount * (feePercent / 100);
+      } else if (feeType === "fixed" && feeFixed > 0 && originalInvoiceAmount > 0) {
+        // Proportional share of the fixed fee for the reversed portion
+        feeAmount = amount * (feeFixed / originalInvoiceAmount);
+      }
+
+      feeAmount = Math.round(feeAmount * 100) / 100;
+
+      if (feeAmount > 0) {
+        const mgmtFeePost = await postAccountingEntryFromIntents({
+          transactionDate: reversalDate,
+          description: `Management fee reversal - ${invoice.description}`,
+          referenceNumber: null,
+          debitIntent: "management_fee_income",
+          creditIntent: "landlord_liability",
+          amount: feeAmount,
+          currency,
+          createdBy: perm.staff.id,
+          landlordId: toNumber(invoice.landlord_id),
+          propertyId: propertyId,
+          sourceType: "mgmt_fee_reversal",
+          sourceId: invoiceId,
+          auditContext: {
+            sourceModule: "accounting",
+            businessEvent: "MGMT_FEE_REVERSED",
+            sourceEntity: {
+              type: "mgmt_fee_reversal",
+              invoice_id: invoiceId,
+              tenant_id: tenantId,
+              property_id: propertyId,
+            },
+          },
+        });
+
+        if (mgmtFeePost.ok) {
+          mgmtFeeReversed = feeAmount;
+        } else {
+          console.error("Management fee reversal GL post failed:", mgmtFeePost.error);
+        }
+      }
+    } catch (feeErr) {
+      console.error("Error posting management fee reversal:", feeErr);
+      // Non-fatal — rent reversal already succeeded
+    }
+
     // Update the invoice record based on reversal type
     const remainingUnpaidBalance = unpaidBalance - amount;
     const isFullReversal = remainingUnpaidBalance <= 0.01; // Floating point tolerance
@@ -135,6 +199,20 @@ export async function POST(request) {
       `;
     }
 
+    // GAP 2: Re-sync the property-month accrual summary so the aggregate GL row
+    // reflects the updated (or voided) invoice amount.
+    let accrualSynced = false;
+    try {
+      const leaseId = toNumber(invoice.lease_id);
+      if (leaseId) {
+        await ensureInvoiceAccrualLedgerEntries({ force: true, leaseId });
+        accrualSynced = true;
+      }
+    } catch (syncErr) {
+      console.error("Accrual sync after invoice reversal failed:", syncErr);
+      // Non-fatal — reversal already succeeded
+    }
+
     return Response.json({
       success: true,
       reversal_type: isFullReversal ? "full" : "partial",
@@ -145,6 +223,8 @@ export async function POST(request) {
       remaining_unpaid_balance: isFullReversal ? 0 : remainingUnpaidBalance,
       new_invoice_amount: isFullReversal ? 0 : originalInvoiceAmount - amount,
       transaction_id: rentReversalPost.transaction?.id || null,
+      mgmt_fee_reversed: mgmtFeeReversed,
+      accrual_synced: accrualSynced,
     });
   } catch (error) {
     console.error("POST /api/accounting/reverse-invoice error", error);
