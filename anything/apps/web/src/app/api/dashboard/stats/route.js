@@ -51,122 +51,38 @@ function round2(n) {
   return Math.round(x * 100) / 100;
 }
 
-// CRITICAL FIX: Calculate amount due to landlords from invoices, payouts, and deductions
-// This is the SAME calculation used by the Consolidated Balances Due report
-async function calculateAmountDueToLandlords() {
-  const landlords = await sql`
-    SELECT id
-    FROM landlords
-    ORDER BY id
-  `;
-
-  let totalDue = 0;
-
-  for (const landlord of landlords || []) {
-    const llId = landlord.id;
-
-    const properties = await sql`
-      SELECT id, 
-             management_fee_type, management_fee_percent, management_fee_fixed_amount
-      FROM properties
-      WHERE landlord_id = ${llId}
-    `;
-
-    let rentTotal = 0;
-    let managementFeesTotal = 0;
-    let otherDeductionsTotal = 0;
-    let reversalsTotal = 0;
-
-    for (const property of properties || []) {
-      const propertyId = property.id;
-
-      const invoices = await sql`
-        SELECT i.invoice_year, i.invoice_month, i.amount, COALESCE(i.currency,'UGX') AS currency
-        FROM invoices i
-        WHERE i.property_id = ${propertyId}
-          AND i.status <> 'void'
-          AND COALESCE(i.is_deleted, false) = false
-          AND COALESCE(i.approval_status, 'approved') = 'approved'
-      `;
-
-      const propertyRent = (invoices || []).reduce((sum, inv) => {
-        return sum + Number(inv.amount || 0);
-      }, 0);
-      rentTotal += propertyRent;
-
-      const feeType = String(
-        property.management_fee_type || "percent",
-      ).toLowerCase();
-      const percent = Number(property.management_fee_percent || 0);
-      const fixedAmount = Number(property.management_fee_fixed_amount || 0);
-
-      const monthGroups = new Map();
-      for (const inv of invoices || []) {
-        const key = `${inv.invoice_year}-${inv.invoice_month}`;
-        const prev = monthGroups.get(key) || [];
-        prev.push(inv);
-        monthGroups.set(key, prev);
-      }
-
-      for (const monthInvoices of monthGroups.values()) {
-        const gross = monthInvoices.reduce(
-          (sum, r) => sum + Number(r.amount || 0),
-          0,
-        );
-
-        let feeForMonth = 0;
-        if (feeType === "percent") {
-          feeForMonth = round2((gross * percent) / 100);
-        } else if (feeType === "fixed") {
-          feeForMonth = Math.min(fixedAmount, gross);
-        }
-        managementFeesTotal += feeForMonth;
-      }
-
-      const deductions = await sql`
-        SELECT COALESCE(SUM(amount), 0) AS deduction_total
-        FROM landlord_deductions
-        WHERE landlord_id = ${llId}
-          AND property_id = ${propertyId}
-          AND COALESCE(is_deleted, false) = false
-          AND COALESCE(approval_status, 'approved') = 'approved'
-      `;
-
-      otherDeductionsTotal += Number(deductions?.[0]?.deduction_total || 0);
-
-      // Get reversals for this property (rent_reversal only)
-      const reversals = await sql`
-        SELECT COALESCE(SUM(amount), 0) AS reversal_total
-        FROM transactions
-        WHERE property_id = ${propertyId}
-          AND source_type = 'rent_reversal'
-          AND COALESCE(is_deleted, false) = false
-      `;
-
-      reversalsTotal += Number(reversals?.[0]?.reversal_total || 0);
-    }
-
-    // Get landlord payouts
-    const payouts = await sql`
-      SELECT COALESCE(SUM(amount), 0) AS payout_total
-      FROM landlord_payouts
-      WHERE landlord_id = ${llId}
-        AND COALESCE(is_deleted, false) = false
-    `;
-
-    const totalPayouts = Number(payouts?.[0]?.payout_total || 0);
-
-    // CRITICAL: Match Consolidated Balances Due and Landlord Statement
-    // Balance = Rent - Management Fees - Deductions - Reversals - Payouts
-    const totalDeductions = managementFeesTotal + otherDeductionsTotal;
-    const balanceDue =
-      rentTotal - totalDeductions - reversalsTotal - totalPayouts;
-
-    totalDue += balanceDue;
-  }
-
-  return totalDue;
-}
+// LEGACY: kept as fallback — dashboard now reads from ledger account 2100 directly.
+// async function calculateAmountDueToLandlords_legacy() {
+//   const landlords = await sql`SELECT id FROM landlords ORDER BY id`;
+//   let totalDue = 0;
+//   for (const landlord of landlords || []) {
+//     const llId = landlord.id;
+//     const properties = await sql`SELECT id, management_fee_type, management_fee_percent, management_fee_fixed_amount FROM properties WHERE landlord_id = ${llId}`;
+//     let rentTotal = 0, managementFeesTotal = 0, otherDeductionsTotal = 0, reversalsTotal = 0;
+//     for (const property of properties || []) {
+//       const propertyId = property.id;
+//       const invoices = await sql`SELECT i.invoice_year, i.invoice_month, i.amount, COALESCE(i.currency,'UGX') AS currency FROM invoices i WHERE i.property_id = ${propertyId} AND i.status <> 'void' AND COALESCE(i.is_deleted, false) = false AND COALESCE(i.approval_status, 'approved') = 'approved'`;
+//       const propertyRent = (invoices || []).reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
+//       rentTotal += propertyRent;
+//       const feeType = String(property.management_fee_type || "percent").toLowerCase();
+//       const percent = Number(property.management_fee_percent || 0);
+//       const fixedAmount = Number(property.management_fee_fixed_amount || 0);
+//       const monthGroups = new Map();
+//       for (const inv of invoices || []) { const key = `${inv.invoice_year}-${inv.invoice_month}`; const prev = monthGroups.get(key) || []; prev.push(inv); monthGroups.set(key, prev); }
+//       for (const monthInvoices of monthGroups.values()) { const gross = monthInvoices.reduce((sum, r) => sum + Number(r.amount || 0), 0); let feeForMonth = 0; if (feeType === "percent") { feeForMonth = round2((gross * percent) / 100); } else if (feeType === "fixed") { feeForMonth = Math.min(fixedAmount, gross); } managementFeesTotal += feeForMonth; }
+//       const deductions = await sql`SELECT COALESCE(SUM(amount), 0) AS deduction_total FROM landlord_deductions WHERE landlord_id = ${llId} AND property_id = ${propertyId} AND COALESCE(is_deleted, false) = false AND COALESCE(approval_status, 'approved') = 'approved'`;
+//       otherDeductionsTotal += Number(deductions?.[0]?.deduction_total || 0);
+//       const reversals = await sql`SELECT COALESCE(SUM(amount), 0) AS reversal_total FROM transactions WHERE property_id = ${propertyId} AND source_type = 'rent_reversal' AND COALESCE(is_deleted, false) = false`;
+//       reversalsTotal += Number(reversals?.[0]?.reversal_total || 0);
+//     }
+//     const payouts = await sql`SELECT COALESCE(SUM(amount), 0) AS payout_total FROM landlord_payouts WHERE landlord_id = ${llId} AND COALESCE(is_deleted, false) = false`;
+//     const totalPayouts = Number(payouts?.[0]?.payout_total || 0);
+//     const totalDeductions = managementFeesTotal + otherDeductionsTotal;
+//     const balanceDue = rentTotal - totalDeductions - reversalsTotal - totalPayouts;
+//     totalDue += balanceDue;
+//   }
+//   return totalDue;
+// }
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -611,9 +527,19 @@ export async function GET(request) {
       balances[String(undepositedFundsId)] || 0,
     );
 
-    // CRITICAL FIX: Calculate amount due to landlords from invoices/payouts/deductions
-    // This matches the Consolidated Balances Due report calculation
-    const amountDueToLandlords = await calculateAmountDueToLandlords();
+    // Read Due to Landlords directly from ledger account 2100 (chart_of_accounts id = 7).
+    // Net credit balance = credits (rent accruals in) minus debits (fee deductions, payouts out).
+    const dueToLandlordsRows = await sql`
+      SELECT
+        COALESCE(SUM(CASE WHEN credit_account_id = 7 THEN amount ELSE 0 END), 0)
+        - COALESCE(SUM(CASE WHEN debit_account_id = 7 THEN amount ELSE 0 END), 0)
+        AS due_to_landlords
+      FROM transactions
+      WHERE COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
+        AND (debit_account_id = 7 OR credit_account_id = 7)
+    `;
+    const amountDueToLandlords = Number(dueToLandlordsRows?.[0]?.due_to_landlords || 0);
 
     // Build P&L series from results
     const incomeMap = {};
@@ -677,7 +603,7 @@ export async function GET(request) {
         activeLandlordsCount,
         managementFeesAccrued,
         managementFeesThisMonth,
-        amountDueToLandlords: Number(amountDueToLandlords || 0), // CRITICAL FIX: Now calculated from invoices/payouts/deductions
+        amountDueToLandlords: Number(amountDueToLandlords || 0),
         arrearsNotPaidInIssueMonth,
         totalRent,
         rentCollected,
