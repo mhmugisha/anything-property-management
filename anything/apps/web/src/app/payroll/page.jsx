@@ -26,6 +26,7 @@ import {
   usePayEmployee,
   usePayAll,
   usePayslip,
+  useDeletePayrollRun,
 } from "@/hooks/usePayroll";
 import {
   Users,
@@ -1456,6 +1457,7 @@ function PayAllModal({ run, onClose, onSuccess }) {
 function RunDetail({ runId, onBack, isAdmin }) {
   const runQuery = usePayrollRun(runId);
   const approveRun = useApprovePayrollRun();
+  const deleteRun = useDeletePayrollRun();
   const [payEntry, setPayEntry] = useState(null);
   const [showPayAll, setShowPayAll] = useState(false);
 
@@ -1580,26 +1582,44 @@ function RunDetail({ runId, onBack, isAdmin }) {
 
       {/* Bottom action bar — admin only */}
       {isAdmin && (
-        <div className="flex justify-end gap-3">
-          {run.status === "draft" && (
-            <PrimaryBtn
-              onClick={() => approveRun.mutate({ runId: run.id })}
-              disabled={approveRun.isPending || entries.length === 0}
-            >
-              {approveRun.isPending ? "Approving…" : "Approve Payroll"}
-            </PrimaryBtn>
-          )}
-          {run.status === "approved" && unpaidCount > 0 && (
-            <PrimaryBtn onClick={() => setShowPayAll(true)}>
-              Pay All ({unpaidCount})
-            </PrimaryBtn>
-          )}
-          {run.status === "paid" && (
-            <span className="text-sm text-green-600 font-medium self-center">All employees paid</span>
-          )}
+        <div className="flex justify-between gap-3">
+          <div>
+            {run.status === "draft" && (
+              <button
+                onClick={() => {
+                  if (window.confirm("Delete this draft run? This cannot be undone.")) {
+                    deleteRun.mutate({ runId: run.id }, { onSuccess: onBack });
+                  }
+                }}
+                disabled={deleteRun.isPending}
+                className="px-4 py-2 rounded-lg border border-red-200 text-red-600 text-sm hover:bg-red-50 disabled:opacity-50"
+              >
+                {deleteRun.isPending ? "Deleting…" : "Delete Run"}
+              </button>
+            )}
+          </div>
+          <div className="flex gap-3">
+            {run.status === "draft" && (
+              <PrimaryBtn
+                onClick={() => approveRun.mutate({ runId: run.id })}
+                disabled={approveRun.isPending || entries.length === 0}
+              >
+                {approveRun.isPending ? "Approving…" : "Approve Payroll"}
+              </PrimaryBtn>
+            )}
+            {run.status === "approved" && unpaidCount > 0 && (
+              <PrimaryBtn onClick={() => setShowPayAll(true)}>
+                Pay All ({unpaidCount})
+              </PrimaryBtn>
+            )}
+            {run.status === "paid" && (
+              <span className="text-sm text-green-600 font-medium self-center">All employees paid</span>
+            )}
+          </div>
         </div>
       )}
       {approveRun.error && <ErrorBanner error={approveRun.error} />}
+      {deleteRun.error && <ErrorBanner error={deleteRun.error} />}
 
       {/* Modals */}
       {payEntry && (

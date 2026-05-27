@@ -86,3 +86,33 @@ export async function GET(request, { params }) {
     return Response.json({ error: "Failed to fetch run" }, { status: 500 });
   }
 }
+
+export async function DELETE(request, { params }) {
+  const perm = await requirePermission(request, "payroll");
+  if (!perm.ok) return Response.json(perm.body, { status: perm.status });
+  if (perm.staff.role_name !== "Admin") {
+    return Response.json({ error: "Admin only" }, { status: 403 });
+  }
+
+  try {
+    const runId = toNumber(params?.id);
+    if (!runId) return Response.json({ error: "Invalid run id" }, { status: 400 });
+
+    const runRows = await sql(
+      `SELECT id, status FROM payroll_runs WHERE id = $1 LIMIT 1`,
+      [runId],
+    );
+    if (!runRows?.length) return Response.json({ error: "Run not found" }, { status: 404 });
+    if (runRows[0].status !== "draft") {
+      return Response.json({ error: "Only draft runs can be deleted" }, { status: 400 });
+    }
+
+    await sql(`DELETE FROM payroll_entries WHERE run_id = $1`, [runId]);
+    await sql(`DELETE FROM payroll_runs WHERE id = $1`, [runId]);
+
+    return Response.json({ success: true });
+  } catch (error) {
+    console.error("DELETE /api/payroll/runs/[id] error", error);
+    return Response.json({ error: "Failed to delete run" }, { status: 500 });
+  }
+}

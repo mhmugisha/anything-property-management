@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchJson, postJson, putJson } from "@/utils/api";
+import { fetchJson, postJson, putJson, deleteJson } from "@/utils/api";
 
 // ─── Cash / Bank accounts for payment dropdowns ───────────────────────────────
 
@@ -226,6 +226,16 @@ export function usePayAll() {
       qc.invalidateQueries({ queryKey: ["payroll", "advances"] });
       qc.invalidateQueries({ queryKey: ["payroll", "loans"] });
       qc.invalidateQueries({ queryKey: ["accounting"] });
+    },
+  });
+}
+
+export function useDeletePayrollRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ runId }) => deleteJson(`/api/payroll/runs/${runId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payroll", "runs"] });
     },
   });
 }
