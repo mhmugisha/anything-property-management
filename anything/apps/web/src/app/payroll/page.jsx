@@ -1543,7 +1543,7 @@ function RunsTab({ isAdmin }) {
         <p className="text-sm text-slate-400">Loading…</p>
       ) : runs.length === 0 ? (
         <div className="bg-white rounded-2xl p-10 text-center text-slate-400 border border-dashed border-gray-200">
-          No payroll runs yet.{isAdmin ? " Click "New Run" to generate the first one." : ""}
+          No payroll runs yet.{isAdmin ? " Click 'New Run' to generate the first one." : ""}
         </div>
       ) : (
         <div className="space-y-2">
