@@ -367,17 +367,17 @@ function NewEmployeeForm({ onClose, onSuccess }) {
               required
             />
           </FormField>
-        </div>
 
-        <FormField label="Notes">
-          <textarea
-            value={form.notes}
-            onChange={(e) => set("notes", e.target.value)}
-            rows={2}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            placeholder="Optional notes"
-          />
-        </FormField>
+          <FormField label="Notes">
+            <textarea
+              value={form.notes}
+              onChange={(e) => set("notes", e.target.value)}
+              rows={2}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              placeholder="Optional notes"
+            />
+          </FormField>
+        </div>
 
         <ErrorBanner error={createMutation.error} />
 
