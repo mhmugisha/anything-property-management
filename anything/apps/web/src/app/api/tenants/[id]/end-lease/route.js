@@ -75,7 +75,7 @@ export async function POST(request, { params: { id } }) {
     `;
     const tenantName = tenantRow?.[0]?.full_name || "Tenant";
 
-    // Compute prepayment balance before the transaction (needed to size the INSERT)
+    // Compute prepayment balance scoped to this tenant's payments
     let prepaymentBalance = 0;
     if (prepaymentHandling && prepaymentAcctId) {
       const balRows = await sql(
@@ -84,16 +84,16 @@ export async function POST(request, { params: { id } }) {
            - COALESCE(SUM(CASE WHEN t.debit_account_id = $1 THEN t.amount ELSE 0 END), 0)
            AS balance
          FROM transactions t
-         LEFT JOIN payments pm
-           ON pm.id = t.source_id
-           AND t.source_type IN ('payment', 'payment_advance')
-         LEFT JOIN leases l_src
-           ON l_src.id = t.source_id
-           AND t.source_type IN ('prepayment_refund', 'prepayment_writeoff')
          WHERE (t.debit_account_id = $1 OR t.credit_account_id = $1)
            AND COALESCE(t.is_deleted, false) = false
-           AND (pm.tenant_id = $2 OR l_src.tenant_id = $2)`,
-        [prepaymentAcctId, tenantId],
+           AND (
+             (t.source_type IN ('payment_advance', 'payment_auto_apply')
+              AND t.source_id IN (SELECT id FROM payments WHERE tenant_id = $2))
+             OR
+             (t.source_type IN ('prepayment_refund', 'prepayment_writeoff')
+              AND t.source_id = $3)
+           )`,
+        [prepaymentAcctId, tenantId, leaseId],
       );
       prepaymentBalance = Number(balRows?.[0]?.balance || 0);
     }
