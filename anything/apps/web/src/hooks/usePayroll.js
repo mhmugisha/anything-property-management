@@ -248,3 +248,18 @@ export function usePayslip(runId, employeeId, enabled = true) {
     staleTime: 0,
   });
 }
+
+export function useEmployeeStatement(employeeId, fromDate, toDate, enabled = true) {
+  return useQuery({
+    queryKey: ["payroll", "employees", employeeId, "statement", fromDate, toDate],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (fromDate) params.set("from_date", fromDate);
+      if (toDate) params.set("to_date", toDate);
+      const qs = params.toString();
+      return fetchJson(`/api/payroll/employees/${employeeId}/statement${qs ? `?${qs}` : ""}`);
+    },
+    enabled: enabled && !!employeeId,
+    staleTime: 0,
+  });
+}

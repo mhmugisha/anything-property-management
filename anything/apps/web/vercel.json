@@ -7,6 +7,10 @@
     {
       "path": "/api/notifications/check-landlord-due-dates",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/payroll-draft",
+      "schedule": "0 17 28-31 * *"
     }
   ],
   "rewrites": [
@@ -14,5 +18,12 @@
       "source": "/api/auth/:path*",
       "destination": "/api/auth/:path*"
     }
-  ]
+  ],
+  "experimentalServices": {
+    "web": {
+      "routePrefix": "/",
+      "framework": "react-router",
+      "buildCommand": "npm install && npm run build && node build-api.mjs"
+    }
+  }
 }
