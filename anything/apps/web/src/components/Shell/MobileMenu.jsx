@@ -12,6 +12,7 @@ import {
   X,
   User,
   Settings,
+  Briefcase,
 } from "lucide-react";
 
 import useUser from "@/utils/useUser";
@@ -96,6 +97,12 @@ export default function MobileMenu({ isOpen, onClose, active }) {
             active={active === "accounting"}
             icon={<Calculator className="w-5 h-5" />}
             label="Accounting"
+          />
+          <MobileLink
+            href="/payroll"
+            active={active === "payroll"}
+            icon={<Briefcase className="w-5 h-5" />}
+            label="Payroll"
           />
           <MobileLink
             href="/maintenance"

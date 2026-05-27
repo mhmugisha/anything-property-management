@@ -46,6 +46,7 @@ export default function AppHeader({ title, onMenuToggle, active }) {
     { key: "payments", label: "Payments", href: "/payments" },
     { key: "reports", label: "Reports", href: "/reports" },
     { key: "accounting", label: "Accounting", href: "/accounting" },
+    { key: "payroll", label: "Payroll", href: "/payroll" },
     { key: "maintenance", label: "Maintenance", href: "/maintenance" },
   ];
 
