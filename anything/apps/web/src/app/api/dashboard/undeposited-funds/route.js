@@ -55,6 +55,7 @@ export async function GET(request) {
         AND COALESCE(t.is_deleted,false) = false
         AND COALESCE(t.approval_status, 'approved') = 'approved'
         AND t.deposited_by_transaction_id IS NULL
+        AND t.source_type IN ('payment', 'payment_advance', 'security_deposit', 'security_deposit_adjustment')
         AND (
           t.source_type <> 'payment'
           OR pm.deposited_at IS NULL
