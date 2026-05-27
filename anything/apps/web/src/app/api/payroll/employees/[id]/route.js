@@ -137,19 +137,35 @@ export async function PUT(request, { params }) {
     const fields = [];
     const values = [];
 
+    const str = (v) => String(v || "").trim() || null;
+
     if (body?.full_name !== undefined) {
       const v = String(body.full_name).trim();
       if (!v) return Response.json({ error: "full_name cannot be empty" }, { status: 400 });
       fields.push(`full_name = $${values.length + 1}`);
       values.push(v);
     }
+    if (body?.position !== undefined) {
+      const v = String(body.position).trim();
+      if (!v) return Response.json({ error: "position cannot be empty" }, { status: 400 });
+      fields.push(`position = $${values.length + 1}`);
+      values.push(v);
+    }
+    if (body?.start_date !== undefined) {
+      const s = String(body.start_date || "").trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        return Response.json({ error: "Invalid start_date" }, { status: 400 });
+      }
+      fields.push(`start_date = $${values.length + 1}::date`);
+      values.push(s);
+    }
     if (body?.phone !== undefined) {
       fields.push(`phone = $${values.length + 1}`);
-      values.push(String(body.phone || "").trim() || null);
+      values.push(str(body.phone));
     }
     if (body?.email !== undefined) {
       fields.push(`email = $${values.length + 1}`);
-      values.push(String(body.email || "").trim() || null);
+      values.push(str(body.email));
     }
     if (body?.employee_type !== undefined) {
       if (!["staff", "casual"].includes(body.employee_type)) {
@@ -165,13 +181,29 @@ export async function PUT(request, { params }) {
       fields.push(`payment_method = $${values.length + 1}`);
       values.push(body.payment_method);
     }
+    if (body?.payment_bank_name !== undefined) {
+      fields.push(`payment_bank_name = $${values.length + 1}`);
+      values.push(str(body.payment_bank_name));
+    }
+    if (body?.payment_account_number !== undefined) {
+      fields.push(`payment_account_number = $${values.length + 1}`);
+      values.push(str(body.payment_account_number));
+    }
+    if (body?.payment_account_name !== undefined) {
+      fields.push(`payment_account_name = $${values.length + 1}`);
+      values.push(str(body.payment_account_name));
+    }
+    if (body?.payment_phone !== undefined) {
+      fields.push(`payment_phone = $${values.length + 1}`);
+      values.push(str(body.payment_phone));
+    }
     if (body?.payment_details !== undefined) {
       fields.push(`payment_details = $${values.length + 1}`);
-      values.push(String(body.payment_details || "").trim() || null);
+      values.push(str(body.payment_details));
     }
     if (body?.notes !== undefined) {
       fields.push(`notes = $${values.length + 1}`);
-      values.push(String(body.notes || "").trim() || null);
+      values.push(str(body.notes));
     }
     if (body?.status !== undefined) {
       if (!["active", "inactive"].includes(body.status)) {
