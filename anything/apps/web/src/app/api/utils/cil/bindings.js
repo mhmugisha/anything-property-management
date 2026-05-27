@@ -198,6 +198,11 @@ export async function resolveAccountIntent(intentRaw) {
       keywords: ["bank", "cash"],
       codeFallback: null,
     },
+    tenant_deposit_payable: {
+      type: "Liability",
+      keywords: ["tenant deposit", "deposits payable", "security deposit"],
+      codeFallback: "2200",
+    },
   };
 
   const h = heuristics[intent] || null;

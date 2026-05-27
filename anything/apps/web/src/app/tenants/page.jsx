@@ -24,13 +24,13 @@ import {
   useUpdateLease,
   useArchiveTenant,
   useReactivateTenant,
-  useEndTenantLease,
   useDeleteTenant,
   useOpenTenantLease,
   useLeaseFlags,
 } from "@/hooks/useTenants";
 import { TenantDetails } from "@/components/Tenants/TenantDetails";
 import { TenantReadOnlyView } from "@/components/Tenants/TenantReadOnlyView";
+import TerminationModal from "@/components/Tenants/TerminationModal";
 import { useLeaseOptions } from "@/hooks/useLeaseOptions";
 import { useTenantFormHandlers } from "@/hooks/useTenantFormHandlers";
 import { INITIAL_TENANT, INITIAL_LEASE } from "@/utils/tenantConstants";
@@ -111,6 +111,8 @@ export default function TenantsPage() {
     confirmLabel: "Yes",
     action: null,
   });
+
+  const [showTerminationModal, setShowTerminationModal] = useState(false);
 
   /* ========== GLOBAL SEARCH ========== */
   const [globalSearch, setGlobalSearch] = useState("");
@@ -227,7 +229,6 @@ export default function TenantsPage() {
 
   const archiveTenantMutation = useArchiveTenant();
   const reactivateTenantMutation = useReactivateTenant();
-  const endLeaseMutation = useEndTenantLease();
   const openLeaseMutation = useOpenTenantLease();
   const deleteTenantMutation = useDeleteTenant();
 
@@ -568,34 +569,9 @@ export default function TenantsPage() {
   ]);
 
   const onEndLease = useCallback(() => {
-    if (!selectedTenantId) return;
-    openConfirm({
-      title: "Are you sure?",
-      message:
-        "End the active lease for this tenant? This will make the unit vacant and stop billing from next month.",
-      confirmLabel: "Yes",
-      action: () => {
-        endLeaseMutation.mutate(selectedTenantId, {
-          onSuccess: () => {
-            setShowArchived(true);
-            closeConfirm();
-            markSuccess();
-          },
-          onError: (e) => {
-            console.error(e);
-            closeConfirm();
-            setActionError("Could not end lease.");
-          },
-        });
-      },
-    });
-  }, [
-    selectedTenantId,
-    endLeaseMutation,
-    openConfirm,
-    closeConfirm,
-    markSuccess,
-  ]);
+    if (!selectedTenantId || !activeLease) return;
+    setShowTerminationModal(true);
+  }, [selectedTenantId, activeLease]);
 
   const onOpenLease = useCallback(() => {
     if (!selectedTenantId) return;
@@ -742,7 +718,6 @@ export default function TenantsPage() {
   const isConfirmLoading =
     archiveTenantMutation.isPending ||
     reactivateTenantMutation.isPending ||
-    endLeaseMutation.isPending ||
     openLeaseMutation.isPending ||
     deleteTenantMutation.isPending;
 
@@ -921,7 +896,7 @@ export default function TenantsPage() {
               onDelete={onDeleteTenant}
               isArchiving={archiveTenantMutation.isPending}
               isReactivating={reactivateTenantMutation.isPending}
-              isEndingLease={endLeaseMutation.isPending}
+              isEndingLease={false}
               isOpeningLease={openLeaseMutation.isPending}
               isDeleting={deleteTenantMutation.isPending}
               actionError={actionError}
@@ -943,6 +918,20 @@ export default function TenantsPage() {
           </div>
         </div>
       </main>
+
+      {showTerminationModal && activeLease && selectedTenant && (
+        <TerminationModal
+          tenantId={selectedTenantId}
+          leaseId={activeLease.id}
+          tenantName={selectedTenant.full_name}
+          onClose={() => setShowTerminationModal(false)}
+          onSuccess={() => {
+            setShowTerminationModal(false);
+            setShowArchived(true);
+            markSuccess();
+          }}
+        />
+      )}
     </div>
   );
 }

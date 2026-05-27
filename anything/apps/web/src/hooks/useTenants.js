@@ -189,9 +189,9 @@ export function useUpdateLease() {
 export function useEndTenantLease() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (tenantId) =>
-      postJson(`/api/tenants/${tenantId}/end-lease`, {}),
-    onSuccess: (_, tenantId) => {
+    mutationFn: async ({ tenantId, payload = {} }) =>
+      postJson(`/api/tenants/${tenantId}/end-lease`, payload),
+    onSuccess: (_, { tenantId }) => {
       queryClient.invalidateQueries({ queryKey: ["tenants"] });
       queryClient.invalidateQueries({
         queryKey: ["tenants", "detail", tenantId],
@@ -202,7 +202,25 @@ export function useEndTenantLease() {
       queryClient.invalidateQueries({ queryKey: ["units", "vacant"] });
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["accounting"] });
     },
+  });
+}
+
+export function useTerminationSummary(leaseId, terminationDate, enabled = true) {
+  return useQuery({
+    queryKey: ["leases", leaseId, "termination-summary", terminationDate],
+    queryFn: async () => {
+      const params = terminationDate
+        ? `?termination_date=${terminationDate}`
+        : "";
+      const data = await fetchJson(
+        `/api/leases/${leaseId}/termination-summary${params}`,
+      );
+      return data;
+    },
+    enabled: enabled && !!leaseId,
+    staleTime: 0,
   });
 }
 
