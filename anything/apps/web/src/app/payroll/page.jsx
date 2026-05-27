@@ -18,6 +18,13 @@ import {
   useCreateLoan,
   useLoanSchedule,
   usePayrollAssetAccounts,
+  usePayrollRuns,
+  usePayrollRun,
+  useCreatePayrollRun,
+  useApprovePayrollRun,
+  usePayEmployee,
+  usePayAll,
+  usePayslip,
 } from "@/hooks/usePayroll";
 import {
   Users,
@@ -30,7 +37,6 @@ import {
   Plus,
   X,
   Check,
-  Briefcase,
 } from "lucide-react";
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -109,6 +115,9 @@ function Badge({ type }) {
     active: "bg-green-100 text-green-700",
     completed: "bg-slate-100 text-slate-500",
     inactive: "bg-red-100 text-red-700",
+    draft: "bg-slate-100 text-slate-600",
+    approved: "bg-blue-100 text-blue-800",
+    paid: "bg-green-100 text-green-700",
   };
   return (
     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${map[type] || "bg-gray-100 text-gray-600"}`}>
@@ -1145,14 +1154,652 @@ function LoansTab() {
   );
 }
 
-// ─── PLACEHOLDER TABS ─────────────────────────────────────────────────────────
+// ─── RUNS TAB ─────────────────────────────────────────────────────────────────
 
-function PlaceholderTab({ label }) {
+function NewRunForm({ onClose, onSuccess }) {
+  const now = new Date();
+  const [month, setMonth] = useState(String(now.getMonth() + 1));
+  const [year, setYear] = useState(String(now.getFullYear()));
+  const mutation = useCreatePayrollRun();
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    mutation.mutate(
+      { month: Number(month), year: Number(year) },
+      { onSuccess },
+    );
+  };
+
   return (
-    <div className="bg-white rounded-2xl p-16 text-center border border-dashed border-gray-200">
-      <Briefcase className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-      <p className="text-slate-500 font-medium">{label}</p>
-      <p className="text-slate-400 text-sm mt-1">Coming soon in Payroll Part 2</p>
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-slate-800">Generate Payroll Run</h3>
+        <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-slate-400">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Month" required>
+            <Select value={month} onChange={(e) => setMonth(e.target.value)}>
+              {MONTH_NAMES.slice(1).map((name, i) => (
+                <option key={i + 1} value={i + 1}>{name}</option>
+              ))}
+            </Select>
+          </FormField>
+          <FormField label="Year" required>
+            <Input
+              type="number" min="2020" max="2040"
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              required
+            />
+          </FormField>
+        </div>
+        <ErrorBanner error={mutation.error} />
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50">
+            Cancel
+          </button>
+          <PrimaryBtn type="submit" disabled={mutation.isPending}>
+            {mutation.isPending ? "Generating…" : "Generate Payroll"}
+          </PrimaryBtn>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PayModal({ run, entry, onClose, onSuccess }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [accountId, setAccountId] = useState("");
+  const [payDate, setPayDate] = useState(today);
+  const accountsQuery = usePayrollAssetAccounts();
+  const accounts = accountsQuery.data || [];
+  const mutation = usePayEmployee();
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    mutation.mutate(
+      {
+        runId: run.id,
+        employeeId: entry.employee_id,
+        payload: { payment_account_id: Number(accountId), payment_date: payDate },
+      },
+      { onSuccess },
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-slate-800">Pay Employee</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-slate-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-sm text-slate-600 mb-1">{entry.employee_name}</p>
+        <p className="text-2xl font-bold text-slate-800 mb-4">{fmt(entry.net_pay)}</p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <FormField label="Payment Account" required>
+            <Select value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
+              <option value="">Select account…</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
+              ))}
+            </Select>
+          </FormField>
+          <FormField label="Payment Date" required>
+            <Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} required />
+          </FormField>
+          <ErrorBanner error={mutation.error} />
+          <div className="flex gap-2 justify-end pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50">
+              Cancel
+            </button>
+            <PrimaryBtn type="submit" disabled={!accountId || mutation.isPending}>
+              {mutation.isPending ? "Processing…" : "Confirm Payment"}
+            </PrimaryBtn>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function PayAllModal({ run, onClose, onSuccess }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [accountId, setAccountId] = useState("");
+  const [payDate, setPayDate] = useState(today);
+  const accountsQuery = usePayrollAssetAccounts();
+  const accounts = accountsQuery.data || [];
+  const mutation = usePayAll();
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    mutation.mutate(
+      { runId: run.id, payload: { payment_account_id: Number(accountId), payment_date: payDate } },
+      { onSuccess },
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-slate-800">Pay All Employees</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-slate-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-sm text-slate-600 mb-1">
+          {MONTH_NAMES[run.month]} {run.year} Payroll
+        </p>
+        <p className="text-2xl font-bold text-slate-800 mb-4">{fmt(run.total_net)} total</p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <FormField label="Payment Account" required>
+            <Select value={accountId} onChange={(e) => setAccountId(e.target.value)} required>
+              <option value="">Select account…</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.account_code} — {a.account_name}</option>
+              ))}
+            </Select>
+          </FormField>
+          <FormField label="Payment Date" required>
+            <Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} required />
+          </FormField>
+          <ErrorBanner error={mutation.error} />
+          <div className="flex gap-2 justify-end pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50">
+              Cancel
+            </button>
+            <PrimaryBtn type="submit" disabled={!accountId || mutation.isPending}>
+              {mutation.isPending ? "Processing…" : "Pay All"}
+            </PrimaryBtn>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function RunDetail({ runId, onBack, isAdmin }) {
+  const runQuery = usePayrollRun(runId);
+  const approveRun = useApprovePayrollRun();
+  const [payEntry, setPayEntry] = useState(null);
+  const [showPayAll, setShowPayAll] = useState(false);
+
+  const run = runQuery.data?.run || null;
+  const entries = runQuery.data?.entries || [];
+
+  if (runQuery.isLoading) {
+    return <p className="text-sm text-slate-400">Loading…</p>;
+  }
+  if (!run) {
+    return <p className="text-sm text-red-500">Run not found.</p>;
+  }
+
+  const paidCount = entries.filter((e) => !!e.paid_at).length;
+  const unpaidCount = entries.length - paidCount;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-800 underline">
+          ← Back
+        </button>
+        <div className="flex-1 flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-slate-800">
+            {MONTH_NAMES[run.month]} {run.year} Payroll
+          </h2>
+          <Badge type={run.status} />
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-xs text-slate-500">Total Gross</p>
+          <p className="text-lg font-bold text-slate-800 mt-0.5">{fmt(run.total_gross)}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-xs text-slate-500">Deductions</p>
+          <p className="text-lg font-bold text-slate-800 mt-0.5">{fmt(run.total_deductions)}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-xs text-slate-500">Total Net</p>
+          <p className="text-lg font-bold text-slate-800 mt-0.5">{fmt(run.total_net)}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-xs text-slate-500">Employees</p>
+          <p className="text-lg font-bold text-slate-800 mt-0.5">{entries.length}</p>
+          {run.status === "approved" && (
+            <p className="text-xs text-slate-400">{unpaidCount} unpaid</p>
+          )}
+        </div>
+      </div>
+
+      {/* Entries table */}
+      {entries.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 text-center text-slate-400 border border-dashed border-gray-200">
+          No employees in this run.
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Employee</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Gross</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Advances</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Loans</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Net</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                {isAdmin && run.status === "approved" && (
+                  <th className="px-4 py-3"></th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {entries.map((entry) => (
+                <tr key={entry.id} className="hover:bg-gray-50">
+                  <td className="px-5 py-3">
+                    <div className="font-medium text-slate-800">{entry.employee_name}</div>
+                    {entry.position && <div className="text-xs text-slate-500">{entry.position}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-right text-slate-700">{fmt(entry.gross_pay)}</td>
+                  <td className="px-4 py-3 text-right text-amber-700">
+                    {entry.advance_deduction > 0 ? fmt(entry.advance_deduction) : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right text-slate-600">
+                    {entry.loan_deduction > 0 ? fmt(entry.loan_deduction) : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmt(entry.net_pay)}</td>
+                  <td className="px-4 py-3">
+                    {entry.paid_at ? (
+                      <div>
+                        <span className="text-xs font-medium text-green-700">Paid</span>
+                        <div className="text-xs text-slate-400">{fmtDate(entry.paid_at)}</div>
+                        {entry.payment_account_name && (
+                          <div className="text-xs text-slate-400">{entry.payment_account_name}</div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-400">Unpaid</span>
+                    )}
+                  </td>
+                  {isAdmin && run.status === "approved" && (
+                    <td className="px-4 py-3">
+                      {!entry.paid_at && (
+                        <button
+                          onClick={() => setPayEntry(entry)}
+                          className="text-xs text-[#0B1F3A] underline hover:text-[#08172c] whitespace-nowrap"
+                        >
+                          Pay
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Bottom action bar — admin only */}
+      {isAdmin && (
+        <div className="flex justify-end gap-3">
+          {run.status === "draft" && (
+            <PrimaryBtn
+              onClick={() => approveRun.mutate({ runId: run.id })}
+              disabled={approveRun.isPending || entries.length === 0}
+            >
+              {approveRun.isPending ? "Approving…" : "Approve Payroll"}
+            </PrimaryBtn>
+          )}
+          {run.status === "approved" && unpaidCount > 0 && (
+            <PrimaryBtn onClick={() => setShowPayAll(true)}>
+              Pay All ({unpaidCount})
+            </PrimaryBtn>
+          )}
+          {run.status === "paid" && (
+            <span className="text-sm text-green-600 font-medium self-center">All employees paid</span>
+          )}
+        </div>
+      )}
+      {approveRun.error && <ErrorBanner error={approveRun.error} />}
+
+      {/* Modals */}
+      {payEntry && (
+        <PayModal
+          run={run}
+          entry={payEntry}
+          onClose={() => setPayEntry(null)}
+          onSuccess={() => {
+            setPayEntry(null);
+            runQuery.refetch();
+          }}
+        />
+      )}
+      {showPayAll && (
+        <PayAllModal
+          run={run}
+          onClose={() => setShowPayAll(false)}
+          onSuccess={() => {
+            setShowPayAll(false);
+            runQuery.refetch();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RunsTab({ isAdmin }) {
+  const [selectedRunId, setSelectedRunId] = useState(null);
+  const [showNewForm, setShowNewForm] = useState(false);
+  const runsQuery = usePayrollRuns();
+  const runs = runsQuery.data || [];
+
+  if (selectedRunId) {
+    return (
+      <RunDetail
+        runId={selectedRunId}
+        onBack={() => setSelectedRunId(null)}
+        isAdmin={isAdmin}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">Payroll Runs</h2>
+          <p className="text-sm text-slate-500">{runs.length} runs</p>
+        </div>
+        {isAdmin && (
+          <PrimaryBtn onClick={() => setShowNewForm((v) => !v)}>
+            <Plus className="w-4 h-4" />
+            New Run
+          </PrimaryBtn>
+        )}
+      </div>
+
+      {showNewForm && (
+        <NewRunForm
+          onClose={() => setShowNewForm(false)}
+          onSuccess={(data) => {
+            setShowNewForm(false);
+            if (data?.run_id) setSelectedRunId(data.run_id);
+          }}
+        />
+      )}
+
+      {runsQuery.isLoading ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : runs.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 text-center text-slate-400 border border-dashed border-gray-200">
+          No payroll runs yet.{isAdmin ? " Click "New Run" to generate the first one." : ""}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {runs.map((run) => (
+            <button
+              key={run.id}
+              onClick={() => setSelectedRunId(run.id)}
+              className="w-full bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4 hover:bg-gray-50 text-left flex items-center gap-4"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-slate-800">
+                    {MONTH_NAMES[run.month]} {run.year}
+                  </span>
+                  <Badge type={run.status} />
+                </div>
+                <div className="text-sm text-slate-500 mt-0.5">
+                  {run.entry_count} employees · Gross {fmt(run.total_gross)} · Net {fmt(run.total_net)}
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PAYSLIPS TAB ─────────────────────────────────────────────────────────────
+
+function PayslipPrintModal({ runId, employeeId, onClose }) {
+  const query = usePayslip(runId, employeeId);
+  const d = query.data;
+
+  return (
+    <>
+      <style>{`@media print { .no-print { display: none !important; } }`}</style>
+      <div className="fixed inset-0 z-50 bg-white overflow-auto p-6">
+        <div className="no-print flex items-center justify-between mb-6 max-w-2xl mx-auto">
+          <button
+            onClick={onClose}
+            className="text-sm text-slate-500 hover:text-slate-800 underline"
+          >
+            ← Back
+          </button>
+          <PrimaryBtn onClick={() => window.print()}>Print Payslip</PrimaryBtn>
+        </div>
+
+        {query.isLoading ? (
+          <p className="text-sm text-slate-400 text-center">Loading…</p>
+        ) : !d ? (
+          <p className="text-sm text-red-500 text-center">Payslip not found.</p>
+        ) : (
+          <div className="max-w-2xl mx-auto border border-gray-200 p-8 text-sm">
+            {/* Company header */}
+            <div className="text-center mb-6">
+              <div className="font-bold text-xl uppercase tracking-wide text-slate-900">
+                {d.company}
+              </div>
+              <div className="font-semibold text-lg text-slate-700 mt-1">PAYSLIP</div>
+              <div className="text-slate-500 mt-0.5">Period: {d.period}</div>
+            </div>
+
+            <hr className="border-gray-200 my-4" />
+
+            {/* Employee info */}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 mb-6">
+              <div><span className="text-slate-500">Employee: </span><span className="font-medium">{d.employee.full_name}</span></div>
+              <div><span className="text-slate-500">Position: </span>{d.employee.position || "—"}</div>
+              <div><span className="text-slate-500">Type: </span>{d.employee.employee_type === "staff" ? "Staff" : "Casual"}</div>
+              {d.employee.phone && <div><span className="text-slate-500">Phone: </span>{d.employee.phone}</div>}
+            </div>
+
+            {/* Earnings */}
+            <div className="mb-4">
+              <div className="font-semibold text-slate-700 uppercase text-xs tracking-wide mb-2">Earnings</div>
+              <div className="flex justify-between border-b border-gray-100 py-1.5">
+                <span>Basic Salary</span>
+                <span className="font-medium">{fmt(d.earnings.gross_pay)}</span>
+              </div>
+            </div>
+
+            {/* Deductions */}
+            <div className="mb-4">
+              <div className="font-semibold text-slate-700 uppercase text-xs tracking-wide mb-2">Deductions</div>
+              {d.deductions.map((item) => (
+                <div key={item.label} className="flex justify-between border-b border-gray-100 py-1.5">
+                  <span className="text-slate-600">{item.label}</span>
+                  <span>{item.amount > 0 ? fmt(item.amount) : "—"}</span>
+                </div>
+              ))}
+            </div>
+
+            <hr className="border-gray-300 my-3" />
+
+            {/* Net pay */}
+            <div className="flex justify-between font-bold text-base py-1.5">
+              <span>NET PAY</span>
+              <span className="text-slate-900">{fmt(d.net_pay)}</span>
+            </div>
+
+            <hr className="border-gray-200 my-4" />
+
+            {/* Payment info */}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-slate-600">
+              <div>
+                <span className="text-slate-500">Payment: </span>
+                {d.payment_method === "bank"
+                  ? "Bank Transfer"
+                  : d.payment_method === "momo"
+                  ? "Mobile Money"
+                  : "Cash"}
+              </div>
+              <div>
+                <span className="text-slate-500">Status: </span>
+                {d.paid_at ? (
+                  <span className="text-green-700 font-medium">Paid {fmtDate(d.paid_at)}</span>
+                ) : (
+                  <span className="text-amber-600">Unpaid</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function PayslipsTab() {
+  const [filterRunId, setFilterRunId] = useState("");
+  const [filterEmployeeId, setFilterEmployeeId] = useState("");
+  const [printEntry, setPrintEntry] = useState(null);
+
+  const runsQuery = usePayrollRuns();
+  const runs = runsQuery.data || [];
+
+  const runDetailQuery = usePayrollRun(filterRunId ? Number(filterRunId) : null, !!filterRunId);
+  const entries = (runDetailQuery.data?.entries || []).filter((e) =>
+    filterEmployeeId ? e.employee_id === Number(filterEmployeeId) : true,
+  );
+
+  // Collect unique employees across all visible entries for the filter
+  const runEmployees = useMemo(() => {
+    if (!runDetailQuery.data?.entries) return [];
+    const seen = new Set();
+    return runDetailQuery.data.entries.filter((e) => {
+      if (seen.has(e.employee_id)) return false;
+      seen.add(e.employee_id);
+      return true;
+    });
+  }, [runDetailQuery.data]);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-800">Payslips</h2>
+        <p className="text-sm text-slate-500">Select a payroll run to view and print payslips</p>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <Select
+          value={filterRunId}
+          onChange={(e) => { setFilterRunId(e.target.value); setFilterEmployeeId(""); }}
+          className="max-w-xs"
+        >
+          <option value="">Select payroll run…</option>
+          {runs.map((r) => (
+            <option key={r.id} value={r.id}>
+              {MONTH_NAMES[r.month]} {r.year} ({r.status})
+            </option>
+          ))}
+        </Select>
+        {filterRunId && runEmployees.length > 0 && (
+          <Select
+            value={filterEmployeeId}
+            onChange={(e) => setFilterEmployeeId(e.target.value)}
+            className="max-w-xs"
+          >
+            <option value="">All employees</option>
+            {runEmployees.map((e) => (
+              <option key={e.employee_id} value={e.employee_id}>{e.employee_name}</option>
+            ))}
+          </Select>
+        )}
+      </div>
+
+      {!filterRunId ? (
+        <div className="bg-white rounded-2xl p-10 text-center text-slate-400 border border-dashed border-gray-200">
+          Select a payroll run above to view payslips.
+        </div>
+      ) : runDetailQuery.isLoading ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : entries.length === 0 ? (
+        <div className="bg-white rounded-2xl p-8 text-center text-slate-400 border border-dashed border-gray-200">
+          No entries found.
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Employee</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Period</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Gross</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Net</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {entries.map((entry) => {
+                const run = runDetailQuery.data?.run;
+                return (
+                  <tr key={entry.id} className="hover:bg-gray-50">
+                    <td className="px-5 py-3">
+                      <div className="font-medium text-slate-800">{entry.employee_name}</div>
+                      {entry.position && <div className="text-xs text-slate-500">{entry.position}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {run ? `${MONTH_NAMES[run.month]} ${run.year}` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-700">{fmt(entry.gross_pay)}</td>
+                    <td className="px-4 py-3 text-right font-medium text-slate-800">{fmt(entry.net_pay)}</td>
+                    <td className="px-4 py-3">
+                      {entry.paid_at ? (
+                        <span className="text-xs font-medium text-green-700">Paid</span>
+                      ) : (
+                        <span className="text-xs text-amber-600">Unpaid</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setPrintEntry({ runId: Number(filterRunId), employeeId: entry.employee_id })}
+                        className="text-xs text-[#0B1F3A] underline hover:text-[#08172c] whitespace-nowrap"
+                      >
+                        Print Payslip
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {printEntry && (
+        <PayslipPrintModal
+          runId={printEntry.runId}
+          employeeId={printEntry.employeeId}
+          onClose={() => setPrintEntry(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1166,6 +1813,7 @@ export default function PayrollPage() {
   const [activeTab, setActiveTab] = useState("employees");
 
   const canView = staffQuery.data?.permissions?.payroll === true;
+  const isAdmin = staffQuery.data?.role_name === "Admin";
   const isLoading = userLoading || staffQuery.isLoading;
 
   if (isLoading) {
@@ -1216,8 +1864,8 @@ export default function PayrollPage() {
           {activeTab === "employees" && <EmployeesTab />}
           {activeTab === "advances" && <AdvancesTab />}
           {activeTab === "loans" && <LoansTab />}
-          {activeTab === "runs" && <PlaceholderTab label="Payroll Runs" />}
-          {activeTab === "payslips" && <PlaceholderTab label="Payslips" />}
+          {activeTab === "runs" && <RunsTab isAdmin={isAdmin} />}
+          {activeTab === "payslips" && <PayslipsTab />}
         </div>
       </main>
     </div>

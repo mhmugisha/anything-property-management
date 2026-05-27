@@ -155,3 +155,86 @@ export function useLoanSchedule(loanId, enabled = true) {
     enabled: enabled && !!loanId,
   });
 }
+
+// ─── Payroll Runs ─────────────────────────────────────────────────────────────
+
+export function usePayrollRuns(enabled = true) {
+  return useQuery({
+    queryKey: ["payroll", "runs"],
+    queryFn: async () => {
+      const data = await fetchJson("/api/payroll/runs");
+      return data.runs || [];
+    },
+    enabled,
+  });
+}
+
+export function usePayrollRun(id, enabled = true) {
+  return useQuery({
+    queryKey: ["payroll", "runs", id],
+    queryFn: async () => fetchJson(`/api/payroll/runs/${id}`),
+    enabled: enabled && !!id,
+    staleTime: 0,
+  });
+}
+
+export function useCreatePayrollRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload) => postJson("/api/payroll/runs", payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payroll", "runs"] });
+    },
+  });
+}
+
+export function useApprovePayrollRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ runId }) => putJson(`/api/payroll/runs/${runId}/approve`, {}),
+    onSuccess: (_, { runId }) => {
+      qc.invalidateQueries({ queryKey: ["payroll", "runs"] });
+      qc.invalidateQueries({ queryKey: ["payroll", "runs", runId] });
+      qc.invalidateQueries({ queryKey: ["accounting"] });
+    },
+  });
+}
+
+export function usePayEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ runId, employeeId, payload }) =>
+      putJson(`/api/payroll/runs/${runId}/pay/${employeeId}`, payload),
+    onSuccess: (_, { runId }) => {
+      qc.invalidateQueries({ queryKey: ["payroll", "runs"] });
+      qc.invalidateQueries({ queryKey: ["payroll", "runs", runId] });
+      qc.invalidateQueries({ queryKey: ["payroll", "advances"] });
+      qc.invalidateQueries({ queryKey: ["payroll", "loans"] });
+      qc.invalidateQueries({ queryKey: ["accounting"] });
+    },
+  });
+}
+
+export function usePayAll() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ runId, payload }) =>
+      putJson(`/api/payroll/runs/${runId}/pay-all`, payload),
+    onSuccess: (_, { runId }) => {
+      qc.invalidateQueries({ queryKey: ["payroll", "runs"] });
+      qc.invalidateQueries({ queryKey: ["payroll", "runs", runId] });
+      qc.invalidateQueries({ queryKey: ["payroll", "advances"] });
+      qc.invalidateQueries({ queryKey: ["payroll", "loans"] });
+      qc.invalidateQueries({ queryKey: ["accounting"] });
+    },
+  });
+}
+
+export function usePayslip(runId, employeeId, enabled = true) {
+  return useQuery({
+    queryKey: ["payroll", "runs", runId, "payslip", employeeId],
+    queryFn: async () => fetchJson(`/api/payroll/runs/${runId}/payslip/${employeeId}`),
+    enabled: enabled && !!runId && !!employeeId,
+    staleTime: 0,
+  });
+}
