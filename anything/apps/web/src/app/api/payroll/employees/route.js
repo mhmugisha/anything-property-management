@@ -13,6 +13,10 @@ function parseDate(v) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
 
+function str(v) {
+  return String(v || "").trim() || null;
+}
+
 export async function GET(request) {
   const perm = await requirePermission(request, "payroll");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
@@ -26,11 +30,17 @@ export async function GET(request) {
       `SELECT
          e.id,
          e.full_name,
+         e.position,
+         e.start_date,
          e.phone,
          e.email,
          e.employee_type,
          e.payment_method,
          e.payment_details,
+         e.payment_bank_name,
+         e.payment_account_number,
+         e.payment_account_name,
+         e.payment_phone,
          e.status,
          e.notes,
          e.created_at,
@@ -54,11 +64,17 @@ export async function GET(request) {
       employees: (rows || []).map((r) => ({
         id: Number(r.id),
         full_name: r.full_name,
+        position: r.position || null,
+        start_date: r.start_date || null,
         phone: r.phone || null,
         email: r.email || null,
         employee_type: r.employee_type,
         payment_method: r.payment_method,
         payment_details: r.payment_details || null,
+        payment_bank_name: r.payment_bank_name || null,
+        payment_account_number: r.payment_account_number || null,
+        payment_account_name: r.payment_account_name || null,
+        payment_phone: r.payment_phone || null,
         status: r.status,
         notes: r.notes || null,
         created_at: r.created_at,
@@ -79,9 +95,24 @@ export async function POST(request) {
   try {
     const body = await request.json().catch(() => ({}));
 
-    const fullName = String(body?.full_name || "").trim();
+    const fullName = str(body?.full_name);
     if (!fullName) {
       return Response.json({ error: "full_name is required" }, { status: 400 });
+    }
+
+    const position = str(body?.position);
+    if (!position) {
+      return Response.json({ error: "position is required" }, { status: 400 });
+    }
+
+    const startDate = parseDate(body?.start_date);
+    if (!startDate) {
+      return Response.json({ error: "start_date is required" }, { status: 400 });
+    }
+
+    const initialSalary = toNumber(body?.initial_salary);
+    if (!initialSalary || initialSalary <= 0) {
+      return Response.json({ error: "initial_salary is required and must be > 0" }, { status: 400 });
     }
 
     const employeeType = ["staff", "casual"].includes(body?.employee_type)
@@ -91,27 +122,41 @@ export async function POST(request) {
       ? body.payment_method
       : "cash";
 
-    const phone = String(body?.phone || "").trim() || null;
-    const email = String(body?.email || "").trim() || null;
-    const paymentDetails = String(body?.payment_details || "").trim() || null;
-    const notes = String(body?.notes || "").trim() || null;
-    const initialSalary = toNumber(body?.initial_salary);
+    const phone = str(body?.phone);
+    const email = str(body?.email);
+    const notes = str(body?.notes);
+
+    // Payment method conditional fields
+    const paymentBankName = str(body?.payment_bank_name);
+    const paymentAccountNumber = str(body?.payment_account_number);
+    const paymentAccountName = str(body?.payment_account_name);
+    const paymentPhone = str(body?.payment_phone);
+
+    // salary_effective_date defaults to start_date
     const salaryEffectiveDate =
-      parseDate(body?.salary_effective_date) ||
-      new Date().toISOString().slice(0, 10);
+      parseDate(body?.salary_effective_date) || startDate;
 
     const empRows = await sql(
       `INSERT INTO employees
-         (full_name, phone, email, employee_type, payment_method, payment_details, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (full_name, position, start_date, phone, email,
+          employee_type, payment_method,
+          payment_bank_name, payment_account_number,
+          payment_account_name, payment_phone,
+          notes, created_by)
+       VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id`,
       [
         fullName,
+        position,
+        startDate,
         phone,
         email,
         employeeType,
         paymentMethod,
-        paymentDetails,
+        paymentBankName,
+        paymentAccountNumber,
+        paymentAccountName,
+        paymentPhone,
         notes,
         perm.staff.id,
       ],
@@ -119,13 +164,11 @@ export async function POST(request) {
 
     const employeeId = Number(empRows[0].id);
 
-    if (initialSalary && initialSalary > 0) {
-      await sql(
-        `INSERT INTO employee_salaries (employee_id, amount, effective_date, created_by)
-         VALUES ($1, $2, $3::date, $4)`,
-        [employeeId, initialSalary, salaryEffectiveDate, perm.staff.id],
-      );
-    }
+    await sql(
+      `INSERT INTO employee_salaries (employee_id, amount, effective_date, created_by)
+       VALUES ($1, $2, $3::date, $4)`,
+      [employeeId, initialSalary, salaryEffectiveDate, perm.staff.id],
+    );
 
     return Response.json(
       { success: true, employee_id: employeeId },

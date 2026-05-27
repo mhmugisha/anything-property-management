@@ -158,44 +158,131 @@ function ErrorBanner({ error }) {
   );
 }
 
+// Primary action button — dark navy matching app style
+function PrimaryBtn({ children, disabled, onClick, type = "button" }) {
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0B1F3A] text-white text-sm font-medium hover:bg-[#08172c] disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
 // ─── EMPLOYEES TAB ────────────────────────────────────────────────────────────
 
-const CASH_BANK_ACCOUNTS = [
-  { id: null, code: "", name: "Select account…" },
-];
+function PaymentDetailsFields({ method, form, set }) {
+  if (method === "bank") {
+    return (
+      <>
+        <FormField label="Bank Name" required>
+          <Input
+            value={form.payment_bank_name}
+            onChange={(e) => set("payment_bank_name", e.target.value)}
+            placeholder="e.g. Stanbic Bank"
+            required
+          />
+        </FormField>
+        <FormField label="Account Number" required>
+          <Input
+            value={form.payment_account_number}
+            onChange={(e) => set("payment_account_number", e.target.value)}
+            placeholder="Bank account number"
+            required
+          />
+        </FormField>
+      </>
+    );
+  }
+  if (method === "momo") {
+    return (
+      <>
+        <FormField label="Account Name" required>
+          <Input
+            value={form.payment_account_name}
+            onChange={(e) => set("payment_account_name", e.target.value)}
+            placeholder="Registered MoMo name"
+            required
+          />
+        </FormField>
+        <FormField label="MoMo Phone Number" required>
+          <Input
+            value={form.payment_phone}
+            onChange={(e) => set("payment_phone", e.target.value)}
+            placeholder="+256 700 000000"
+            required
+          />
+        </FormField>
+      </>
+    );
+  }
+  return null;
+}
 
 function NewEmployeeForm({ onClose, onSuccess }) {
+  const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
     full_name: "",
+    position: "",
+    start_date: today,
     employee_type: "staff",
     phone: "",
     email: "",
     payment_method: "cash",
-    payment_details: "",
+    payment_bank_name: "",
+    payment_account_number: "",
+    payment_account_name: "",
+    payment_phone: "",
     initial_salary: "",
-    salary_effective_date: new Date().toISOString().slice(0, 10),
+    salary_effective_date: "",
     notes: "",
   });
 
   const createMutation = useCreateEmployee();
-
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  // When start_date changes, auto-fill salary_effective_date if blank
+  const handleStartDateChange = (v) => {
+    set("start_date", v);
+    if (!form.salary_effective_date) set("salary_effective_date", v);
+  };
+
+  const canSubmit =
+    form.full_name.trim() &&
+    form.position.trim() &&
+    form.start_date &&
+    form.initial_salary &&
+    Number(form.initial_salary) > 0 &&
+    (form.payment_method === "cash" ||
+      (form.payment_method === "bank" &&
+        form.payment_bank_name.trim() &&
+        form.payment_account_number.trim()) ||
+      (form.payment_method === "momo" &&
+        form.payment_account_name.trim() &&
+        form.payment_phone.trim()));
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!canSubmit) return;
     const payload = {
       full_name: form.full_name.trim(),
+      position: form.position.trim(),
+      start_date: form.start_date,
       employee_type: form.employee_type,
       phone: form.phone.trim() || null,
       email: form.email.trim() || null,
       payment_method: form.payment_method,
-      payment_details: form.payment_details.trim() || null,
+      payment_bank_name: form.payment_bank_name.trim() || null,
+      payment_account_number: form.payment_account_number.trim() || null,
+      payment_account_name: form.payment_account_name.trim() || null,
+      payment_phone: form.payment_phone.trim() || null,
       notes: form.notes.trim() || null,
+      initial_salary: Number(form.initial_salary),
+      salary_effective_date: form.salary_effective_date || form.start_date,
     };
-    if (form.initial_salary) {
-      payload.initial_salary = Number(form.initial_salary);
-      payload.salary_effective_date = form.salary_effective_date;
-    }
     createMutation.mutate(payload, { onSuccess });
   };
 
@@ -214,6 +301,24 @@ function NewEmployeeForm({ onClose, onSuccess }) {
               value={form.full_name}
               onChange={(e) => set("full_name", e.target.value)}
               placeholder="John Doe"
+              required
+            />
+          </FormField>
+
+          <FormField label="Position" required>
+            <Input
+              value={form.position}
+              onChange={(e) => set("position", e.target.value)}
+              placeholder="e.g. Property Manager"
+              required
+            />
+          </FormField>
+
+          <FormField label="Start Date" required>
+            <Input
+              type="date"
+              value={form.start_date}
+              onChange={(e) => handleStartDateChange(e.target.value)}
               required
             />
           </FormField>
@@ -241,33 +346,27 @@ function NewEmployeeForm({ onClose, onSuccess }) {
             </Select>
           </FormField>
 
-          <FormField label="Account / MoMo Number">
-            <Input
-              value={form.payment_details}
-              onChange={(e) => set("payment_details", e.target.value)}
-              placeholder="Bank account or MoMo number"
-            />
-          </FormField>
+          <PaymentDetailsFields method={form.payment_method} form={form} set={set} />
 
-          <FormField label="Starting Salary (UGX)">
+          <FormField label="Starting Salary (UGX)" required>
             <Input
               type="number"
-              min="0"
+              min="1"
               value={form.initial_salary}
               onChange={(e) => set("initial_salary", e.target.value)}
-              placeholder="Optional"
+              placeholder="Monthly salary"
+              required
             />
           </FormField>
 
-          {form.initial_salary ? (
-            <FormField label="Salary Effective Date" required>
-              <Input
-                type="date"
-                value={form.salary_effective_date}
-                onChange={(e) => set("salary_effective_date", e.target.value)}
-              />
-            </FormField>
-          ) : null}
+          <FormField label="Salary Effective Date" required>
+            <Input
+              type="date"
+              value={form.salary_effective_date || form.start_date}
+              onChange={(e) => set("salary_effective_date", e.target.value)}
+              required
+            />
+          </FormField>
         </div>
 
         <FormField label="Notes">
@@ -286,13 +385,9 @@ function NewEmployeeForm({ onClose, onSuccess }) {
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50">
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={!form.full_name.trim() || createMutation.isPending}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
+          <PrimaryBtn type="submit" disabled={!canSubmit || createMutation.isPending}>
             {createMutation.isPending ? "Saving…" : "Create Employee"}
-          </button>
+          </PrimaryBtn>
         </div>
       </form>
     </div>
@@ -315,8 +410,8 @@ function SalaryForm({ employeeId, onClose, onSuccess }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
-      <p className="text-xs font-medium text-blue-800">Change Salary</p>
+    <form onSubmit={handleSubmit} className="space-y-3 mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+      <p className="text-xs font-medium text-slate-700">Change Salary</p>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="New Amount (UGX)" required>
           <Input type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} required />
@@ -336,7 +431,7 @@ function SalaryForm({ employeeId, onClose, onSuccess }) {
         <button
           type="submit"
           disabled={!amount || mutation.isPending}
-          className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+          className="px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white text-xs font-medium hover:bg-[#08172c] disabled:opacity-50"
         >
           {mutation.isPending ? "Saving…" : "Save Salary"}
         </button>
@@ -350,6 +445,23 @@ function EmployeeRow({ employee, expanded, onToggle }) {
   const detailQuery = useEmployeeDetail(employee.id, expanded);
   const detail = detailQuery.data || null;
 
+  const paymentSummary = () => {
+    const m = employee.payment_method;
+    if (m === "bank") {
+      return [
+        employee.payment_bank_name,
+        employee.payment_account_number,
+      ].filter(Boolean).join(" · ") || "Bank";
+    }
+    if (m === "momo") {
+      return [
+        employee.payment_account_name,
+        employee.payment_phone,
+      ].filter(Boolean).join(" · ") || "MoMo";
+    }
+    return "Cash";
+  };
+
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
       <button
@@ -357,13 +469,16 @@ function EmployeeRow({ employee, expanded, onToggle }) {
         className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 text-left"
       >
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-slate-800">{employee.full_name}</span>
             <Badge type={employee.employee_type} />
             {employee.status === "inactive" && <Badge type="inactive" />}
           </div>
+          {employee.position && (
+            <div className="text-sm text-slate-600 mt-0.5">{employee.position}</div>
+          )}
           <div className="text-sm text-slate-500 mt-0.5">
-            {employee.phone || "No phone"} · {employee.payment_method.charAt(0).toUpperCase() + employee.payment_method.slice(1)}
+            {paymentSummary()}
             {employee.current_salary ? ` · ${fmt(employee.current_salary)}/mo` : " · No salary set"}
           </div>
         </div>
@@ -378,8 +493,21 @@ function EmployeeRow({ employee, expanded, onToggle }) {
             <>
               {/* Details */}
               <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                {employee.phone && <div><span className="text-slate-500">Phone: </span>{employee.phone}</div>}
                 {employee.email && <div><span className="text-slate-500">Email: </span>{employee.email}</div>}
-                {employee.payment_details && <div><span className="text-slate-500">Account: </span>{employee.payment_details}</div>}
+                {employee.start_date && <div><span className="text-slate-500">Start Date: </span>{fmtDate(employee.start_date)}</div>}
+                {employee.payment_method === "bank" && employee.payment_bank_name && (
+                  <div><span className="text-slate-500">Bank: </span>{employee.payment_bank_name}</div>
+                )}
+                {employee.payment_method === "bank" && employee.payment_account_number && (
+                  <div><span className="text-slate-500">Account: </span>{employee.payment_account_number}</div>
+                )}
+                {employee.payment_method === "momo" && employee.payment_account_name && (
+                  <div><span className="text-slate-500">MoMo Name: </span>{employee.payment_account_name}</div>
+                )}
+                {employee.payment_method === "momo" && employee.payment_phone && (
+                  <div><span className="text-slate-500">MoMo Phone: </span>{employee.payment_phone}</div>
+                )}
                 {employee.notes && <div className="col-span-2"><span className="text-slate-500">Notes: </span>{employee.notes}</div>}
               </div>
 
@@ -390,7 +518,7 @@ function EmployeeRow({ employee, expanded, onToggle }) {
                   {!showSalaryForm && (
                     <button
                       onClick={() => setShowSalaryForm(true)}
-                      className="text-xs text-blue-600 hover:underline"
+                      className="text-xs text-slate-600 underline hover:text-slate-800"
                     >
                       Change Salary
                     </button>
@@ -435,9 +563,9 @@ function EmployeeRow({ employee, expanded, onToggle }) {
                     {fmt(detail?.total_outstanding_advances || 0)}
                   </p>
                 </div>
-                <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
-                  <p className="text-xs text-blue-700 font-medium">Outstanding Loans</p>
-                  <p className="text-lg font-bold text-blue-900 mt-0.5">
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                  <p className="text-xs text-slate-600 font-medium">Outstanding Loans</p>
+                  <p className="text-lg font-bold text-slate-800 mt-0.5">
                     {fmt(detail?.total_outstanding_loans || 0)}
                   </p>
                 </div>
@@ -473,20 +601,17 @@ function EmployeesTab() {
           <h2 className="text-lg font-semibold text-slate-800">Employees</h2>
           <p className="text-sm text-slate-500">{employees.length} {showInactive ? "total" : "active"}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => setShowInactive((v) => !v)}
             className="text-xs text-slate-500 hover:text-slate-700 underline"
           >
             {showInactive ? "Show active only" : "Show all"}
           </button>
-          <button
-            onClick={() => setShowForm((v) => !v)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
-          >
+          <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
             <Plus className="w-4 h-4" />
             New Employee
-          </button>
+          </PrimaryBtn>
         </div>
       </div>
 
@@ -595,13 +720,9 @@ function NewAdvanceForm({ employees, assetAccounts, onClose, onSuccess }) {
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50">
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={!canSubmit || mutation.isPending}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
+          <PrimaryBtn type="submit" disabled={!canSubmit || mutation.isPending}>
             {mutation.isPending ? "Saving…" : "Record Advance"}
-          </button>
+          </PrimaryBtn>
         </div>
       </form>
     </div>
@@ -634,13 +755,10 @@ function AdvancesTab() {
           <h2 className="text-lg font-semibold text-slate-800">Staff Advances</h2>
           <p className="text-sm text-slate-500">{advances.length} records</p>
         </div>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
-        >
+        <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
           <Plus className="w-4 h-4" />
           New Advance
-        </button>
+        </PrimaryBtn>
       </div>
 
       {/* Summary card */}
@@ -745,9 +863,9 @@ function LoanScheduleModal({ loanId, onClose }) {
                     <p className="text-xs text-amber-700">Outstanding</p>
                     <p className="font-semibold text-amber-900">{fmt(loan.outstanding)}</p>
                   </div>
-                  <div className="bg-blue-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-blue-700">Instalment</p>
-                    <p className="font-semibold text-blue-900">{fmt(loan.monthly_instalment)}</p>
+                  <div className="bg-slate-50 rounded-lg p-3 text-center">
+                    <p className="text-xs text-slate-600">Instalment</p>
+                    <p className="font-semibold text-slate-800">{fmt(loan.monthly_instalment)}</p>
                   </div>
                 </div>
               )}
@@ -893,7 +1011,7 @@ function NewLoanForm({ employees, assetAccounts, onClose, onSuccess }) {
         </div>
 
         {totalInstalments && (
-          <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm text-blue-800">
+          <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm text-slate-700">
             <strong>{totalInstalments} instalments</strong> ending{" "}
             {endPeriod ? `${MONTH_NAMES[endPeriod.month]} ${endPeriod.year}` : "—"}
           </div>
@@ -904,13 +1022,9 @@ function NewLoanForm({ employees, assetAccounts, onClose, onSuccess }) {
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50">
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={!canSubmit || mutation.isPending}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
+          <PrimaryBtn type="submit" disabled={!canSubmit || mutation.isPending}>
             {mutation.isPending ? "Saving…" : "Issue Loan"}
-          </button>
+          </PrimaryBtn>
         </div>
       </form>
     </div>
@@ -944,18 +1058,15 @@ function LoansTab() {
           <h2 className="text-lg font-semibold text-slate-800">Staff Loans</h2>
           <p className="text-sm text-slate-500">{loans.length} loans</p>
         </div>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
-        >
+        <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
           <Plus className="w-4 h-4" />
           Issue Loan
-        </button>
+        </PrimaryBtn>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <p className="text-xs text-blue-700 font-medium uppercase tracking-wide">Total Outstanding Loans</p>
-        <p className="text-2xl font-bold text-blue-900 mt-1">{fmt(totalOutstanding)}</p>
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+        <p className="text-xs text-slate-600 font-medium uppercase tracking-wide">Total Outstanding Loans</p>
+        <p className="text-2xl font-bold text-slate-800 mt-1">{fmt(totalOutstanding)}</p>
       </div>
 
       {showForm && (
@@ -1015,7 +1126,7 @@ function LoansTab() {
                   <td className="px-5 py-3">
                     <button
                       onClick={() => setSchedLoanId(loan.id)}
-                      className="text-xs text-blue-600 hover:underline whitespace-nowrap"
+                      className="text-xs text-slate-600 underline hover:text-slate-800 whitespace-nowrap"
                     >
                       View Schedule
                     </button>
