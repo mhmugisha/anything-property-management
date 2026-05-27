@@ -15,6 +15,7 @@ function ensureAdminPermissions(staff) {
         payments: true,
         reports: true,
         accounting: true,
+        payroll: true,
         maintenance: true,
       },
     };
