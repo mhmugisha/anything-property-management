@@ -140,14 +140,26 @@ export function useReactivateLandlord() {
 export function useEndLandlordLeases() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id) => postJson(`/api/landlords/${id}/end-leases`, {}),
+    mutationFn: async ({ landlordId, payload }) =>
+      postJson(`/api/landlords/${landlordId}/end-leases`, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["landlords"] });
       qc.invalidateQueries({ queryKey: ["tenants"] });
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["reports"] });
+      qc.invalidateQueries({ queryKey: ["accounting"] });
     },
+  });
+}
+
+export function useLandlordTerminationSummary(landlordId, enabled = true) {
+  return useQuery({
+    queryKey: ["landlords", landlordId, "termination-summary"],
+    queryFn: async () =>
+      fetchJson(`/api/landlords/${landlordId}/termination-summary`),
+    enabled: enabled && !!landlordId,
+    staleTime: 0,
   });
 }
 

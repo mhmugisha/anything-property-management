@@ -22,6 +22,7 @@ import {
 } from "@/hooks/useLandlords";
 import { LandlordForm } from "@/components/Landlords/LandlordForm";
 import { LandlordDetails } from "@/components/Landlords/LandlordDetails";
+import { LandlordTerminationModal } from "@/components/Landlords/LandlordTerminationModal";
 import { useLandlordForm } from "@/hooks/useLandlordForm";
 import { useLandlordPayout } from "@/hooks/useLandlordPayout";
 import { useLandlordStatement } from "@/hooks/useLandlordStatement";
@@ -127,6 +128,8 @@ export default function LandlordsPage() {
   const rows = statement?.rows || [];
 
   const createPayoutMutation = useCreateLandlordPayout();
+  const [showTerminationModal, setShowTerminationModal] = useState(false);
+
   // Track success state
   const [payoutSuccess, setPayoutSuccess] = useState(false);
   // Auto-dismiss payout error after 5 seconds
@@ -228,19 +231,8 @@ export default function LandlordsPage() {
 
   const onEndLeases = useCallback(() => {
     if (!selected?.id) return;
-    if (typeof window !== "undefined") {
-      const ok = window.confirm(
-        "End this landlord contract now? This will set the contract end date to today, mark the landlord as ended immediately, end all active leases under their properties, make units vacant, and void future unpaid invoices.",
-      );
-      if (!ok) return;
-    }
-
-    endContractNowMutation.mutate(selected.id, {
-      onSuccess: () => {
-        setShowArchived(true);
-      },
-    });
-  }, [selected?.id, endContractNowMutation]);
+    setShowTerminationModal(true);
+  }, [selected?.id]);
 
   const onDeleteLandlord = useCallback(() => {
     if (!selected?.id) return;
@@ -466,6 +458,18 @@ export default function LandlordsPage() {
           </div>
         </div>
       </main>
+
+      {showTerminationModal && selected && (
+        <LandlordTerminationModal
+          landlordId={selected.id}
+          landlordName={selected.full_name}
+          onClose={() => setShowTerminationModal(false)}
+          onSuccess={() => {
+            setShowTerminationModal(false);
+            setShowArchived(true);
+          }}
+        />
+      )}
     </div>
   );
 }
