@@ -50,30 +50,28 @@ export async function GET(request, { params }) {
         { status: 500 },
       );
 
-    // STEP 1: Closing balance of account 2100 for this landlord — all cumulative movements up to end of month
-    const [balRow] = await sql(
-      `SELECT
-         COALESCE(SUM(CASE WHEN credit_account_id = $1 THEN amount ELSE 0 END), 0)
-         - COALESCE(SUM(CASE WHEN debit_account_id = $1 THEN amount ELSE 0 END), 0)
-         AS closing_balance
-       FROM transactions
-       WHERE (debit_account_id = $1 OR credit_account_id = $1)
-         AND landlord_id = $2
-         AND COALESCE(is_deleted, false) = false
-         AND COALESCE(approval_status, 'approved') = 'approved'
-         AND transaction_date <= $3::date`,
-      [acct2100Id, landlordId, lastDay],
-    );
+    // Closing balance of account 2100 for this landlord — all cumulative movements up to end of month
+    const [balRow] = await sql`
+      SELECT
+        COALESCE(SUM(CASE WHEN credit_account_id = ${acct2100Id} THEN amount ELSE 0 END), 0)
+        - COALESCE(SUM(CASE WHEN debit_account_id = ${acct2100Id} THEN amount ELSE 0 END), 0)
+        AS closing_balance
+      FROM transactions
+      WHERE (debit_account_id = ${acct2100Id} OR credit_account_id = ${acct2100Id})
+        AND landlord_id = ${landlordId}
+        AND COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
+        AND transaction_date <= ${lastDay}::date
+    `;
 
     const closingBalance = Number(balRow?.closing_balance || 0);
 
-    // STEP 2: Payment note net across all active properties for this landlord
-    const properties = await sql(
-      `SELECT id, management_fee_type, management_fee_percent, management_fee_fixed_amount
-       FROM properties
-       WHERE landlord_id = $1 AND COALESCE(is_deleted, false) = false`,
-      [landlordId],
-    );
+    // Payment note net across all active properties for this landlord
+    const properties = await sql`
+      SELECT id, management_fee_type, management_fee_percent, management_fee_fixed_amount
+      FROM properties
+      WHERE landlord_id = ${landlordId} AND COALESCE(is_deleted, false) = false
+    `;
 
     let paymentNoteNet = 0;
 
@@ -84,36 +82,34 @@ export async function GET(request, { params }) {
       const feeFixed = Number(prop.management_fee_fixed_amount || 0);
 
       // Current month invoices (by year-month integer, not invoice_date)
-      const invoiceRows = await sql(
-        `SELECT amount FROM invoices
-         WHERE property_id = $1
-           AND invoice_year * 100 + invoice_month = $2
-           AND status <> 'void'
-           AND COALESCE(is_deleted, false) = false
-           AND COALESCE(approval_status, 'approved') = 'approved'
-           AND lease_id IS NOT NULL`,
-        [propId, yearMonth],
-      );
+      const invoiceRows = await sql`
+        SELECT amount FROM invoices
+        WHERE property_id = ${propId}
+          AND invoice_year * 100 + invoice_month = ${yearMonth}
+          AND status <> 'void'
+          AND COALESCE(is_deleted, false) = false
+          AND COALESCE(approval_status, 'approved') = 'approved'
+          AND lease_id IS NOT NULL
+      `;
       const currentRent = invoiceRows.reduce(
         (s, r) => s + Number(r.amount || 0),
         0,
       );
 
       // Recovered arrears: payments on arrears invoices with payment_date in month
-      const arrearsRows = await sql(
-        `SELECT pia.amount_applied
-         FROM payment_invoice_allocations pia
-         JOIN payments p ON p.id = pia.payment_id
-         JOIN invoices i ON i.id = pia.invoice_id
-         WHERE i.property_id = $1
-           AND i.lease_id IS NULL
-           AND COALESCE(i.is_deleted, false) = false
-           AND p.is_reversed = false
-           AND COALESCE(p.approval_status, 'approved') = 'approved'
-           AND p.payment_date >= $2::date
-           AND p.payment_date <= $3::date`,
-        [propId, firstDay, lastDay],
-      );
+      const arrearsRows = await sql`
+        SELECT pia.amount_applied
+        FROM payment_invoice_allocations pia
+        JOIN payments p ON p.id = pia.payment_id
+        JOIN invoices i ON i.id = pia.invoice_id
+        WHERE i.property_id = ${propId}
+          AND i.lease_id IS NULL
+          AND COALESCE(i.is_deleted, false) = false
+          AND p.is_reversed = false
+          AND COALESCE(p.approval_status, 'approved') = 'approved'
+          AND p.payment_date >= ${firstDay}::date
+          AND p.payment_date <= ${lastDay}::date
+      `;
       const recoveredArrears = arrearsRows.reduce(
         (s, r) => s + Number(r.amount_applied || 0),
         0,
@@ -121,7 +117,6 @@ export async function GET(request, { params }) {
 
       const totalRent = currentRent + recoveredArrears;
 
-      // Management fees inline
       let mgmtFee = 0;
       if (feeType === "percent") {
         mgmtFee = round2((totalRent * feePercent) / 100);
@@ -130,34 +125,32 @@ export async function GET(request, { params }) {
       }
 
       // Landlord deductions in month
-      const dedRows = await sql(
-        `SELECT amount FROM landlord_deductions
-         WHERE landlord_id = $1
-           AND property_id = $2
-           AND COALESCE(is_deleted, false) = false
-           AND deduction_date >= $3::date
-           AND deduction_date <= $4::date
-           AND LOWER(description) NOT LIKE 'fees on recovered arrears%'`,
-        [landlordId, propId, firstDay, lastDay],
-      );
+      const dedRows = await sql`
+        SELECT amount FROM landlord_deductions
+        WHERE landlord_id = ${landlordId}
+          AND property_id = ${propId}
+          AND COALESCE(is_deleted, false) = false
+          AND deduction_date >= ${firstDay}::date
+          AND deduction_date <= ${lastDay}::date
+          AND LOWER(description) NOT LIKE 'fees on recovered arrears%'
+      `;
       const deductions = dedRows.reduce(
         (s, r) => s + Number(r.amount || 0),
         0,
       );
 
       // Maintenance GL charges to this landlord (Dr 2100) in month
-      const maintRows = await sql(
-        `SELECT amount FROM transactions
-         WHERE property_id = $1
-           AND landlord_id = $2
-           AND source_type = 'maintenance'
-           AND debit_account_id = $3
-           AND COALESCE(is_deleted, false) = false
-           AND COALESCE(approval_status, 'approved') = 'approved'
-           AND transaction_date >= $4::date
-           AND transaction_date <= $5::date`,
-        [propId, landlordId, acct2100Id, firstDay, lastDay],
-      );
+      const maintRows = await sql`
+        SELECT amount FROM transactions
+        WHERE property_id = ${propId}
+          AND landlord_id = ${landlordId}
+          AND source_type = 'maintenance'
+          AND debit_account_id = ${acct2100Id}
+          AND COALESCE(is_deleted, false) = false
+          AND COALESCE(approval_status, 'approved') = 'approved'
+          AND transaction_date >= ${firstDay}::date
+          AND transaction_date <= ${lastDay}::date
+      `;
       const maintenanceTotal = maintRows.reduce(
         (s, r) => s + Number(r.amount || 0),
         0,
@@ -166,8 +159,8 @@ export async function GET(request, { params }) {
       paymentNoteNet += totalRent - mgmtFee - deductions - maintenanceTotal;
     }
 
-    // difference = closing_balance - payment_note_net
-    // positive → GL overstates (deduction needed); negative → GL understates (credit needed)
+    // positive difference → GL overstates (deduction needed)
+    // negative difference → GL understates (credit needed)
     const difference = round2(closingBalance - paymentNoteNet);
     const isReconciled = Math.abs(difference) < 1;
 
@@ -183,7 +176,7 @@ export async function GET(request, { params }) {
       suggested_action: isReconciled ? null : difference > 0 ? "deduction" : "credit",
     });
   } catch (error) {
-    console.error("GET /api/landlords/[id]/reconciliation error", error);
+    console.error("GET /api/landlords/[id]/reconciliation error:", error.message, "\n", error.stack);
     return Response.json(
       { error: "Failed to fetch reconciliation" },
       { status: 500 },
