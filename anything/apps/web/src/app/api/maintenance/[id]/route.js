@@ -301,9 +301,9 @@ export async function PUT(request, { params: { id } }) {
 
     return Response.json({ request: updated });
   } catch (error) {
-    console.error("PUT /api/maintenance/[id] error", error);
+    console.error("PUT /api/maintenance/[id] error:", error.message, "\n", error.stack);
     return Response.json(
-      { error: "Failed to update maintenance request" },
+      { error: error.message || "Failed to update maintenance request" },
       { status: 500 },
     );
   }
