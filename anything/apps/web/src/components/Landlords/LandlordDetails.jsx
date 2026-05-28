@@ -46,8 +46,6 @@ export function LandlordDetails({
   canReports,
   // reconciliation
   reconciliation,
-  reconciliationLoading,
-  reconciliationFetchError,
   onApplyReconciliation,
   reconciliationPending,
   reconciliationError,
@@ -330,8 +328,6 @@ export function LandlordDetails({
           paymentNoteDisabled={actionsDisabled || !canOpenPaymentNote}
           paymentNoteTitle={paymentNoteLabel}
           reconciliation={reconciliation}
-          reconciliationLoading={reconciliationLoading}
-          reconciliationFetchError={reconciliationFetchError}
           onOpenReconcileModal={() => setShowReconcileModal(true)}
           isAdmin={isAdmin}
         />

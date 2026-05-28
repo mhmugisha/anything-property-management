@@ -1,13 +1,6 @@
-import { Wallet, Save, FileText, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Wallet, Save, FileText, AlertTriangle } from "lucide-react";
 import { Field } from "./Field";
 import DatePopoverInput from "@/components/DatePopoverInput";
-
-function fmt(n) {
-  return Number(n || 0).toLocaleString("en-UG", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
-}
 
 export function PayoutCard({
   payoutDate,
@@ -28,13 +21,10 @@ export function PayoutCard({
   paymentNoteTitle,
   // reconciliation
   reconciliation,
-  reconciliationLoading,
-  reconciliationFetchError,
   onOpenReconcileModal,
   isAdmin,
 }) {
   const isReconciled = reconciliation?.is_reconciled ?? null;
-  const difference = Number(reconciliation?.difference ?? 0);
   const showReconcileFirst =
     isAdmin && reconciliation != null && isReconciled === false;
 
@@ -85,29 +75,6 @@ export function PayoutCard({
           />
         </Field>
       </div>
-
-      {reconciliationFetchError ? (
-        <div className="mt-3 flex items-center gap-1.5 text-xs text-rose-500">
-          <AlertTriangle className="w-3.5 h-3.5" />
-          Could not load reconciliation status
-        </div>
-      ) : reconciliationLoading ? (
-        <div className="mt-3 text-xs text-slate-400">Checking reconciliation…</div>
-      ) : reconciliation != null ? (
-        <div className="mt-3">
-          {isReconciled === true ? (
-            <div className="flex items-center gap-1.5 text-xs text-emerald-600">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Reconciled
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-xs text-amber-600">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Not reconciled — difference: UGX {fmt(difference)}
-            </div>
-          )}
-        </div>
-      ) : null}
 
       <div className="mt-3 flex items-center gap-2 flex-wrap">
         <button

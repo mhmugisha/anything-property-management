@@ -470,8 +470,6 @@ export default function LandlordsPage() {
                 statementSummary={statement?.summary}
                 canReports={canReports}
                 reconciliation={reconciliationQuery.data || null}
-                reconciliationLoading={reconciliationQuery.isLoading}
-                reconciliationFetchError={reconciliationQuery.error}
                 onApplyReconciliation={onApplyReconciliation}
                 reconciliationPending={applyReconciliationMutation.isPending}
                 reconciliationError={applyReconciliationMutation.error}
