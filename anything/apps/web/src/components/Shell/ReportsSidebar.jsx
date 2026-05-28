@@ -10,6 +10,7 @@ import {
   ClipboardList,
   FileText,
   List,
+  GitCompare,
 } from "lucide-react";
 
 export default function ReportsSidebar() {
@@ -58,6 +59,11 @@ export default function ReportsSidebar() {
       title: "All Tenants",
       href: "/reports?report=all-tenants",
       icon: List,
+    },
+    {
+      title: "Reconciliation",
+      href: "/reports/reconciliation",
+      icon: GitCompare,
     },
     {
       title: "To Accounting",

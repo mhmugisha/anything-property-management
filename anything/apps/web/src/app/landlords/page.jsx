@@ -26,6 +26,10 @@ import { LandlordTerminationModal } from "@/components/Landlords/LandlordTermina
 import { useLandlordForm } from "@/hooks/useLandlordForm";
 import { useLandlordPayout } from "@/hooks/useLandlordPayout";
 import { useLandlordStatement } from "@/hooks/useLandlordStatement";
+import {
+  useLandlordReconciliation,
+  useApplyReconciliation,
+} from "@/hooks/useReconciliation";
 
 const initialForm = {
   full_name: "",
@@ -51,6 +55,7 @@ export default function LandlordsPage() {
 
   const canView = staffQuery.data?.permissions?.properties === true;
   const canReports = staffQuery.data?.permissions?.reports === true;
+  const isAdmin = staffQuery.data?.role_name === "Admin";
 
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -165,6 +170,30 @@ export default function LandlordsPage() {
     setPayoutRef,
     resetPayout,
   } = useLandlordPayout();
+
+  const now = new Date();
+  const reconcileMonth = now.getMonth() + 1;
+  const reconcileYear = now.getFullYear();
+
+  const reconciliationQuery = useLandlordReconciliation(
+    selected?.id,
+    reconcileMonth,
+    reconcileYear,
+    !!selected?.id && !userLoading && !!user && canReports === true,
+  );
+
+  const applyReconciliationMutation = useApplyReconciliation();
+
+  const onApplyReconciliation = useCallback(
+    (payload, callbacks) => {
+      if (!selected?.id) return;
+      applyReconciliationMutation.mutate(
+        { landlordId: Number(selected.id), payload },
+        callbacks,
+      );
+    },
+    [selected?.id, applyReconciliationMutation],
+  );
 
   const lastAutoPayoutAmountRef = useRef(null);
 
@@ -439,6 +468,11 @@ export default function LandlordsPage() {
                 statementRows={rows}
                 statementSummary={statement?.summary}
                 canReports={canReports}
+                reconciliation={reconciliationQuery.data || null}
+                onApplyReconciliation={onApplyReconciliation}
+                reconciliationPending={applyReconciliationMutation.isPending}
+                reconciliationError={applyReconciliationMutation.error}
+                isAdmin={isAdmin}
                 onArchive={onArchiveLandlord}
                 onReactivate={onReactivateLandlord}
                 onEndLeases={onEndLeases}

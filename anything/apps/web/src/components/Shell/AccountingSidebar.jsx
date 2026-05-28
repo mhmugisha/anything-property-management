@@ -47,6 +47,7 @@ export default function AccountingSidebar() {
         },
         { title: "Post Arrears", href: "/accounting/post-arrears" },
         { title: "Reverse Invoice", href: "/accounting/reverse-invoice" },
+        { title: "Credit Landlord", href: "/accounting/credit-landlord" },
       ],
     },
     {

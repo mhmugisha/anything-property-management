@@ -1,6 +1,13 @@
-import { Wallet, Save, FileText } from "lucide-react";
+import { Wallet, Save, FileText, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Field } from "./Field";
 import DatePopoverInput from "@/components/DatePopoverInput";
+
+function fmt(n) {
+  return Number(n || 0).toLocaleString("en-UG", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
 
 export function PayoutCard({
   payoutDate,
@@ -19,7 +26,18 @@ export function PayoutCard({
   onOpenPaymentNote,
   paymentNoteDisabled,
   paymentNoteTitle,
+  // reconciliation
+  reconciliation,
+  onOpenReconcileModal,
+  isAdmin,
 }) {
+  const glNet = Number(reconciliation?.gl_net ?? null);
+  const isReconciled = reconciliation?.is_reconciled ?? null;
+  const difference = Number(reconciliation?.difference ?? 0);
+  const hasActivity = reconciliation != null && glNet !== 0;
+  const showReconcileFirst =
+    isAdmin && reconciliation != null && hasActivity && isReconciled === false;
+
   return (
     <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
       <div className="flex items-center gap-2 mb-2">
@@ -67,6 +85,23 @@ export function PayoutCard({
           />
         </Field>
       </div>
+
+      {reconciliation != null ? (
+        <div className="mt-3">
+          {isReconciled === true || !hasActivity ? (
+            <div className="flex items-center gap-1.5 text-xs text-emerald-600">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {hasActivity ? "Reconciled" : "No GL activity this month"}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs text-amber-600">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Not reconciled — difference: UGX {fmt(difference)}
+            </div>
+          )}
+        </div>
+      ) : null}
+
       <div className="mt-3 flex items-center gap-2 flex-wrap">
         <button
           type="button"
@@ -79,14 +114,25 @@ export function PayoutCard({
           Payment Note
         </button>
 
-        <button
-          onClick={onRecordPayout}
-          disabled={!isPropertySelected || !payoutAmount || isSaving}
-          className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 w-full sm:w-auto sm:ml-auto"
-        >
-          <Save className="w-4 h-4" />
-          {isSaving ? "Saving..." : "Save Payout"}
-        </button>
+        {showReconcileFirst ? (
+          <button
+            onClick={onOpenReconcileModal}
+            disabled={isSaving}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 w-full sm:w-auto sm:ml-auto"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            Reconcile First
+          </button>
+        ) : (
+          <button
+            onClick={onRecordPayout}
+            disabled={!isPropertySelected || !payoutAmount || isSaving}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 w-full sm:w-auto sm:ml-auto"
+          >
+            <Save className="w-4 h-4" />
+            {isSaving ? "Saving..." : "Save Payout"}
+          </button>
+        )}
       </div>
       {success ? (
         <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700">
