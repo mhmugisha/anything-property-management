@@ -127,6 +127,20 @@ export async function GET(request) {
       );
     }
 
+    // Integer year-month values for period-based filtering of rent invoices.
+    // Invoices are often created before the month starts (e.g. Dec 28 for Jan rent),
+    // so filtering by invoice_date would silently drop them from the display window.
+    let fromYM = null;
+    let toYM = null;
+    if (from) {
+      const [fy, fm] = from.split("-").map(Number);
+      fromYM = fy * 100 + fm;
+    }
+    if (to) {
+      const [ty, tm] = to.split("-").map(Number);
+      toYM = ty * 100 + tm;
+    }
+
     if (!landlordId || !propertyId) {
       return Response.json(
         { error: "landlordId and propertyId are required" },
@@ -165,6 +179,13 @@ export async function GET(request) {
       );
     }
 
+    // Account 2100 = Due to Landlords — used to determine credit/debit direction
+    // for manual_adjustment transactions.
+    const acct2100Rows = await sql`
+      SELECT id FROM chart_of_accounts WHERE account_code = '2100' LIMIT 1
+    `;
+    const acct2100Id = Number(acct2100Rows?.[0]?.id) || null;
+
     const feeType = String(
       property?.management_fee_type || "percent",
     ).toLowerCase();
@@ -172,12 +193,15 @@ export async function GET(request) {
     const fixedAmount = Number(property?.management_fee_fixed_amount || 0);
 
     // Build opening balance (everything before 'from')
+    // openingFrom (date string) is used for payout/deduction/reversal queries.
+    // Rent invoices use fromYM (integer) so early-dated invoices aren't misclassified.
     const openingFrom = from ? from : "1900-01-01";
 
     // Opening credits: net payable for months before from
     // REGULAR rent invoices (lease_id IS NOT NULL) grouped by month
-    const openingGroups = await sql(
-      `
+    const openingGroups = fromYM
+      ? await sql(
+          `
         SELECT
           i.invoice_year,
           i.invoice_month,
@@ -188,11 +212,12 @@ export async function GET(request) {
           AND COALESCE(i.is_deleted, false) = false
           AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.lease_id IS NOT NULL
-          AND i.invoice_date < $2::date
+          AND i.invoice_year * 100 + i.invoice_month < $2
         GROUP BY i.invoice_year, i.invoice_month
       `,
-      [propertyId, openingFrom],
-    );
+          [propertyId, fromYM],
+        )
+      : [];
 
     // Opening credits from ARREARS invoices (lease_id IS NULL) — individual amounts
     const openingArrearsRows = await sql(
@@ -263,7 +288,28 @@ export async function GET(request) {
       Number(openingDebitsDedRows?.[0]?.total || 0) +
       Number(openingDebitsReversalsRows?.[0]?.total || 0);
 
-    let openingBalance = openingCredits - openingDebits;
+    // Opening manual_adjustment net (credit to 2100 = more owed to landlord)
+    let openingManualAdjNet = 0;
+    if (from && acct2100Id) {
+      const openingManualAdjRows = await sql(
+        `
+          SELECT t.amount, t.debit_account_id, t.credit_account_id
+          FROM transactions t
+          WHERE t.property_id = $1
+            AND t.source_type = 'manual_adjustment'
+            AND COALESCE(t.is_deleted, false) = false
+            AND t.transaction_date < $2::date
+        `,
+        [propertyId, from],
+      );
+      for (const t of openingManualAdjRows || []) {
+        const amount = Number(t.amount || 0);
+        if (Number(t.credit_account_id) === acct2100Id) openingManualAdjNet += amount;
+        else if (Number(t.debit_account_id) === acct2100Id) openingManualAdjNet -= amount;
+      }
+    }
+
+    let openingBalance = openingCredits + openingManualAdjNet - openingDebits;
 
     // Monthly credits (net payable) for months in range
     // REGULAR rent invoices only (lease_id IS NOT NULL)
@@ -276,14 +322,14 @@ export async function GET(request) {
     ];
     const creditsValues = [propertyId];
 
-    if (from) {
-      creditsWhere.push(`i.invoice_date >= $${creditsValues.length + 1}::date`);
-      creditsValues.push(from);
+    if (fromYM !== null) {
+      creditsWhere.push(`i.invoice_year * 100 + i.invoice_month >= $${creditsValues.length + 1}`);
+      creditsValues.push(fromYM);
     }
 
-    if (to) {
-      creditsWhere.push(`i.invoice_date <= $${creditsValues.length + 1}::date`);
-      creditsValues.push(to);
+    if (toYM !== null) {
+      creditsWhere.push(`i.invoice_year * 100 + i.invoice_month <= $${creditsValues.length + 1}`);
+      creditsValues.push(toYM);
     }
 
     const creditsQuery = `
@@ -347,18 +393,18 @@ export async function GET(request) {
     ];
     const rentOnlyValues = [propertyId];
 
-    if (from) {
+    if (fromYM !== null) {
       rentOnlyWhere.push(
-        `i.invoice_date >= $${rentOnlyValues.length + 1}::date`,
+        `i.invoice_year * 100 + i.invoice_month >= $${rentOnlyValues.length + 1}`,
       );
-      rentOnlyValues.push(from);
+      rentOnlyValues.push(fromYM);
     }
 
-    if (to) {
+    if (toYM !== null) {
       rentOnlyWhere.push(
-        `i.invoice_date <= $${rentOnlyValues.length + 1}::date`,
+        `i.invoice_year * 100 + i.invoice_month <= $${rentOnlyValues.length + 1}`,
       );
-      rentOnlyValues.push(to);
+      rentOnlyValues.push(toYM);
     }
 
     const rentOnlyQuery = `
@@ -557,12 +603,57 @@ export async function GET(request) {
       };
     });
 
+    // manual_adjustment transactions — credit/debit determined by account 2100 side
+    const manualAdjWhere = [
+      "t.property_id = $1",
+      "t.source_type = 'manual_adjustment'",
+      "COALESCE(t.is_deleted, false) = false",
+    ];
+    const manualAdjValues = [propertyId];
+
+    if (from) {
+      manualAdjWhere.push(
+        `t.transaction_date >= $${manualAdjValues.length + 1}::date`,
+      );
+      manualAdjValues.push(from);
+    }
+    if (to) {
+      manualAdjWhere.push(
+        `t.transaction_date <= $${manualAdjValues.length + 1}::date`,
+      );
+      manualAdjValues.push(to);
+    }
+
+    const manualAdjQuery = `
+      SELECT t.id, t.transaction_date, t.description, t.amount,
+             t.debit_account_id, t.credit_account_id, t.reference_number
+      FROM transactions t
+      WHERE ${manualAdjWhere.join(" AND ")}
+      ORDER BY t.transaction_date ASC, t.id ASC
+    `;
+
+    const manualAdjs = await sql(manualAdjQuery, manualAdjValues);
+
+    const manualAdjRows = (manualAdjs || []).map((t) => {
+      const isCredit = acct2100Id && Number(t.credit_account_id) === acct2100Id;
+      const ref = t.reference_number ? ` (${t.reference_number})` : "";
+      const amount = Number(t.amount || 0);
+      return {
+        kind: isCredit ? "credit" : "debit",
+        date: toDateStr(t.transaction_date),
+        description: `Adjustment - ${t.description}${ref}`,
+        debit: isCredit ? 0 : amount,
+        credit: isCredit ? amount : 0,
+      };
+    });
+
     const all = [
       ...creditRows,
       ...arrearsRows,
       ...payoutRows,
       ...deductionRows,
       ...reversalRows,
+      ...manualAdjRows,
     ];
 
     all.sort((a, b) => {
@@ -594,8 +685,9 @@ export async function GET(request) {
       { credits: 0, debits: 0 },
     );
 
-    // NEW: Calculate cumulative closing balance up to 'to' date (or all time)
-    // This ensures the balance remains constant regardless of the selected 'from' date
+    // Cumulative closing balance up to 'to' date (or all time).
+    // closingTo (date string) is used for payout/deduction/reversal queries.
+    // Rent invoices use toYM so early-dated invoices are attributed to the right period.
     const closingTo = to ? to : "9999-12-31";
 
     // Cumulative credits up to closingTo
@@ -611,10 +703,10 @@ export async function GET(request) {
           AND COALESCE(i.is_deleted, false) = false
           AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.lease_id IS NOT NULL
-          AND i.invoice_date <= $2::date
+          ${toYM !== null ? `AND i.invoice_year * 100 + i.invoice_month <= $2` : ``}
         GROUP BY i.invoice_year, i.invoice_month
       `,
-      [propertyId, closingTo],
+      toYM !== null ? [propertyId, toYM] : [propertyId],
     );
 
     const closingArrearsRows = await sql(
@@ -681,7 +773,25 @@ export async function GET(request) {
       Number(closingDebitsDedRows?.[0]?.total || 0) +
       Number(closingDebitsReversalsRows?.[0]?.total || 0);
 
-    const closingBalance = closingCredits - closingDebits;
+    // Closing manual_adjustment net (cumulative, all time up to closingTo)
+    let closingManualAdjNet = 0;
+    if (acct2100Id) {
+      const closingManualAdjRows = await sql`
+        SELECT t.amount, t.debit_account_id, t.credit_account_id
+        FROM transactions t
+        WHERE t.property_id = ${propertyId}
+          AND t.source_type = 'manual_adjustment'
+          AND COALESCE(t.is_deleted, false) = false
+          AND t.transaction_date <= ${closingTo}::date
+      `;
+      for (const t of closingManualAdjRows || []) {
+        const amount = Number(t.amount || 0);
+        if (Number(t.credit_account_id) === acct2100Id) closingManualAdjNet += amount;
+        else if (Number(t.debit_account_id) === acct2100Id) closingManualAdjNet -= amount;
+      }
+    }
+
+    const closingBalance = closingCredits + closingManualAdjNet - closingDebits;
 
     return Response.json({
       landlord,
