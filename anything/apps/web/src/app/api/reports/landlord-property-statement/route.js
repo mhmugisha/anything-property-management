@@ -225,12 +225,18 @@ export async function GET(request) {
     const openingCredits = openingCreditsRent + openingArrearsTotal;
 
     const openingDebitsPayoutRows = await sql`
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM landlord_payouts
-      WHERE landlord_id = ${landlordId}
-        AND property_id = ${propertyId}
-        AND payout_date < ${openingFrom}::date
-        AND COALESCE(is_deleted,false) = false
+      SELECT COALESCE(SUM(lp.amount), 0) AS total
+      FROM landlord_payouts lp
+      WHERE lp.landlord_id = ${landlordId}
+        AND lp.property_id = ${propertyId}
+        AND lp.payout_date < ${openingFrom}::date
+        AND COALESCE(lp.is_deleted, false) = false
+        AND NOT EXISTS (
+          SELECT 1 FROM transactions t
+          WHERE t.source_type = 'landlord_payout'
+            AND t.source_id = lp.id
+            AND COALESCE(t.is_deleted, false) = true
+        )
     `;
 
     const openingDebitsDedRows = await sql`
@@ -423,27 +429,33 @@ export async function GET(request) {
 
     // Debits: payouts
     const payoutWhere = [
-      "landlord_id = $1",
-      "property_id = $2",
-      "COALESCE(is_deleted,false) = false",
+      "lp.landlord_id = $1",
+      "lp.property_id = $2",
+      "COALESCE(lp.is_deleted,false) = false",
+      `NOT EXISTS (
+        SELECT 1 FROM transactions t
+        WHERE t.source_type = 'landlord_payout'
+          AND t.source_id = lp.id
+          AND COALESCE(t.is_deleted, false) = true
+      )`,
     ];
     const payoutValues = [landlordId, propertyId];
 
     if (from) {
-      payoutWhere.push(`payout_date >= $${payoutValues.length + 1}::date`);
+      payoutWhere.push(`lp.payout_date >= $${payoutValues.length + 1}::date`);
       payoutValues.push(from);
     }
 
     if (to) {
-      payoutWhere.push(`payout_date <= $${payoutValues.length + 1}::date`);
+      payoutWhere.push(`lp.payout_date <= $${payoutValues.length + 1}::date`);
       payoutValues.push(to);
     }
 
     const payoutsQuery = `
-      SELECT id, payout_date, amount, payment_method, reference_number
-      FROM landlord_payouts
+      SELECT lp.id, lp.payout_date, lp.amount, lp.payment_method, lp.reference_number
+      FROM landlord_payouts lp
       WHERE ${payoutWhere.join(" AND ")}
-      ORDER BY payout_date ASC, id ASC
+      ORDER BY lp.payout_date ASC, lp.id ASC
     `;
 
     const payouts = await sql(payoutsQuery, payoutValues);
@@ -632,12 +644,18 @@ export async function GET(request) {
 
     // Cumulative debits up to closingTo
     const closingDebitsPayoutRows = await sql`
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM landlord_payouts
-      WHERE landlord_id = ${landlordId}
-        AND property_id = ${propertyId}
-        AND payout_date <= ${closingTo}::date
-        AND COALESCE(is_deleted,false) = false
+      SELECT COALESCE(SUM(lp.amount), 0) AS total
+      FROM landlord_payouts lp
+      WHERE lp.landlord_id = ${landlordId}
+        AND lp.property_id = ${propertyId}
+        AND lp.payout_date <= ${closingTo}::date
+        AND COALESCE(lp.is_deleted, false) = false
+        AND NOT EXISTS (
+          SELECT 1 FROM transactions t
+          WHERE t.source_type = 'landlord_payout'
+            AND t.source_id = lp.id
+            AND COALESCE(t.is_deleted, false) = true
+        )
     `;
 
     const closingDebitsDedRows = await sql`
