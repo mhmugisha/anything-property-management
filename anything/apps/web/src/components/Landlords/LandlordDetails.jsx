@@ -49,7 +49,6 @@ export function LandlordDetails({
   onApplyReconciliation,
   reconciliationPending,
   reconciliationError,
-  isAdmin,
   // read-only actions
   onArchive,
   onReactivate,
@@ -329,7 +328,6 @@ export function LandlordDetails({
           paymentNoteTitle={paymentNoteLabel}
           reconciliation={reconciliation}
           onOpenReconcileModal={() => setShowReconcileModal(true)}
-          isAdmin={isAdmin}
         />
       </div>
 

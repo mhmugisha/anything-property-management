@@ -22,11 +22,10 @@ export function PayoutCard({
   // reconciliation
   reconciliation,
   onOpenReconcileModal,
-  isAdmin,
 }) {
   const isReconciled = reconciliation?.is_reconciled ?? null;
   const showReconcileFirst =
-    isAdmin && reconciliation != null && isReconciled === false;
+    reconciliation != null && isReconciled === false;
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">

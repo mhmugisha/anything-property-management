@@ -55,9 +55,6 @@ export default function LandlordsPage() {
 
   const canView = staffQuery.data?.permissions?.properties === true;
   const canReports = staffQuery.data?.permissions?.reports === true;
-  const isAdmin =
-    String(staffQuery.data?.role_name || "").trim().toLowerCase() === "admin";
-
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -473,7 +470,6 @@ export default function LandlordsPage() {
                 onApplyReconciliation={onApplyReconciliation}
                 reconciliationPending={applyReconciliationMutation.isPending}
                 reconciliationError={applyReconciliationMutation.error}
-                isAdmin={isAdmin}
                 onArchive={onArchiveLandlord}
                 onReactivate={onReactivateLandlord}
                 onEndLeases={onEndLeases}
