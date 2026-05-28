@@ -55,6 +55,15 @@ export default function MaintenancePage() {
   const [unitId, setUnitId] = useState("");
   const [tenantId, setTenantId] = useState("");
 
+  // Completion modal state
+  const [completionItem, setCompletionItem] = useState(null);
+  const [completedCost, setCompletedCost] = useState("");
+  const [completedDate, setCompletedDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [chargeType, setChargeType] = useState("company");
+  const [paymentAccountId, setPaymentAccountId] = useState("");
+
   const propertiesQuery = useQuery({
     queryKey: ["lookups", "properties"],
     queryFn: async () => {
@@ -83,6 +92,15 @@ export default function MaintenancePage() {
       return data.tenants || [];
     },
     enabled: !userLoading && !!user,
+  });
+
+  const accountsQuery = useQuery({
+    queryKey: ["maintenance", "accounts"],
+    queryFn: async () => {
+      const data = await fetchJson("/api/maintenance/accounts");
+      return data.accounts || [];
+    },
+    enabled: !userLoading && !!user && canManageMaintenance,
   });
 
   const requests = maintenanceQuery.data || [];
@@ -158,6 +176,46 @@ export default function MaintenancePage() {
     [approveMutation],
   );
 
+  const openCompletionModal = useCallback((item) => {
+    setCompletionItem(item);
+    setCompletedCost(item.cost != null ? String(item.cost) : "");
+    setCompletedDate(new Date().toISOString().slice(0, 10));
+    setChargeType("company");
+    setPaymentAccountId("");
+  }, []);
+
+  const closeCompletionModal = useCallback(() => {
+    setCompletionItem(null);
+  }, []);
+
+  const onConfirmComplete = useCallback(() => {
+    if (!completionItem) return;
+    const hasCost = completedCost !== "" && Number(completedCost) > 0;
+    const payload = {
+      status: "completed",
+      ...(hasCost
+        ? {
+            completed_cost: Number(completedCost),
+            completed_date: completedDate,
+            charge_type: chargeType,
+            payment_account_id: paymentAccountId ? Number(paymentAccountId) : null,
+          }
+        : {}),
+    };
+    updateMutation.mutate(
+      { id: completionItem.id, payload },
+      { onSuccess: closeCompletionModal },
+    );
+  }, [
+    completionItem,
+    completedCost,
+    completedDate,
+    chargeType,
+    paymentAccountId,
+    updateMutation,
+    closeCompletionModal,
+  ]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-200 flex items-center justify-center">
@@ -188,10 +246,15 @@ export default function MaintenancePage() {
   const properties = propertiesQuery.data || [];
   const units = unitsQuery.data || [];
   const tenants = tenantsQuery.data || [];
+  const accounts = accountsQuery.data || [];
 
   const createError = createMutation.error;
-
   const isCreating = createMutation.isPending;
+
+  // Landlord name for completion modal
+  const completionProperty = completionItem?.property_id
+    ? properties.find((p) => p.id === completionItem.property_id)
+    : null;
 
   return (
     <div className="min-h-screen bg-slate-200 font-inter">
@@ -293,7 +356,6 @@ export default function MaintenancePage() {
                         const selectedUnitId = e.target.value;
                         setUnitId(selectedUnitId);
 
-                        // Auto-populate tenant if the selected unit has an active tenant
                         if (selectedUnitId) {
                           const selectedUnit = units.find(
                             (u) => u.id === Number(selectedUnitId),
@@ -382,7 +444,7 @@ export default function MaintenancePage() {
                 </div>
 
                 <div className="mt-4 text-xs text-slate-500">
-                  Expenses above UGX 500,000 are marked as “approval required”.
+                  Expenses above UGX 500,000 are marked as "approval required".
                 </div>
               </div>
             ) : null}
@@ -394,6 +456,7 @@ export default function MaintenancePage() {
                 items={grouped.pending}
                 onMove={onMove}
                 onApprove={onApprove}
+                onComplete={openCompletionModal}
                 isAdmin={isAdmin}
                 isUpdating={
                   updateMutation.isPending || approveMutation.isPending
@@ -405,6 +468,7 @@ export default function MaintenancePage() {
                 items={grouped.inProgress}
                 onMove={onMove}
                 onApprove={onApprove}
+                onComplete={openCompletionModal}
                 isAdmin={isAdmin}
                 isUpdating={
                   updateMutation.isPending || approveMutation.isPending
@@ -416,6 +480,7 @@ export default function MaintenancePage() {
                 items={grouped.completed}
                 onMove={onMove}
                 onApprove={onApprove}
+                onComplete={openCompletionModal}
                 isAdmin={isAdmin}
                 isUpdating={
                   updateMutation.isPending || approveMutation.isPending
@@ -426,6 +491,95 @@ export default function MaintenancePage() {
           </div>
         </div>
       </main>
+
+      {/* Completion modal */}
+      {completionItem ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-lg font-semibold text-slate-800 mb-1">
+              Mark as Completed
+            </h2>
+            <p className="text-sm text-slate-500 mb-4">
+              {completionItem.title}
+            </p>
+
+            <div className="space-y-3">
+              <Field label="Actual cost (UGX)">
+                <input
+                  type="number"
+                  value={completedCost}
+                  onChange={(e) => setCompletedCost(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                  placeholder="Leave blank to skip GL entry"
+                />
+              </Field>
+
+              <Field label="Date paid">
+                <input
+                  type="date"
+                  value={completedDate}
+                  onChange={(e) => setCompletedDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                />
+              </Field>
+
+              <Field label="Charge to">
+                <select
+                  value={chargeType}
+                  onChange={(e) => setChargeType(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                >
+                  <option value="company">Company</option>
+                  <option value="landlord">
+                    Landlord
+                    {completionProperty?.landlord_name
+                      ? ` (${completionProperty.landlord_name})`
+                      : ""}
+                  </option>
+                </select>
+              </Field>
+
+              <Field label="Paid from">
+                <select
+                  value={paymentAccountId}
+                  onChange={(e) => setPaymentAccountId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                >
+                  <option value="">Select account…</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.account_code} – {a.account_name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            {updateMutation.error ? (
+              <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+                {updateMutation.error?.message || "Could not complete request."}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex items-center gap-2">
+              <button
+                onClick={onConfirmComplete}
+                disabled={updateMutation.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c] disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                {updateMutation.isPending ? "Saving…" : "Confirm completion"}
+              </button>
+              <button
+                onClick={closeCompletionModal}
+                className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -445,6 +599,7 @@ function KanbanColumn({
   items,
   onMove,
   onApprove,
+  onComplete,
   isAdmin,
   isUpdating,
   isCompleted,
@@ -470,6 +625,7 @@ function KanbanColumn({
               item={r}
               onMove={onMove}
               onApprove={onApprove}
+              onComplete={onComplete}
               isAdmin={isAdmin}
               isUpdating={isUpdating}
             />
@@ -480,7 +636,7 @@ function KanbanColumn({
   );
 }
 
-function MaintenanceCard({ item, onMove, onApprove, isAdmin, isUpdating }) {
+function MaintenanceCard({ item, onMove, onApprove, onComplete, isAdmin, isUpdating }) {
   const propertyName = item.property_name || "—";
   const unitText = item.unit_number ? `Unit ${item.unit_number}` : "";
   const unitDisplay = unitText ? ` • ${unitText}` : "";
@@ -501,6 +657,7 @@ function MaintenanceCard({ item, onMove, onApprove, isAdmin, isUpdating }) {
   const badgeText = needsApproval ? "approval required" : item.status;
 
   const canApprove = isAdmin && needsApproval;
+  const isBlocked = needsApproval;
 
   const canMoveToInProgress = item.status === "pending";
   const canMoveToCompleted = item.status === "in_progress";
@@ -530,6 +687,38 @@ function MaintenanceCard({ item, onMove, onApprove, isAdmin, isUpdating }) {
         <div className="text-sm text-slate-600 mt-2">{item.description}</div>
       ) : null}
 
+      {/* Approval warning banner */}
+      {isBlocked && !isAdmin ? (
+        <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-orange-50 border border-orange-200 px-3 py-2 text-xs text-orange-700">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          Awaiting approval before work can proceed
+        </div>
+      ) : null}
+
+      {/* Completed details */}
+      {item.status === "completed" ? (
+        <div className="mt-2 space-y-0.5 text-xs text-slate-500">
+          {item.completed_date ? (
+            <div>Completed: {String(item.completed_date).slice(0, 10)}</div>
+          ) : null}
+          {item.completed_cost ? (
+            <div>Cost paid: {formatCurrencyUGX(item.completed_cost)}</div>
+          ) : null}
+          {item.charge_type ? (
+            <div>
+              Charged to:{" "}
+              {item.charge_type === "landlord" ? "Landlord" : "Company"}
+            </div>
+          ) : null}
+          {item.transaction_id ? (
+            <div className="flex items-center gap-1 text-emerald-600 font-medium">
+              <CheckCircle2 className="w-3 h-3" />
+              GL posted
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="flex items-center justify-between mt-3">
         <div className="text-sm font-medium text-slate-800">{costDisplay}</div>
 
@@ -547,8 +736,8 @@ function MaintenanceCard({ item, onMove, onApprove, isAdmin, isUpdating }) {
 
           {canMoveToInProgress ? (
             <button
-              disabled={isUpdating}
-              onClick={() => onMove(item.id, "in_progress")}
+              disabled={isUpdating || isBlocked}
+              onClick={() => !isBlocked && onMove(item.id, "in_progress")}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50"
             >
               <ArrowRight className="w-4 h-4" />
@@ -558,8 +747,8 @@ function MaintenanceCard({ item, onMove, onApprove, isAdmin, isUpdating }) {
 
           {canMoveToCompleted ? (
             <button
-              disabled={isUpdating}
-              onClick={() => onMove(item.id, "completed")}
+              disabled={isUpdating || isBlocked}
+              onClick={() => !isBlocked && onComplete(item)}
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
             >
               <CheckCircle2 className="w-4 h-4" />
