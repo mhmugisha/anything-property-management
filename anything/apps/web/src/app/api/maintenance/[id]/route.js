@@ -98,6 +98,18 @@ export async function PUT(request, { params: { id } }) {
     let finalCompletedDate = existing.completed_date;
 
     if (isNowCompleted && completedCost && paymentAccountId && chargeType) {
+      // Build GL description: include tenant name when available
+      let glDescription;
+      if (existing.tenant_id) {
+        const tenantRows = await sql`SELECT full_name FROM tenants WHERE id = ${existing.tenant_id} LIMIT 1`;
+        const tenantFullName = tenantRows?.[0]?.full_name || null;
+        glDescription = tenantFullName
+          ? `Maintenance: ${tenantFullName} - ${(existing.title || "").slice(0, 180)}`
+          : `Maintenance: ${(existing.title || "").slice(0, 200)}`;
+      } else {
+        glDescription = `Maintenance: ${(existing.title || "").slice(0, 200)}`;
+      }
+
       // Validate payment account exists and is an asset
       const fundCheck = await ensureCanCreditAccount({
         creditAccountId: paymentAccountId,
@@ -148,7 +160,7 @@ export async function PUT(request, { params: { id } }) {
               expense_scope, source_type, source_id
             ) VALUES (
               ${txnDate}::date,
-              ${"Maintenance: " + (existing.title || "").slice(0, 200)},
+              ${glDescription},
               ${acct2100Id}, ${paymentAccountId},
               ${completedCost}, 'UGX',
               ${perm.staff.id}, ${landlordId}, ${propertyId},
@@ -212,7 +224,7 @@ export async function PUT(request, { params: { id } }) {
               expense_scope, source_type, source_id
             ) VALUES (
               ${txnDate}::date,
-              ${"Maintenance: " + (existing.title || "").slice(0, 200)},
+              ${glDescription},
               ${acct5200Id}, ${paymentAccountId},
               ${completedCost}, 'UGX',
               ${perm.staff.id}, ${existing.property_id || null},

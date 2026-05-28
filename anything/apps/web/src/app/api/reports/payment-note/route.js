@@ -96,6 +96,14 @@ export async function GET(request) {
     const fromDate = from || "1900-01-01";
     const toDate = to || "9999-12-31";
 
+    // Year-month integers for invoice filtering (avoids early-dated invoice misclassification)
+    const fromYM = from
+      ? (() => { const p = from.split("-").map(Number); return p[0] * 100 + p[1]; })()
+      : 190001;
+    const toYM = to
+      ? (() => { const p = to.split("-").map(Number); return p[0] * 100 + p[1]; })()
+      : 999912;
+
     const landlordRows = await sql`
       SELECT id, title, full_name
       FROM landlords
@@ -148,17 +156,17 @@ export async function GET(request) {
         AND COALESCE(i.is_deleted, false) = false
         AND COALESCE(i.approval_status, 'approved') = 'approved'
         AND i.lease_id IS NOT NULL
-        AND i.invoice_date >= $2::date
-        AND i.invoice_date <= $3::date
-      ORDER BY 
-        i.invoice_year ASC, 
-        i.invoice_month ASC, 
+        AND i.invoice_year * 100 + i.invoice_month >= $2
+        AND i.invoice_year * 100 + i.invoice_month <= $3
+      ORDER BY
+        i.invoice_year ASC,
+        i.invoice_month ASC,
         (CASE WHEN u.unit_number ~ '^\\d+$' THEN u.unit_number::integer ELSE 999999 END),
         u.unit_number,
         i.id ASC
     `;
 
-    const invoices = await sql(invoiceQuery, [propertyId, fromDate, toDate]);
+    const invoices = await sql(invoiceQuery, [propertyId, fromYM, toYM]);
 
     const currentMonthRentByCurrency = sumByCurrency(invoices, "amount");
 
@@ -278,8 +286,52 @@ export async function GET(request) {
       toDate,
     ]);
 
+    // Maintenance charges billed to this landlord/property via GL (Dr 2100)
+    const maintenanceDeductionsQuery = `
+      SELECT
+        t.id,
+        t.transaction_date AS deduction_date,
+        t.description,
+        t.amount
+      FROM transactions t
+      WHERE t.property_id = $1
+        AND t.landlord_id = $2
+        AND t.source_type = 'maintenance'
+        AND t.debit_account_id = (
+          SELECT id FROM chart_of_accounts WHERE account_code = '2100' LIMIT 1
+        )
+        AND COALESCE(t.is_deleted, false) = false
+        AND COALESCE(t.approval_status, 'approved') = 'approved'
+        AND t.transaction_date >= $3::date
+        AND t.transaction_date <= $4::date
+      ORDER BY t.transaction_date ASC, t.id ASC
+    `;
+
+    const maintenanceDeductions = await sql(maintenanceDeductionsQuery, [
+      propertyId,
+      landlordId,
+      fromDate,
+      toDate,
+    ]);
+
+    // Merge landlord_deductions + maintenance GL rows, sorted by date
+    const allDeductions = [
+      ...(deductions || []),
+      ...(maintenanceDeductions || []).map((r) => ({
+        id: r.id,
+        deduction_date: r.deduction_date,
+        description: r.description,
+        amount: r.amount,
+        _source: "maintenance",
+      })),
+    ].sort((a, b) => {
+      const da = String(a.deduction_date || "");
+      const db = String(b.deduction_date || "");
+      return da < db ? -1 : da > db ? 1 : 0;
+    });
+
     // Other deductions may not have currency in schema; assume UGX.
-    const otherDeductionsTotal = (deductions || []).reduce((acc, d) => {
+    const otherDeductionsTotal = allDeductions.reduce((acc, d) => {
       return acc + Number(d.amount || 0);
     }, 0);
 
@@ -327,7 +379,7 @@ export async function GET(request) {
       filters: { from: from || null, to: to || null },
       invoices,
       recovered_arrears: recoveredArrears,
-      deductions,
+      deductions: allDeductions,
       totals,
     });
   } catch (error) {
