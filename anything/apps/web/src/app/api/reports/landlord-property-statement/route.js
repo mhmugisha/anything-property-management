@@ -81,20 +81,21 @@ export async function GET(request) {
       );
     }
 
-    // Opening balance: all GL movements on acct 2100 for this property before 'from'
+    // Opening balance: all GL movements on acct 2100 for this property before 'from'.
+    // Also includes landlord-level transactions (property_id IS NULL) scoped to the landlord.
     let openingBalance = 0;
     if (from) {
       const openingRows = await sql(
         `
           SELECT t.amount, t.debit_account_id, t.credit_account_id
           FROM transactions t
-          WHERE t.property_id = $1
+          WHERE (t.property_id = $1 OR (t.landlord_id = $4 AND t.property_id IS NULL))
             AND (t.debit_account_id = $2 OR t.credit_account_id = $2)
             AND COALESCE(t.is_deleted, false) = false
             AND COALESCE(t.approval_status, 'approved') = 'approved'
             AND t.transaction_date < $3::date
         `,
-        [propertyId, acct2100Id, from],
+        [propertyId, acct2100Id, from, landlordId],
       );
       for (const r of openingRows || []) {
         const amount = Number(r.amount || 0);
@@ -103,14 +104,15 @@ export async function GET(request) {
       }
     }
 
-    // Period transactions touching acct 2100 for this property
+    // Period transactions touching acct 2100 for this property.
+    // $3 = landlordId, used to include transactions with no property (landlord-level adjustments).
     const periodWhere = [
-      "t.property_id = $1",
+      "(t.property_id = $1 OR (t.landlord_id = $3 AND t.property_id IS NULL))",
       "(t.debit_account_id = $2 OR t.credit_account_id = $2)",
       "COALESCE(t.is_deleted, false) = false",
       "COALESCE(t.approval_status, 'approved') = 'approved'",
     ];
-    const periodValues = [propertyId, acct2100Id];
+    const periodValues = [propertyId, acct2100Id, landlordId];
 
     if (from) {
       periodWhere.push(`t.transaction_date >= $${periodValues.length + 1}::date`);
