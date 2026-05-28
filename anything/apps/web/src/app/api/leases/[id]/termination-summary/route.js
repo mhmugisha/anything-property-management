@@ -94,25 +94,20 @@ export async function GET(request, { params: { id } }) {
       [leaseId, termYM],
     );
 
-    // Security deposit balance (account 2200 for this tenant/lease)
+    // Security deposit balance (account 2200) scoped strictly to this lease
     let depositBalance = 0;
     if (depositPayableAcctId) {
       const depRows = await sql(
         `SELECT
-           COALESCE(SUM(CASE WHEN t.credit_account_id = $1 THEN t.amount ELSE 0 END), 0)
-           - COALESCE(SUM(CASE WHEN t.debit_account_id = $1 THEN t.amount ELSE 0 END), 0)
+           COALESCE(SUM(CASE WHEN credit_account_id = $1 THEN amount ELSE 0 END), 0)
+           - COALESCE(SUM(CASE WHEN debit_account_id = $1 THEN amount ELSE 0 END), 0)
            AS balance
-         FROM transactions t
-         LEFT JOIN payments pm
-           ON pm.id = t.source_id AND t.source_type = 'security_deposit'
-         WHERE (t.debit_account_id = $1 OR t.credit_account_id = $1)
-           AND COALESCE(t.is_deleted, false) = false
-           AND (
-             (t.source_type = 'security_deposit' AND pm.tenant_id = $2)
-             OR (t.source_type IN ('security_deposit_adjustment', 'security_deposit_refund', 'security_deposit_forfeiture')
-                 AND t.source_id = $3)
-           )`,
-        [depositPayableAcctId, tenantId, leaseId],
+         FROM transactions
+         WHERE (debit_account_id = $1 OR credit_account_id = $1)
+           AND source_id = $2
+           AND source_type IN ('security_deposit', 'security_deposit_adjustment')
+           AND COALESCE(is_deleted, false) = false`,
+        [depositPayableAcctId, leaseId],
       );
       depositBalance = Number(depRows?.[0]?.balance || 0);
     }
@@ -128,14 +123,9 @@ export async function GET(request, { params: { id } }) {
          FROM transactions t
          WHERE (t.debit_account_id = $1 OR t.credit_account_id = $1)
            AND COALESCE(t.is_deleted, false) = false
-           AND (
-             (t.source_type IN ('payment_advance', 'payment_auto_apply')
-              AND t.source_id IN (SELECT id FROM payments WHERE tenant_id = $2))
-             OR
-             (t.source_type IN ('prepayment_refund', 'prepayment_writeoff')
-              AND t.source_id = $3)
-           )`,
-        [prepaymentAcctId, tenantId, leaseId],
+           AND t.source_type IN ('payment_advance', 'payment_auto_apply', 'prepayment_refund', 'prepayment_writeoff')
+           AND t.source_id IN (SELECT id FROM payments WHERE tenant_id = $2)`,
+        [prepaymentAcctId, tenantId],
       );
       prepaymentBalance = Number(prepRows?.[0]?.balance || 0);
     }
