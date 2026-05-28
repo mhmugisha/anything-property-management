@@ -50,25 +50,22 @@ export async function GET(request, { params }) {
         { status: 500 },
       );
 
-    // STEP 1: GL net for the month scoped to this landlord
-    const glRows = await sql(
-      `SELECT amount, debit_account_id, credit_account_id
+    // STEP 1: Closing balance of account 2100 for this landlord — all cumulative movements up to end of month
+    const [balRow] = await sql(
+      `SELECT
+         COALESCE(SUM(CASE WHEN credit_account_id = $1 THEN amount ELSE 0 END), 0)
+         - COALESCE(SUM(CASE WHEN debit_account_id = $1 THEN amount ELSE 0 END), 0)
+         AS closing_balance
        FROM transactions
-       WHERE landlord_id = $1
-         AND (debit_account_id = $2 OR credit_account_id = $2)
+       WHERE (debit_account_id = $1 OR credit_account_id = $1)
+         AND landlord_id = $2
          AND COALESCE(is_deleted, false) = false
          AND COALESCE(approval_status, 'approved') = 'approved'
-         AND transaction_date >= $3::date
-         AND transaction_date <= $4::date`,
-      [landlordId, acct2100Id, firstDay, lastDay],
+         AND transaction_date <= $3::date`,
+      [acct2100Id, landlordId, lastDay],
     );
 
-    let glNet = 0;
-    for (const r of glRows || []) {
-      const amt = Number(r.amount || 0);
-      if (Number(r.credit_account_id) === acct2100Id) glNet += amt;
-      else glNet -= amt;
-    }
+    const closingBalance = Number(balRow?.closing_balance || 0);
 
     // STEP 2: Payment note net across all active properties for this landlord
     const properties = await sql(
@@ -169,7 +166,9 @@ export async function GET(request, { params }) {
       paymentNoteNet += totalRent - mgmtFee - deductions - maintenanceTotal;
     }
 
-    const difference = round2(paymentNoteNet - glNet);
+    // difference = closing_balance - payment_note_net
+    // positive → GL overstates (deduction needed); negative → GL understates (credit needed)
+    const difference = round2(closingBalance - paymentNoteNet);
     const isReconciled = Math.abs(difference) < 1;
 
     return Response.json({
@@ -177,11 +176,11 @@ export async function GET(request, { params }) {
       landlord_name: landlord.full_name,
       month,
       year,
-      gl_net: round2(glNet),
+      closing_balance: round2(closingBalance),
       payment_note_net: round2(paymentNoteNet),
       difference,
       is_reconciled: isReconciled,
-      suggested_action: isReconciled ? null : difference > 0 ? "credit" : "deduction",
+      suggested_action: isReconciled ? null : difference > 0 ? "deduction" : "credit",
     });
   } catch (error) {
     console.error("GET /api/landlords/[id]/reconciliation error", error);

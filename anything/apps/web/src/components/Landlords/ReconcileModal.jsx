@@ -14,7 +14,7 @@ function fmt(n) {
 }
 
 export function ReconcileModal({ reconciliation, onClose, onConfirm, isPending }) {
-  const { month, year, gl_net, payment_note_net, difference, suggested_action } =
+  const { month, year, closing_balance, payment_note_net, difference, suggested_action } =
     reconciliation || {};
 
   const [action, setAction] = useState(suggested_action || "credit");
@@ -60,8 +60,8 @@ export function ReconcileModal({ reconciliation, onClose, onConfirm, isPending }
         <div className="px-5 py-4 space-y-4">
           <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-500">GL Net (Account 2100)</span>
-              <span className="font-medium text-slate-800">UGX {fmt(gl_net)}</span>
+              <span className="text-slate-500">Closing Balance (Account 2100)</span>
+              <span className="font-medium text-slate-800">UGX {fmt(closing_balance)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Payment Note Net</span>
