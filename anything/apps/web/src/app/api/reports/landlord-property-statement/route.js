@@ -245,11 +245,11 @@ export async function GET(request) {
     // Opening debits from invoice reversals (rent_reversal + mgmt_fee_reversal)
     const openingDebitsReversalsRows = await sql`
       SELECT COALESCE(SUM(amount), 0) AS total
-      FROM transactions
-      WHERE property_id = ${propertyId}
-        AND source_type IN ('rent_reversal', 'mgmt_fee_reversal')
-        AND transaction_date < ${openingFrom}::date
-        AND COALESCE(is_deleted, false) = false
+      FROM transactions t
+      WHERE t.property_id = ${propertyId}
+        AND t.source_type IN ('rent_reversal', 'mgmt_fee_reversal')
+        AND t.transaction_date < ${openingFrom}::date
+        AND COALESCE(t.is_deleted, false) = false
     `;
 
     const openingDebits =
@@ -500,7 +500,7 @@ export async function GET(request) {
     const reversalsWhere = [
       "property_id = $1",
       "source_type = 'rent_reversal'",
-      "COALESCE(is_deleted, false) = false",
+      "COALESCE(t.is_deleted, false) = false",
     ];
     const reversalsValues = [propertyId];
 
@@ -519,16 +519,16 @@ export async function GET(request) {
     }
 
     const reversalsQuery = `
-      SELECT 
-        id, 
-        transaction_date, 
-        description, 
-        amount, 
-        source_type,
-        reference_number
-      FROM transactions
+      SELECT
+        t.id,
+        t.transaction_date,
+        t.description,
+        t.amount,
+        t.source_type,
+        t.reference_number
+      FROM transactions t
       WHERE ${reversalsWhere.join(" AND ")}
-      ORDER BY transaction_date ASC, id ASC
+      ORDER BY t.transaction_date ASC, t.id ASC
     `;
 
     const reversals = await sql(reversalsQuery, reversalsValues);
@@ -651,11 +651,11 @@ export async function GET(request) {
 
     const closingDebitsReversalsRows = await sql`
       SELECT COALESCE(SUM(amount), 0) AS total
-      FROM transactions
-      WHERE property_id = ${propertyId}
-        AND source_type IN ('rent_reversal', 'mgmt_fee_reversal')
-        AND transaction_date <= ${closingTo}::date
-        AND COALESCE(is_deleted, false) = false
+      FROM transactions t
+      WHERE t.property_id = ${propertyId}
+        AND t.source_type IN ('rent_reversal', 'mgmt_fee_reversal')
+        AND t.transaction_date <= ${closingTo}::date
+        AND COALESCE(t.is_deleted, false) = false
     `;
 
     const closingDebits =
