@@ -150,48 +150,44 @@ export async function PUT(request, { params: { id } }) {
           );
         }
 
-        const result = await sql.transaction(async (txn) => {
-          const [txnRow] = await txn`
-            INSERT INTO transactions (
-              transaction_date, description,
-              debit_account_id, credit_account_id,
-              amount, currency,
-              created_by, landlord_id, property_id,
-              expense_scope, source_type, source_id
-            ) VALUES (
-              ${txnDate}::date,
-              ${glDescription},
-              ${acct2100Id}, ${paymentAccountId},
-              ${completedCost}, 'UGX',
-              ${perm.staff.id}, ${landlordId}, ${propertyId},
-              'landlord', 'maintenance', ${reqId}
-            ) RETURNING id
-          `;
+        const [txnRow] = await sql`
+          INSERT INTO transactions (
+            transaction_date, description,
+            debit_account_id, credit_account_id,
+            amount, currency,
+            created_by, landlord_id, property_id,
+            expense_scope, source_type, source_id
+          ) VALUES (
+            ${txnDate}::date,
+            ${glDescription},
+            ${acct2100Id}, ${paymentAccountId},
+            ${completedCost}, 'UGX',
+            ${perm.staff.id}, ${landlordId}, ${propertyId},
+            'landlord', 'maintenance', ${reqId}
+          ) RETURNING id
+        `;
 
-          const [updatedRow] = await txn`
-            UPDATE maintenance_requests
-            SET
-              title          = ${title !== undefined ? title : existing.title},
-              description    = ${description !== undefined ? description || null : existing.description},
-              category       = ${category !== undefined ? category || null : existing.category},
-              priority       = ${priority !== undefined ? priority : existing.priority},
-              status         = 'completed',
-              assigned_to    = ${assignedTo !== undefined ? assignedTo || null : existing.assigned_to},
-              cost           = ${cost !== undefined ? cost : existing.cost},
-              approval_required = ${approvalRequired},
-              completed_at   = ${completedAt},
-              charge_type    = 'landlord',
-              payment_account_id = ${paymentAccountId},
-              transaction_id = ${Number(txnRow.id)},
-              completed_cost = ${completedCost},
-              completed_date = ${txnDate}::date,
-              landlord_id    = ${landlordId}
-            WHERE id = ${reqId}
-            RETURNING *
-          `;
-
-          return updatedRow;
-        });
+        const [result] = await sql`
+          UPDATE maintenance_requests
+          SET
+            title          = ${title !== undefined ? title : existing.title},
+            description    = ${description !== undefined ? description || null : existing.description},
+            category       = ${category !== undefined ? category || null : existing.category},
+            priority       = ${priority !== undefined ? priority : existing.priority},
+            status         = 'completed',
+            assigned_to    = ${assignedTo !== undefined ? assignedTo || null : existing.assigned_to},
+            cost           = ${cost !== undefined ? cost : existing.cost},
+            approval_required = ${approvalRequired},
+            completed_at   = ${completedAt},
+            charge_type    = 'landlord',
+            payment_account_id = ${paymentAccountId},
+            transaction_id = ${Number(txnRow.id)},
+            completed_cost = ${completedCost},
+            completed_date = ${txnDate}::date,
+            landlord_id    = ${landlordId}
+          WHERE id = ${reqId}
+          RETURNING *
+        `;
 
         await writeAuditLog({
           staffId: perm.staff.id,
@@ -214,47 +210,43 @@ export async function PUT(request, { params: { id } }) {
           );
         }
 
-        const result = await sql.transaction(async (txn) => {
-          const [txnRow] = await txn`
-            INSERT INTO transactions (
-              transaction_date, description,
-              debit_account_id, credit_account_id,
-              amount, currency,
-              created_by, property_id,
-              expense_scope, source_type, source_id
-            ) VALUES (
-              ${txnDate}::date,
-              ${glDescription},
-              ${acct5200Id}, ${paymentAccountId},
-              ${completedCost}, 'UGX',
-              ${perm.staff.id}, ${existing.property_id || null},
-              'company', 'maintenance', ${reqId}
-            ) RETURNING id
-          `;
+        const [txnRow] = await sql`
+          INSERT INTO transactions (
+            transaction_date, description,
+            debit_account_id, credit_account_id,
+            amount, currency,
+            created_by, property_id,
+            expense_scope, source_type, source_id
+          ) VALUES (
+            ${txnDate}::date,
+            ${glDescription},
+            ${acct5200Id}, ${paymentAccountId},
+            ${completedCost}, 'UGX',
+            ${perm.staff.id}, ${existing.property_id || null},
+            'company', 'maintenance', ${reqId}
+          ) RETURNING id
+        `;
 
-          const [updatedRow] = await txn`
-            UPDATE maintenance_requests
-            SET
-              title          = ${title !== undefined ? title : existing.title},
-              description    = ${description !== undefined ? description || null : existing.description},
-              category       = ${category !== undefined ? category || null : existing.category},
-              priority       = ${priority !== undefined ? priority : existing.priority},
-              status         = 'completed',
-              assigned_to    = ${assignedTo !== undefined ? assignedTo || null : existing.assigned_to},
-              cost           = ${cost !== undefined ? cost : existing.cost},
-              approval_required = ${approvalRequired},
-              completed_at   = ${completedAt},
-              charge_type    = 'company',
-              payment_account_id = ${paymentAccountId},
-              transaction_id = ${Number(txnRow.id)},
-              completed_cost = ${completedCost},
-              completed_date = ${txnDate}::date
-            WHERE id = ${reqId}
-            RETURNING *
-          `;
-
-          return updatedRow;
-        });
+        const [result] = await sql`
+          UPDATE maintenance_requests
+          SET
+            title          = ${title !== undefined ? title : existing.title},
+            description    = ${description !== undefined ? description || null : existing.description},
+            category       = ${category !== undefined ? category || null : existing.category},
+            priority       = ${priority !== undefined ? priority : existing.priority},
+            status         = 'completed',
+            assigned_to    = ${assignedTo !== undefined ? assignedTo || null : existing.assigned_to},
+            cost           = ${cost !== undefined ? cost : existing.cost},
+            approval_required = ${approvalRequired},
+            completed_at   = ${completedAt},
+            charge_type    = 'company',
+            payment_account_id = ${paymentAccountId},
+            transaction_id = ${Number(txnRow.id)},
+            completed_cost = ${completedCost},
+            completed_date = ${txnDate}::date
+          WHERE id = ${reqId}
+          RETURNING *
+        `;
 
         await writeAuditLog({
           staffId: perm.staff.id,

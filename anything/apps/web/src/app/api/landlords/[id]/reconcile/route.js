@@ -68,13 +68,13 @@ export async function POST(request, { params }) {
           debit_account_id, credit_account_id,
           amount, currency,
           created_by, landlord_id,
-          source_type, approval_status
+          source_type
         ) VALUES (
           ${txDate}::date, ${desc},
           ${debitId}, ${creditId},
           ${amt}, 'UGX',
           ${perm.staff.id}, ${landlordId},
-          'reconciliation', 'approved'
+          'reconciliation'
         ) RETURNING id
       `;
       return row;

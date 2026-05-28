@@ -53,24 +53,21 @@ export async function POST(request) {
       return Response.json({ error: "Account 3200 not configured" }, { status: 500 });
 
     // Dr 3200 Retained Earnings / Cr 2100 Due to Landlords
-    const txnRow = await sql.transaction(async (txn) => {
-      const [row] = await txn`
-        INSERT INTO transactions (
-          transaction_date, description,
-          debit_account_id, credit_account_id,
-          amount, currency,
-          created_by, landlord_id, property_id,
-          reference_number, source_type, approval_status
-        ) VALUES (
-          ${txDate}::date, ${desc},
-          ${acct3200Id}, ${acct2100Id},
-          ${amt}, 'UGX',
-          ${perm.staff.id}, ${landlordId}, ${propertyId},
-          ${refNumber}, 'landlord_credit', 'approved'
-        ) RETURNING id
-      `;
-      return row;
-    });
+    const [txnRow] = await sql`
+      INSERT INTO transactions (
+        transaction_date, description,
+        debit_account_id, credit_account_id,
+        amount, currency,
+        created_by, landlord_id, property_id,
+        reference_number, source_type
+      ) VALUES (
+        ${txDate}::date, ${desc},
+        ${acct3200Id}, ${acct2100Id},
+        ${amt}, 'UGX',
+        ${perm.staff.id}, ${landlordId}, ${propertyId},
+        ${refNumber}, 'landlord_credit'
+      ) RETURNING id
+    `;
 
     await writeAuditLog({
       staffId: perm.staff.id,

@@ -60,7 +60,6 @@ export async function GET(request, { params }) {
       WHERE (debit_account_id = ${acct2100Id} OR credit_account_id = ${acct2100Id})
         AND landlord_id = ${landlordId}
         AND COALESCE(is_deleted, false) = false
-        AND COALESCE(approval_status, 'approved') = 'approved'
         AND transaction_date <= ${lastDay}::date
     `;
 
@@ -147,7 +146,6 @@ export async function GET(request, { params }) {
           AND source_type = 'maintenance'
           AND debit_account_id = ${acct2100Id}
           AND COALESCE(is_deleted, false) = false
-          AND COALESCE(approval_status, 'approved') = 'approved'
           AND transaction_date >= ${firstDay}::date
           AND transaction_date <= ${lastDay}::date
       `;
