@@ -179,7 +179,7 @@ export default function LandlordsPage() {
     selected?.id,
     reconcileMonth,
     reconcileYear,
-    !!selected?.id && !userLoading && !!user && canReports === true,
+    !!selected?.id && !userLoading && !!user && canView === true,
   );
 
   const applyReconciliationMutation = useApplyReconciliation();

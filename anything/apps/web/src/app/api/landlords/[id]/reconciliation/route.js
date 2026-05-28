@@ -14,7 +14,7 @@ function round2(n) {
 }
 
 export async function GET(request, { params }) {
-  const perm = await requirePermission(request, "reports");
+  const perm = await requirePermission(request, "properties");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

@@ -31,12 +31,10 @@ export function PayoutCard({
   onOpenReconcileModal,
   isAdmin,
 }) {
-  const glNet = Number(reconciliation?.gl_net ?? null);
   const isReconciled = reconciliation?.is_reconciled ?? null;
   const difference = Number(reconciliation?.difference ?? 0);
-  const hasActivity = reconciliation != null && glNet !== 0;
   const showReconcileFirst =
-    isAdmin && reconciliation != null && hasActivity && isReconciled === false;
+    isAdmin && reconciliation != null && isReconciled === false;
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
@@ -88,10 +86,10 @@ export function PayoutCard({
 
       {reconciliation != null ? (
         <div className="mt-3">
-          {isReconciled === true || !hasActivity ? (
+          {isReconciled === true ? (
             <div className="flex items-center gap-1.5 text-xs text-emerald-600">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              {hasActivity ? "Reconciled" : "No GL activity this month"}
+              Reconciled
             </div>
           ) : (
             <div className="flex items-center gap-1.5 text-xs text-amber-600">
