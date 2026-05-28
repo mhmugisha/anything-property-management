@@ -456,6 +456,7 @@ export function Layout({ children }: { children: ReactNode }) {
       reports: 'Reports',
       accounting: 'Accounting',
       maintenance: 'Maintenance',
+      payroll: 'Payroll',
       settings: 'Settings',
       profile: 'Profile',
       onboarding: 'Onboarding',
