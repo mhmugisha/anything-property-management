@@ -61,7 +61,7 @@ export async function POST(request, { params }) {
     const creditId = action === "credit" ? acct2100Id : acct3200Id;
     const txDate = String(transaction_date).slice(0, 10);
 
-    const txnRow = await sql.begin(async (txn) => {
+    const txnRow = await sql.transaction(async (txn) => {
       const [row] = await txn`
         INSERT INTO transactions (
           transaction_date, description,

@@ -53,7 +53,7 @@ export async function POST(request) {
       return Response.json({ error: "Account 3200 not configured" }, { status: 500 });
 
     // Dr 3200 Retained Earnings / Cr 2100 Due to Landlords
-    const txnRow = await sql.begin(async (txn) => {
+    const txnRow = await sql.transaction(async (txn) => {
       const [row] = await txn`
         INSERT INTO transactions (
           transaction_date, description,

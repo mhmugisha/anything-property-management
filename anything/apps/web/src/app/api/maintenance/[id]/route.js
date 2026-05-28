@@ -150,7 +150,7 @@ export async function PUT(request, { params: { id } }) {
           );
         }
 
-        const result = await sql.begin(async (txn) => {
+        const result = await sql.transaction(async (txn) => {
           const [txnRow] = await txn`
             INSERT INTO transactions (
               transaction_date, description,
@@ -214,7 +214,7 @@ export async function PUT(request, { params: { id } }) {
           );
         }
 
-        const result = await sql.begin(async (txn) => {
+        const result = await sql.transaction(async (txn) => {
           const [txnRow] = await txn`
             INSERT INTO transactions (
               transaction_date, description,
