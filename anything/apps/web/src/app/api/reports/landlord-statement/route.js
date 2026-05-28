@@ -219,7 +219,7 @@ export async function GET(request) {
       reversalsValues.push(...propertyIds);
 
       reversalsWhere.push("source_type = 'rent_reversal'");
-      reversalsWhere.push("COALESCE(is_deleted, false) = false");
+      reversalsWhere.push("COALESCE(t.is_deleted, false) = false");
 
       if (from) {
         reversalsWhere.push(
