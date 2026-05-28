@@ -28,6 +28,8 @@ export function PayoutCard({
   paymentNoteTitle,
   // reconciliation
   reconciliation,
+  reconciliationLoading,
+  reconciliationFetchError,
   onOpenReconcileModal,
   isAdmin,
 }) {
@@ -84,7 +86,14 @@ export function PayoutCard({
         </Field>
       </div>
 
-      {reconciliation != null ? (
+      {reconciliationFetchError ? (
+        <div className="mt-3 flex items-center gap-1.5 text-xs text-rose-500">
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Could not load reconciliation status
+        </div>
+      ) : reconciliationLoading ? (
+        <div className="mt-3 text-xs text-slate-400">Checking reconciliation…</div>
+      ) : reconciliation != null ? (
         <div className="mt-3">
           {isReconciled === true ? (
             <div className="flex items-center gap-1.5 text-xs text-emerald-600">

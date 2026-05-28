@@ -55,7 +55,8 @@ export default function LandlordsPage() {
 
   const canView = staffQuery.data?.permissions?.properties === true;
   const canReports = staffQuery.data?.permissions?.reports === true;
-  const isAdmin = staffQuery.data?.role_name === "Admin";
+  const isAdmin =
+    String(staffQuery.data?.role_name || "").trim().toLowerCase() === "admin";
 
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -179,7 +180,7 @@ export default function LandlordsPage() {
     selected?.id,
     reconcileMonth,
     reconcileYear,
-    !!selected?.id && !userLoading && !!user && canView === true,
+    !!selected?.id && !userLoading && !!user && !!canView,
   );
 
   const applyReconciliationMutation = useApplyReconciliation();
@@ -469,6 +470,8 @@ export default function LandlordsPage() {
                 statementSummary={statement?.summary}
                 canReports={canReports}
                 reconciliation={reconciliationQuery.data || null}
+                reconciliationLoading={reconciliationQuery.isLoading}
+                reconciliationFetchError={reconciliationQuery.error}
                 onApplyReconciliation={onApplyReconciliation}
                 reconciliationPending={applyReconciliationMutation.isPending}
                 reconciliationError={applyReconciliationMutation.error}
