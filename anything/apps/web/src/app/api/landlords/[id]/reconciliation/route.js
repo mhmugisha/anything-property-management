@@ -51,25 +51,17 @@ export async function GET(request, { params }) {
       );
 
     // Closing balance of account 2100 for this landlord — all cumulative movements up to end of month
-    let balRow;
-    try {
-      [balRow] = await sql`
-        SELECT
-          COALESCE(SUM(CASE WHEN credit_account_id = ${acct2100Id} THEN amount ELSE 0 END), 0)
-          - COALESCE(SUM(CASE WHEN debit_account_id = ${acct2100Id} THEN amount ELSE 0 END), 0)
-          AS closing_balance
-        FROM transactions
-        WHERE (debit_account_id = ${acct2100Id} OR credit_account_id = ${acct2100Id})
-          AND landlord_id = ${landlordId}
-          AND COALESCE(is_deleted, false) = false
-          AND transaction_date <= ${lastDay}::date
-      `;
-    } catch (innerError) {
-      return Response.json(
-        { error: "Closing balance query failed: " + innerError.message },
-        { status: 500 },
-      );
-    }
+    const [balRow] = await sql`
+      SELECT
+        COALESCE(SUM(CASE WHEN credit_account_id = ${acct2100Id} THEN amount ELSE 0 END), 0)
+        - COALESCE(SUM(CASE WHEN debit_account_id = ${acct2100Id} THEN amount ELSE 0 END), 0)
+        AS closing_balance
+      FROM transactions
+      WHERE (debit_account_id = ${acct2100Id} OR credit_account_id = ${acct2100Id})
+        AND landlord_id = ${landlordId}
+        AND COALESCE(is_deleted, false) = false
+        AND transaction_date <= ${lastDay}::date
+    `;
 
     const closingBalance = Number(balRow?.closing_balance || 0);
 
@@ -77,7 +69,7 @@ export async function GET(request, { params }) {
     const properties = await sql`
       SELECT id, management_fee_type, management_fee_percent, management_fee_fixed_amount
       FROM properties
-      WHERE landlord_id = ${landlordId} AND COALESCE(is_deleted, false) = false
+      WHERE landlord_id = ${landlordId}
     `;
 
     let paymentNoteNet = 0;
@@ -181,11 +173,7 @@ export async function GET(request, { params }) {
     });
   } catch (error) {
     return Response.json(
-      {
-        error: error.message || "Failed to fetch reconciliation",
-        detail: String(error),
-        type: error?.constructor?.name,
-      },
+      { error: "Failed to fetch reconciliation" },
       { status: 500 },
     );
   }
