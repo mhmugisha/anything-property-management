@@ -87,7 +87,6 @@ export async function GET(request, { params }) {
           AND invoice_year * 100 + invoice_month = ${yearMonth}
           AND status <> 'void'
           AND COALESCE(is_deleted, false) = false
-          AND COALESCE(approval_status, 'approved') = 'approved'
           AND lease_id IS NOT NULL
       `;
       const currentRent = invoiceRows.reduce(
@@ -105,7 +104,6 @@ export async function GET(request, { params }) {
           AND i.lease_id IS NULL
           AND COALESCE(i.is_deleted, false) = false
           AND p.is_reversed = false
-          AND COALESCE(p.approval_status, 'approved') = 'approved'
           AND p.payment_date >= ${firstDay}::date
           AND p.payment_date <= ${lastDay}::date
       `;
@@ -174,13 +172,8 @@ export async function GET(request, { params }) {
       suggested_action: isReconciled ? null : difference > 0 ? "deduction" : "credit",
     });
   } catch (error) {
-    console.error(
-      "GET reconciliation error:",
-      error.message,
-      error.stack,
-    );
     return Response.json(
-      { error: error.message || "Failed to fetch reconciliation" },
+      { error: "Failed to fetch reconciliation" },
       { status: 500 },
     );
   }
