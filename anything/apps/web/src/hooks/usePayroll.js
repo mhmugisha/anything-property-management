@@ -249,6 +249,33 @@ export function usePayslip(runId, employeeId, enabled = true) {
   });
 }
 
+export function useTerminationSummary(employeeId, terminationDate, salaryType, enabled = true) {
+  return useQuery({
+    queryKey: ["payroll", "employees", employeeId, "termination-summary", terminationDate, salaryType],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("termination_date", terminationDate);
+      params.set("salary_type", salaryType);
+      return fetchJson(`/api/payroll/employees/${employeeId}/termination-summary?${params}`);
+    },
+    enabled: enabled && !!employeeId && !!terminationDate && !!salaryType,
+    staleTime: 0,
+  });
+}
+
+export function useTerminateEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, payload }) =>
+      postJson(`/api/payroll/employees/${id}/terminate`, payload),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ["payroll", "employees"] });
+      qc.invalidateQueries({ queryKey: ["payroll", "employees", id] });
+      qc.invalidateQueries({ queryKey: ["accounting"] });
+    },
+  });
+}
+
 export function useEmployeeStatement(employeeId, fromDate, toDate, enabled = true) {
   return useQuery({
     queryKey: ["payroll", "employees", employeeId, "statement", fromDate, toDate],
