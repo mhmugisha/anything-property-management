@@ -34,6 +34,52 @@ export async function PUT(request, { params: { id } }) {
 
     const body = await request.json();
 
+    // --- Action: close ---
+    if (body?.action === "close") {
+      if (existing.status !== "completed") {
+        return Response.json(
+          { error: "Only completed requests can be closed." },
+          { status: 400 },
+        );
+      }
+      const [result] = await sql`
+        UPDATE maintenance_requests
+        SET status = 'closed'
+        WHERE id = ${reqId}
+        RETURNING *
+      `;
+      await writeAuditLog({
+        staffId: perm.staff.id,
+        action: "maintenance.close",
+        entityType: "maintenance_request",
+        entityId: reqId,
+        oldValues: existing,
+        newValues: result,
+        ipAddress: perm.ipAddress,
+      });
+      return Response.json({ request: result });
+    }
+
+    // --- Action: cancel ---
+    if (body?.action === "cancel") {
+      await sql`
+        UPDATE transactions
+        SET is_deleted = true
+        WHERE source_type = 'maintenance' AND source_id = ${reqId}
+      `;
+      await sql`DELETE FROM maintenance_requests WHERE id = ${reqId}`;
+      await writeAuditLog({
+        staffId: perm.staff.id,
+        action: "maintenance.cancel",
+        entityType: "maintenance_request",
+        entityId: reqId,
+        oldValues: existing,
+        newValues: null,
+        ipAddress: perm.ipAddress,
+      });
+      return Response.json({ success: true });
+    }
+
     const title =
       typeof body?.title === "string" ? body.title.trim() : undefined;
     const description =
@@ -58,6 +104,10 @@ export async function PUT(request, { params: { id } }) {
     const paymentAccountId = toNumber(body?.payment_account_id);
     const completedCost = toNumber(body?.completed_cost);
     const completedDate = parseDate(body?.completed_date);
+    const referenceNumber =
+      typeof body?.reference_number === "string"
+        ? body.reference_number.trim() || null
+        : null;
 
     // Approval gate: block progression if approval is required but not yet given
     const nextStatus = status !== undefined ? status : existing.status;
@@ -156,14 +206,16 @@ export async function PUT(request, { params: { id } }) {
             debit_account_id, credit_account_id,
             amount, currency,
             created_by, landlord_id, property_id,
-            expense_scope, source_type, source_id
+            expense_scope, source_type, source_id,
+            reference_number
           ) VALUES (
             ${txnDate}::date,
             ${glDescription},
             ${acct2100Id}, ${paymentAccountId},
             ${completedCost}, 'UGX',
             ${perm.staff.id}, ${landlordId}, ${propertyId},
-            'landlord', 'maintenance', ${reqId}
+            'landlord', 'maintenance', ${reqId},
+            ${referenceNumber}
           ) RETURNING id
         `;
 
@@ -184,7 +236,8 @@ export async function PUT(request, { params: { id } }) {
             transaction_id = ${Number(txnRow.id)},
             completed_cost = ${completedCost},
             completed_date = ${txnDate}::date,
-            landlord_id    = ${landlordId}
+            landlord_id    = ${landlordId},
+            reference_number = ${referenceNumber}
           WHERE id = ${reqId}
           RETURNING *
         `;
@@ -216,14 +269,16 @@ export async function PUT(request, { params: { id } }) {
             debit_account_id, credit_account_id,
             amount, currency,
             created_by, property_id,
-            expense_scope, source_type, source_id
+            expense_scope, source_type, source_id,
+            reference_number
           ) VALUES (
             ${txnDate}::date,
             ${glDescription},
             ${acct5200Id}, ${paymentAccountId},
             ${completedCost}, 'UGX',
             ${perm.staff.id}, ${existing.property_id || null},
-            'company', 'maintenance', ${reqId}
+            'company', 'maintenance', ${reqId},
+            ${referenceNumber}
           ) RETURNING id
         `;
 
@@ -243,7 +298,8 @@ export async function PUT(request, { params: { id } }) {
             payment_account_id = ${paymentAccountId},
             transaction_id = ${Number(txnRow.id)},
             completed_cost = ${completedCost},
-            completed_date = ${txnDate}::date
+            completed_date = ${txnDate}::date,
+            reference_number = ${referenceNumber}
           WHERE id = ${reqId}
           RETURNING *
         `;

@@ -56,6 +56,8 @@ export default function MaintenancePage() {
   const [tenantId, setTenantId] = useState("");
 
   // Completion modal state
+  const [showClosed, setShowClosed] = useState(false);
+
   const [completionItem, setCompletionItem] = useState(null);
   const [completedCost, setCompletedCost] = useState("");
   const [completedDate, setCompletedDate] = useState(
@@ -63,6 +65,7 @@ export default function MaintenancePage() {
   );
   const [chargeType, setChargeType] = useState("company");
   const [paymentAccountId, setPaymentAccountId] = useState("");
+  const [referenceNumber, setReferenceNumber] = useState("");
 
   const propertiesQuery = useQuery({
     queryKey: ["lookups", "properties"],
@@ -109,14 +112,16 @@ export default function MaintenancePage() {
     const pending = [];
     const inProgress = [];
     const completed = [];
+    const closed = [];
 
     for (const r of requests) {
-      if (r.status === "completed") completed.push(r);
+      if (r.status === "closed") closed.push(r);
+      else if (r.status === "completed") completed.push(r);
       else if (r.status === "in_progress") inProgress.push(r);
       else pending.push(r);
     }
 
-    return { pending, inProgress, completed };
+    return { pending, inProgress, completed, closed };
   }, [requests]);
 
   const isLoading = userLoading || staffQuery.isLoading;
@@ -182,6 +187,7 @@ export default function MaintenancePage() {
     setCompletedDate(new Date().toISOString().slice(0, 10));
     setChargeType("company");
     setPaymentAccountId("");
+    setReferenceNumber("");
   }, []);
 
   const closeCompletionModal = useCallback(() => {
@@ -191,6 +197,10 @@ export default function MaintenancePage() {
   const onConfirmComplete = useCallback(() => {
     if (!completionItem) return;
     const hasCost = completedCost !== "" && Number(completedCost) > 0;
+    if (hasCost && !referenceNumber.trim()) {
+      alert("Reference / Voucher # is required when a cost is entered.");
+      return;
+    }
     const payload = {
       status: "completed",
       ...(hasCost
@@ -199,6 +209,7 @@ export default function MaintenancePage() {
             completed_date: completedDate,
             charge_type: chargeType,
             payment_account_id: paymentAccountId ? Number(paymentAccountId) : null,
+            reference_number: referenceNumber.trim(),
           }
         : {}),
     };
@@ -212,9 +223,41 @@ export default function MaintenancePage() {
     completedDate,
     chargeType,
     paymentAccountId,
+    referenceNumber,
     updateMutation,
     closeCompletionModal,
   ]);
+
+  const onClose = useCallback(
+    async (reqId) => {
+      try {
+        await fetchJson(`/api/maintenance/${reqId}`, {
+          method: "PUT",
+          body: JSON.stringify({ action: "close" }),
+        });
+        maintenanceQuery.refetch();
+      } catch (e) {
+        alert(e?.message || "Could not close request.");
+      }
+    },
+    [maintenanceQuery],
+  );
+
+  const onCancel = useCallback(
+    async (reqId) => {
+      if (!confirm("Cancel this request? This cannot be undone.")) return;
+      try {
+        await fetchJson(`/api/maintenance/${reqId}`, {
+          method: "PUT",
+          body: JSON.stringify({ action: "cancel" }),
+        });
+        maintenanceQuery.refetch();
+      } catch (e) {
+        alert(e?.message || "Could not cancel request.");
+      }
+    },
+    [maintenanceQuery],
+  );
 
   if (isLoading) {
     return (
@@ -284,13 +327,24 @@ export default function MaintenancePage() {
                   Track issues by status and approvals
                 </p>
               </div>
-              <button
-                onClick={() => setFormOpen((v) => !v)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c]"
-              >
-                <Plus className="w-4 h-4" />
-                New request
-              </button>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showClosed}
+                    onChange={(e) => setShowClosed(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  Show closed
+                </label>
+                <button
+                  onClick={() => setFormOpen((v) => !v)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c]"
+                >
+                  <Plus className="w-4 h-4" />
+                  New request
+                </button>
+              </div>
             </div>
 
             {formOpen ? (
@@ -449,7 +503,7 @@ export default function MaintenancePage() {
               </div>
             ) : null}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+            <div className={`grid grid-cols-1 gap-2 ${showClosed ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
               <KanbanColumn
                 title="Pending"
                 subtitle="New or waiting"
@@ -457,6 +511,8 @@ export default function MaintenancePage() {
                 onMove={onMove}
                 onApprove={onApprove}
                 onComplete={openCompletionModal}
+                onClose={onClose}
+                onCancel={onCancel}
                 isAdmin={isAdmin}
                 isUpdating={
                   updateMutation.isPending || approveMutation.isPending
@@ -469,6 +525,8 @@ export default function MaintenancePage() {
                 onMove={onMove}
                 onApprove={onApprove}
                 onComplete={openCompletionModal}
+                onClose={onClose}
+                onCancel={onCancel}
                 isAdmin={isAdmin}
                 isUpdating={
                   updateMutation.isPending || approveMutation.isPending
@@ -481,12 +539,31 @@ export default function MaintenancePage() {
                 onMove={onMove}
                 onApprove={onApprove}
                 onComplete={openCompletionModal}
+                onClose={onClose}
+                onCancel={onCancel}
                 isAdmin={isAdmin}
                 isUpdating={
                   updateMutation.isPending || approveMutation.isPending
                 }
                 isCompleted
               />
+              {showClosed ? (
+                <KanbanColumn
+                  title="Closed"
+                  subtitle="Archived"
+                  items={grouped.closed}
+                  onMove={onMove}
+                  onApprove={onApprove}
+                  onComplete={openCompletionModal}
+                  onClose={onClose}
+                  onCancel={onCancel}
+                  isAdmin={isAdmin}
+                  isUpdating={
+                    updateMutation.isPending || approveMutation.isPending
+                  }
+                  isClosed
+                />
+              ) : null}
             </div>
           </div>
         </div>
@@ -553,6 +630,16 @@ export default function MaintenancePage() {
                   ))}
                 </select>
               </Field>
+
+              <Field label={`Reference / Voucher #${completedCost !== "" && Number(completedCost) > 0 ? " *" : " (optional)"}`}>
+                <input
+                  type="text"
+                  value={referenceNumber}
+                  onChange={(e) => setReferenceNumber(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                  placeholder="e.g. MV-2026-001"
+                />
+              </Field>
             </div>
 
             {updateMutation.error ? (
@@ -600,11 +687,18 @@ function KanbanColumn({
   onMove,
   onApprove,
   onComplete,
+  onClose,
+  onCancel,
   isAdmin,
   isUpdating,
   isCompleted,
+  isClosed,
 }) {
-  const headerColor = isCompleted ? "text-green-700" : "text-slate-800";
+  const headerColor = isClosed
+    ? "text-slate-500"
+    : isCompleted
+      ? "text-green-700"
+      : "text-slate-800";
 
   return (
     <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
@@ -626,6 +720,8 @@ function KanbanColumn({
               onMove={onMove}
               onApprove={onApprove}
               onComplete={onComplete}
+              onClose={onClose}
+              onCancel={onCancel}
               isAdmin={isAdmin}
               isUpdating={isUpdating}
             />
@@ -636,7 +732,7 @@ function KanbanColumn({
   );
 }
 
-function MaintenanceCard({ item, onMove, onApprove, onComplete, isAdmin, isUpdating }) {
+function MaintenanceCard({ item, onMove, onApprove, onComplete, onClose, onCancel, isAdmin, isUpdating }) {
   const propertyName = item.property_name || "—";
   const unitText = item.unit_number ? `Unit ${item.unit_number}` : "";
   const unitDisplay = unitText ? ` • ${unitText}` : "";
@@ -648,11 +744,13 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, isAdmin, isUpdat
 
   const badgeClasses = needsApproval
     ? "bg-orange-100 text-orange-700"
-    : item.status === "completed"
-      ? "bg-green-100 text-green-700"
-      : item.status === "in_progress"
-        ? "bg-blue-100 text-blue-700"
-        : "bg-gray-100 text-gray-700";
+    : item.status === "closed"
+      ? "bg-gray-200 text-gray-600"
+      : item.status === "completed"
+        ? "bg-green-100 text-green-700"
+        : item.status === "in_progress"
+          ? "bg-blue-100 text-blue-700"
+          : "bg-gray-100 text-gray-700";
 
   const badgeText = needsApproval ? "approval required" : item.status;
 
@@ -661,6 +759,8 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, isAdmin, isUpdat
 
   const canMoveToInProgress = item.status === "pending";
   const canMoveToCompleted = item.status === "in_progress";
+  const canClose = item.status === "completed";
+  const canCancel = item.status === "pending" || item.status === "in_progress";
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
@@ -695,8 +795,8 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, isAdmin, isUpdat
         </div>
       ) : null}
 
-      {/* Completed details */}
-      {item.status === "completed" ? (
+      {/* Completed / closed details */}
+      {(item.status === "completed" || item.status === "closed") ? (
         <div className="mt-2 space-y-0.5 text-xs text-slate-500">
           {item.completed_date ? (
             <div>Completed: {String(item.completed_date).slice(0, 10)}</div>
@@ -709,6 +809,9 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, isAdmin, isUpdat
               Charged to:{" "}
               {item.charge_type === "landlord" ? "Landlord" : "Company"}
             </div>
+          ) : null}
+          {item.reference_number ? (
+            <div>Ref: {item.reference_number}</div>
           ) : null}
           {item.transaction_id ? (
             <div className="flex items-center gap-1 text-emerald-600 font-medium">
@@ -757,6 +860,30 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, isAdmin, isUpdat
           ) : null}
         </div>
       </div>
+
+      {canClose ? (
+        <div className="mt-2 pt-2 border-t border-gray-100">
+          <button
+            disabled={isUpdating}
+            onClick={() => onClose(item.id)}
+            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c] disabled:opacity-50"
+          >
+            Close Request
+          </button>
+        </div>
+      ) : null}
+
+      {canCancel ? (
+        <div className="mt-2 pt-2 border-t border-gray-100">
+          <button
+            disabled={isUpdating}
+            onClick={() => onCancel(item.id)}
+            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg border border-rose-300 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
