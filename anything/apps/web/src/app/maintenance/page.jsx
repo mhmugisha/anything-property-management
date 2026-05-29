@@ -576,6 +576,7 @@ export default function MaintenancePage() {
                   onMove={onMove}
                   onApprove={onApprove}
                   onComplete={openCompletionModal}
+                  onEditClosed={openEditClosedModal}
                   onClose={onClose}
                   onCancel={onCancel}
                   isAdmin={isAdmin}
