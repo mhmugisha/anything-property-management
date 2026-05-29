@@ -30,6 +30,12 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const from = (searchParams.get("from") || "").trim();
     const to = (searchParams.get("to") || "").trim();
+    const description = (searchParams.get("description") || "").trim();
+    const amountRaw = searchParams.get("amount");
+    const sourceType = (searchParams.get("source_type") || "").trim();
+    const landlordIdRaw = searchParams.get("landlord_id");
+    const limitParam = parseInt(searchParams.get("limit") || "0", 10);
+    const orderDesc = searchParams.get("order") === "desc";
 
     const where = ["COALESCE(t.is_deleted,false) = false"];
     const values = [];
@@ -38,19 +44,63 @@ export async function GET(request) {
       where.push(`t.transaction_date >= $${values.length + 1}::date`);
       values.push(from);
     }
-
     if (to) {
       where.push(`t.transaction_date <= $${values.length + 1}::date`);
       values.push(to);
     }
+    if (description) {
+      where.push(`t.description ILIKE $${values.length + 1}`);
+      values.push(`%${description}%`);
+    }
+    if (amountRaw !== null && amountRaw !== "") {
+      const amt = Number(amountRaw);
+      if (!Number.isNaN(amt)) {
+        where.push(`t.amount = $${values.length + 1}`);
+        values.push(amt);
+      }
+    }
+    if (sourceType) {
+      where.push(`t.source_type = $${values.length + 1}`);
+      values.push(sourceType);
+    }
+    if (landlordIdRaw !== null && landlordIdRaw !== "") {
+      const lid = Number(landlordIdRaw);
+      if (!Number.isNaN(lid)) {
+        where.push(`t.landlord_id = $${values.length + 1}`);
+        values.push(lid);
+      }
+    }
 
-    const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+    const whereSql = `WHERE ${where.join(" AND ")}`;
+    const effectiveLimit = limitParam > 0 ? limitParam : 300;
 
-    // We want the *latest* items included, but displayed oldest -> newest
-    // so the newest entry appears at the bottom.
+    if (orderDesc) {
+      // Admin search: DESC order, with account and landlord names
+      const query = `
+        SELECT
+          t.*,
+          da.account_code AS debit_code, da.account_name AS debit_name,
+          ca.account_code AS credit_code, ca.account_name AS credit_name,
+          l.full_name AS landlord_name,
+          su.full_name AS created_by_name
+        FROM transactions t
+        LEFT JOIN chart_of_accounts da ON t.debit_account_id = da.id
+        LEFT JOIN chart_of_accounts ca ON t.credit_account_id = ca.id
+        LEFT JOIN landlords l ON t.landlord_id = l.id
+        LEFT JOIN staff_users su ON t.created_by = su.id
+        ${whereSql}
+        ORDER BY t.transaction_date DESC, t.id DESC
+        LIMIT $${values.length + 1}
+      `;
+      values.push(effectiveLimit);
+      const transactions = await sql(query, values);
+      return Response.json({ transactions });
+    }
+
+    // Default: journal view — newest 300, displayed oldest→newest
     const query = `
       SELECT * FROM (
-        SELECT t.*, 
+        SELECT t.*,
           da.account_code AS debit_code, da.account_name AS debit_name,
           ca.account_code AS credit_code, ca.account_name AS credit_name,
           su.full_name AS created_by_name
@@ -60,11 +110,11 @@ export async function GET(request) {
         LEFT JOIN staff_users su ON t.created_by = su.id
         ${whereSql}
         ORDER BY t.transaction_date DESC, t.id DESC
-        LIMIT 300
+        LIMIT $${values.length + 1}
       ) recent
       ORDER BY recent.transaction_date ASC, recent.id ASC
     `;
-
+    values.push(effectiveLimit);
     const transactions = await sql(query, values);
     return Response.json({ transactions });
   } catch (error) {

@@ -12,7 +12,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-export default function AccountingSidebar() {
+export default function AccountingSidebar({ isAdmin = false }) {
   const [journalOpen, setJournalOpen] = useState(false);
   const [statementsOpen, setStatementsOpen] = useState(false);
 
@@ -48,6 +48,7 @@ export default function AccountingSidebar() {
         { title: "Post Arrears", href: "/accounting/post-arrears" },
         { title: "Reverse Invoice", href: "/accounting/reverse-invoice" },
         { title: "Credit Landlord", href: "/accounting/credit-landlord" },
+        ...(isAdmin ? [{ title: "Void Transaction", href: "/accounting/void-transaction" }] : []),
       ],
     },
     {

@@ -37,6 +37,7 @@ export default function AccountingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const canUseAccounting = staffQuery.data?.permissions?.accounting === true;
+  const isAdmin = staffQuery.data?.role_name === "Admin";
 
   const state = useAccountingState();
 
@@ -208,7 +209,7 @@ export default function AccountingPage() {
         active="accounting"
       />
       <Sidebar active="accounting">
-        <AccountingSidebar />
+        <AccountingSidebar isAdmin={isAdmin} />
       </Sidebar>
 
       <main className="pt-32 md:pl-[270px]">
