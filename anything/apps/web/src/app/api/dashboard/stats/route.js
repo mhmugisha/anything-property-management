@@ -26,13 +26,11 @@ async function getAccountBalancesByIds(accountIds) {
         FROM transactions
         WHERE debit_account_id = ANY($1)
           AND COALESCE(is_deleted,false) = false
-          AND COALESCE(approval_status,'approved') = 'approved'
         UNION ALL
         SELECT credit_account_id AS account_id, -amount
         FROM transactions
         WHERE credit_account_id = ANY($1)
           AND COALESCE(is_deleted,false) = false
-          AND COALESCE(approval_status,'approved') = 'approved'
       ) t
       GROUP BY account_id
     `,
@@ -533,7 +531,6 @@ export async function GET(request) {
         AS due_to_landlords
       FROM transactions
       WHERE COALESCE(is_deleted, false) = false
-        AND COALESCE(approval_status, 'approved') = 'approved'
         AND (debit_account_id = 7 OR credit_account_id = 7)
     `;
     const amountDueToLandlords = Number(dueToLandlordsRows?.[0]?.due_to_landlords || 0);
