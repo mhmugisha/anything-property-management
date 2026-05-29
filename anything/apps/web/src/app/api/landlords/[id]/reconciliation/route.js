@@ -173,7 +173,7 @@ export async function GET(request, { params }) {
     });
   } catch (error) {
     return Response.json(
-      { error: "Failed to fetch reconciliation" },
+      { error: error.message || "Failed to fetch reconciliation" },
       { status: 500 },
     );
   }
