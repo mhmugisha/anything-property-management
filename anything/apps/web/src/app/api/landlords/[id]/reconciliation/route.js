@@ -174,9 +174,13 @@ export async function GET(request, { params }) {
       suggested_action: isReconciled ? null : difference > 0 ? "deduction" : "credit",
     });
   } catch (error) {
-    console.error("GET /api/landlords/[id]/reconciliation error:", error.message, "\n", error.stack);
+    console.error(
+      "GET reconciliation error:",
+      error.message,
+      error.stack,
+    );
     return Response.json(
-      { error: "Failed to fetch reconciliation" },
+      { error: error.message || "Failed to fetch reconciliation" },
       { status: 500 },
     );
   }
