@@ -229,34 +229,28 @@ export default function MaintenancePage() {
   ]);
 
   const onClose = useCallback(
-    async (reqId) => {
-      try {
-        await fetchJson(`/api/maintenance/${reqId}`, {
-          method: "PUT",
-          body: JSON.stringify({ action: "close" }),
-        });
-        maintenanceQuery.refetch();
-      } catch (e) {
-        alert(e?.message || "Could not close request.");
-      }
+    (reqId) => {
+      updateMutation.mutate(
+        { id: reqId, payload: { action: "close" } },
+        {
+          onError: (e) => alert(e?.message || "Could not close request."),
+        },
+      );
     },
-    [maintenanceQuery],
+    [updateMutation],
   );
 
   const onCancel = useCallback(
-    async (reqId) => {
+    (reqId) => {
       if (!confirm("Cancel this request? This cannot be undone.")) return;
-      try {
-        await fetchJson(`/api/maintenance/${reqId}`, {
-          method: "PUT",
-          body: JSON.stringify({ action: "cancel" }),
-        });
-        maintenanceQuery.refetch();
-      } catch (e) {
-        alert(e?.message || "Could not cancel request.");
-      }
+      updateMutation.mutate(
+        { id: reqId, payload: { action: "cancel" } },
+        {
+          onError: (e) => alert(e?.message || "Could not cancel request."),
+        },
+      );
     },
-    [maintenanceQuery],
+    [updateMutation],
   );
 
   if (isLoading) {
