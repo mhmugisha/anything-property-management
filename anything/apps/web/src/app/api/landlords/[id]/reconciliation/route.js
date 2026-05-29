@@ -156,15 +156,23 @@ export async function GET(request, { params }) {
     }
 
     // Check if a payout snapshot exists for this landlord this month
-    const [snapshotRow] = await sql`
-      SELECT COUNT(*) AS cnt, COALESCE(SUM(amount_paid), 0) AS total_paid
-      FROM landlord_payment_notes
-      WHERE landlord_id = ${landlordId}
-        AND month = ${month}
-        AND year = ${year}
-    `;
+    let snapshotCount = 0;
+    let snapshotPaid = 0;
+    try {
+      const [snapshotRow] = await sql`
+        SELECT COUNT(*) AS cnt, COALESCE(SUM(amount_paid), 0) AS total_paid
+        FROM landlord_payment_notes
+        WHERE landlord_id = ${landlordId}
+          AND month = ${month}
+          AND year = ${year}
+      `;
+      snapshotCount = Number(snapshotRow?.cnt || 0);
+      snapshotPaid = Number(snapshotRow?.total_paid || 0);
+    } catch {
+      snapshotCount = 0;
+    }
 
-    if (Number(snapshotRow?.cnt || 0) > 0) {
+    if (snapshotCount > 0) {
       return Response.json({
         landlord_id: landlordId,
         landlord_name: landlord.full_name,
@@ -175,7 +183,7 @@ export async function GET(request, { params }) {
         difference: 0,
         is_reconciled: true,
         suggested_action: null,
-        snapshot_paid: round2(Number(snapshotRow?.total_paid || 0)),
+        snapshot_paid: round2(snapshotPaid),
       });
     }
 
