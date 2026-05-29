@@ -80,6 +80,57 @@ export async function PUT(request, { params: { id } }) {
       return Response.json({ success: true });
     }
 
+    // --- Edit completion details on a closed request ---
+    if (existing.status === "closed" && !body?.action) {
+      const editCost = toNumber(body?.completed_cost);
+      const editDate = parseDate(body?.completed_date);
+      const editChargeType =
+        typeof body?.charge_type === "string" ? body.charge_type.trim() : null;
+      const editPaymentAccountId = toNumber(body?.payment_account_id);
+      const editReferenceNumber =
+        typeof body?.reference_number === "string"
+          ? body.reference_number.trim() || null
+          : null;
+
+      const finalCost =
+        editCost !== null ? editCost : existing.completed_cost;
+      const finalDate =
+        editDate || (existing.completed_date
+          ? String(existing.completed_date).slice(0, 10)
+          : null);
+      const finalChargeType = editChargeType || existing.charge_type;
+      const finalPaymentAccountId =
+        editPaymentAccountId !== null
+          ? editPaymentAccountId
+          : existing.payment_account_id;
+      const finalReferenceNumber =
+        editReferenceNumber !== null
+          ? editReferenceNumber
+          : existing.reference_number;
+
+      const [result] = await sql`
+        UPDATE maintenance_requests
+        SET
+          completed_cost       = ${finalCost},
+          completed_date       = ${finalDate}::date,
+          charge_type          = ${finalChargeType},
+          payment_account_id   = ${finalPaymentAccountId},
+          reference_number     = ${finalReferenceNumber}
+        WHERE id = ${reqId}
+        RETURNING *
+      `;
+      await writeAuditLog({
+        staffId: perm.staff.id,
+        action: "maintenance.edit_closed",
+        entityType: "maintenance_request",
+        entityId: reqId,
+        oldValues: existing,
+        newValues: result,
+        ipAddress: perm.ipAddress,
+      });
+      return Response.json({ request: result });
+    }
+
     const title =
       typeof body?.title === "string" ? body.title.trim() : undefined;
     const description =

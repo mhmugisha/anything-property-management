@@ -71,7 +71,7 @@ export default function MaintenanceSidebar() {
           </div>
         ) : (
           <div className="py-2">
-            {requests.map((request) => {
+            {requests.filter((r) => r.status === "pending" || r.status === "in_progress").map((request) => {
               const statusColor = getStatusColor(request.status);
               const priorityIcon = getPriorityIcon(request.priority);
 

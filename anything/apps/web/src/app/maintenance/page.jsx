@@ -190,29 +190,53 @@ export default function MaintenancePage() {
     setReferenceNumber("");
   }, []);
 
+  const openEditClosedModal = useCallback((item) => {
+    setCompletionItem(item);
+    setCompletedCost(item.completed_cost != null ? String(item.completed_cost) : "");
+    setCompletedDate(
+      item.completed_date
+        ? String(item.completed_date).slice(0, 10)
+        : new Date().toISOString().slice(0, 10),
+    );
+    setChargeType(item.charge_type || "company");
+    setPaymentAccountId(
+      item.payment_account_id != null ? String(item.payment_account_id) : "",
+    );
+    setReferenceNumber(item.reference_number || "");
+  }, []);
+
   const closeCompletionModal = useCallback(() => {
     setCompletionItem(null);
   }, []);
 
   const onConfirmComplete = useCallback(() => {
     if (!completionItem) return;
+    const isEditingClosed = completionItem.status === "closed";
     const hasCost = completedCost !== "" && Number(completedCost) > 0;
     if (hasCost && !referenceNumber.trim()) {
       alert("Reference / Voucher # is required when a cost is entered.");
       return;
     }
-    const payload = {
-      status: "completed",
-      ...(hasCost
-        ? {
-            completed_cost: Number(completedCost),
-            completed_date: completedDate,
-            charge_type: chargeType,
-            payment_account_id: paymentAccountId ? Number(paymentAccountId) : null,
-            reference_number: referenceNumber.trim(),
-          }
-        : {}),
-    };
+    const payload = isEditingClosed
+      ? {
+          completed_cost: hasCost ? Number(completedCost) : null,
+          completed_date: completedDate,
+          charge_type: chargeType,
+          payment_account_id: paymentAccountId ? Number(paymentAccountId) : null,
+          reference_number: referenceNumber.trim() || null,
+        }
+      : {
+          status: "completed",
+          ...(hasCost
+            ? {
+                completed_cost: Number(completedCost),
+                completed_date: completedDate,
+                charge_type: chargeType,
+                payment_account_id: paymentAccountId ? Number(paymentAccountId) : null,
+                reference_number: referenceNumber.trim(),
+              }
+            : {}),
+        };
     updateMutation.mutate(
       { id: completionItem.id, payload },
       { onSuccess: closeCompletionModal },
@@ -505,6 +529,7 @@ export default function MaintenancePage() {
                 onMove={onMove}
                 onApprove={onApprove}
                 onComplete={openCompletionModal}
+                onEditClosed={openEditClosedModal}
                 onClose={onClose}
                 onCancel={onCancel}
                 isAdmin={isAdmin}
@@ -519,6 +544,7 @@ export default function MaintenancePage() {
                 onMove={onMove}
                 onApprove={onApprove}
                 onComplete={openCompletionModal}
+                onEditClosed={openEditClosedModal}
                 onClose={onClose}
                 onCancel={onCancel}
                 isAdmin={isAdmin}
@@ -533,6 +559,7 @@ export default function MaintenancePage() {
                 onMove={onMove}
                 onApprove={onApprove}
                 onComplete={openCompletionModal}
+                onEditClosed={openEditClosedModal}
                 onClose={onClose}
                 onCancel={onCancel}
                 isAdmin={isAdmin}
@@ -568,7 +595,7 @@ export default function MaintenancePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <h2 className="text-lg font-semibold text-slate-800 mb-1">
-              Mark as Completed
+              {completionItem.status === "closed" ? "Edit Completion" : "Mark as Completed"}
             </h2>
             <p className="text-sm text-slate-500 mb-4">
               {completionItem.title}
@@ -681,6 +708,7 @@ function KanbanColumn({
   onMove,
   onApprove,
   onComplete,
+  onEditClosed,
   onClose,
   onCancel,
   isAdmin,
@@ -714,6 +742,7 @@ function KanbanColumn({
               onMove={onMove}
               onApprove={onApprove}
               onComplete={onComplete}
+              onEditClosed={onEditClosed}
               onClose={onClose}
               onCancel={onCancel}
               isAdmin={isAdmin}
@@ -726,7 +755,7 @@ function KanbanColumn({
   );
 }
 
-function MaintenanceCard({ item, onMove, onApprove, onComplete, onClose, onCancel, isAdmin, isUpdating }) {
+function MaintenanceCard({ item, onMove, onApprove, onComplete, onEditClosed, onClose, onCancel, isAdmin, isUpdating }) {
   const propertyName = item.property_name || "—";
   const unitText = item.unit_number ? `Unit ${item.unit_number}` : "";
   const unitDisplay = unitText ? ` • ${unitText}` : "";
@@ -863,6 +892,18 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, onClose, onCance
             className="inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c] disabled:opacity-50"
           >
             Close Request
+          </button>
+        </div>
+      ) : null}
+
+      {item.status === "closed" ? (
+        <div className="mt-2 pt-2 border-t border-gray-100">
+          <button
+            disabled={isUpdating}
+            onClick={() => onEditClosed(item)}
+            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg border border-[#0B1F3A] text-[#0B1F3A] hover:bg-slate-50 disabled:opacity-50"
+          >
+            Edit Completion
           </button>
         </div>
       ) : null}
