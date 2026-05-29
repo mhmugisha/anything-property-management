@@ -136,6 +136,40 @@ export async function GET(request) {
       );
     }
 
+    // Snapshot check: only for a single past calendar month
+    const nowDate = new Date();
+    const currentYM = nowDate.getFullYear() * 100 + (nowDate.getMonth() + 1);
+    const isSinglePastMonth = from && to && fromYM === toYM && fromYM !== currentYM;
+
+    if (isSinglePastMonth) {
+      const snMonth = Number(from.split("-")[1]);
+      const snYear = Number(from.split("-")[0]);
+      const snapshotRows = await sql`
+        SELECT * FROM landlord_payment_notes
+        WHERE landlord_id = ${landlordId}
+          AND property_id = ${propertyId}
+          AND month = ${snMonth}
+          AND year = ${snYear}
+        LIMIT 1
+      `;
+      const snapshot = snapshotRows?.[0] || null;
+      if (snapshot) {
+        return Response.json({
+          snapshot: true,
+          payout_date: snapshot.payout_date,
+          gross_rent: Number(snapshot.gross_rent || 0),
+          management_fee: Number(snapshot.management_fee || 0),
+          deductions: snapshot.deductions || [],
+          maintenance: snapshot.maintenance || [],
+          net_payable: Number(snapshot.net_payable || 0),
+          amount_paid: Number(snapshot.amount_paid || 0),
+          landlord,
+          property,
+          filters: { from: from || null, to: to || null },
+        });
+      }
+    }
+
     // REQUIREMENT 1: Rent invoices - EXCLUDE arrears invoices (lease_id IS NULL)
     const invoiceQuery = `
       SELECT

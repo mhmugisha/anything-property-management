@@ -208,6 +208,8 @@ export default function PaymentNotePage() {
     noteEnabled,
   );
 
+  const isSnapshot = paymentNoteQuery.data?.snapshot === true;
+
   const invoices = paymentNoteQuery.data?.invoices || [];
   const recoveredArrears = paymentNoteQuery.data?.recovered_arrears || [];
   const deductions = paymentNoteQuery.data?.deductions || [];
@@ -395,10 +397,22 @@ export default function PaymentNotePage() {
             ref={noteRef}
             className={`bg-white rounded-2xl shadow-sm border border-gray-100 ${cardPaddingClass}`}
           >
+            {/* Snapshot banner */}
+            {isSnapshot ? (
+              <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800 font-medium">
+                ✓ Paid on {formatDate(paymentNoteQuery.data.payout_date)} — UGX {formatCurrencyUGX(paymentNoteQuery.data.amount_paid)}
+              </div>
+            ) : null}
+
             {/* Header row */}
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div className="text-2xl font-semibold text-slate-900">
                 Payment Note
+                {isSnapshot ? (
+                  <span className="ml-3 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-0.5">
+                    Historical Record
+                  </span>
+                ) : null}
               </div>
 
               {isPrinting ? (
@@ -447,7 +461,7 @@ export default function PaymentNotePage() {
               </div>
             </div>
 
-            {!isPrinting ? (
+            {!isPrinting && !isSnapshot ? (
               <div className="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 <Field label="Landlord Name">
                   <select
@@ -505,7 +519,26 @@ export default function PaymentNotePage() {
             <div className={sectionSpacingClass}>
               <h2 className={sectionTitleClass}>Tenant Rent Breakdown</h2>
 
-              {!showData ? (
+              {isSnapshot ? (
+                <div className="overflow-auto rounded-xl border border-gray-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b bg-white">
+                        <th className={cellPadClass}>Description</th>
+                        <th className={`${cellPadRightClass} whitespace-nowrap`}>Rent Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="bg-slate-100">
+                        <td className={`${cellPadClass} font-bold text-slate-900`}>Total Rent</td>
+                        <td className={`${cellPadRightClass} font-bold text-slate-900 whitespace-nowrap`}>
+                          {formatCurrencyUGX(paymentNoteQuery.data.gross_rent)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : !showData ? (
                 <div className="text-sm text-slate-500">
                   Select a landlord and property to load the breakdown.
                 </div>
@@ -652,112 +685,171 @@ export default function PaymentNotePage() {
             <div className={isPrinting ? "mt-6" : "mt-8"}>
               <h2 className={sectionTitleClass}>Deductions</h2>
 
-              <div className="overflow-auto rounded-xl border border-gray-100">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-500 border-b bg-white">
-                      <th className={`${cellPadClass} w-[56px]`}>#</th>
-                      <th className={cellPadClass}>Deduction Description</th>
-                      <th className={`${cellPadRightClass} whitespace-nowrap`}>
-                        Amount
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {totals.map((t) => {
-                      const feesText = formatAmount(
-                        t.management_fees,
-                        t.currency,
-                      );
-                      const feesLabel =
-                        t.currency === "UGX"
-                          ? "Management fees"
-                          : `Management fees (${t.currency})`;
-
-                      return (
-                        <tr key={`fees-${t.currency}`} className="border-b">
+              {isSnapshot ? (() => {
+                const snData = paymentNoteQuery.data;
+                const snAllDeductions = [
+                  ...(snData.deductions || []),
+                  ...(snData.maintenance || []).map((r) => ({ ...r, _maintenance: true })),
+                ].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+                const snDeductionsTotal = snData.management_fee + snAllDeductions.reduce((s, r) => s + Number(r.amount || 0), 0);
+                return (
+                  <div className="overflow-auto rounded-xl border border-gray-100">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-slate-500 border-b bg-white">
+                          <th className={`${cellPadClass} w-[56px]`}>#</th>
+                          <th className={cellPadClass}>Deduction Description</th>
+                          <th className={`${cellPadRightClass} whitespace-nowrap`}>Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b">
                           <td className={cellPadClass}>1</td>
-                          <td className={cellPadClass}>{feesLabel}</td>
-                          <td
-                            className={`${cellPadRightClass} font-medium text-slate-800 whitespace-nowrap`}
-                          >
-                            {feesText}
+                          <td className={cellPadClass}>Management fees</td>
+                          <td className={`${cellPadRightClass} font-medium text-slate-800 whitespace-nowrap`}>
+                            {formatCurrencyUGX(snData.management_fee)}
                           </td>
                         </tr>
-                      );
-                    })}
-
-                    {deductions.length === 0 ? (
-                      <tr>
-                        <td
-                          className={`${cellPadClass} text-slate-500`}
-                          colSpan={3}
-                        >
-                          No landlord deductions found in this period.
-                        </td>
+                        {snAllDeductions.map((d, idx) => (
+                          <tr key={d.id || idx} className="border-b last:border-b-0">
+                            <td className={cellPadClass}>{idx + 2}</td>
+                            <td className={cellPadClass}>{d.description || "Deduction"}</td>
+                            <td className={`${cellPadRightClass} font-medium text-slate-800 whitespace-nowrap`}>
+                              {formatCurrencyUGX(d.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="bg-slate-50">
+                          <td className={cellPadClass} />
+                          <td className={`${cellPadClass} font-semibold text-slate-800`}>Total Deductions</td>
+                          <td className={`${cellPadRightClass} font-semibold text-slate-900 whitespace-nowrap`}>
+                            {formatCurrencyUGX(snDeductionsTotal)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })() : (
+              <>
+                <div className="overflow-auto rounded-xl border border-gray-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b bg-white">
+                        <th className={`${cellPadClass} w-[56px]`}>#</th>
+                        <th className={cellPadClass}>Deduction Description</th>
+                        <th className={`${cellPadRightClass} whitespace-nowrap`}>
+                          Amount
+                        </th>
                       </tr>
-                    ) : (
-                      deductions.map((d, idx) => {
-                        const n = idx + 2;
-                        const amtText = formatAmount(d.amount, "UGX");
-                        const desc = d.description || "Deduction";
+                    </thead>
+                    <tbody>
+                      {totals.map((t) => {
+                        const feesText = formatAmount(
+                          t.management_fees,
+                          t.currency,
+                        );
+                        const feesLabel =
+                          t.currency === "UGX"
+                            ? "Management fees"
+                            : `Management fees (${t.currency})`;
 
                         return (
-                          <tr key={d.id} className="border-b last:border-b-0">
-                            <td className={cellPadClass}>{n}</td>
-                            <td className={cellPadClass}>{desc}</td>
+                          <tr key={`fees-${t.currency}`} className="border-b">
+                            <td className={cellPadClass}>1</td>
+                            <td className={cellPadClass}>{feesLabel}</td>
                             <td
                               className={`${cellPadRightClass} font-medium text-slate-800 whitespace-nowrap`}
                             >
-                              {amtText}
+                              {feesText}
                             </td>
                           </tr>
                         );
-                      })
-                    )}
+                      })}
 
-                    {singleTotals ? (
-                      <tr className="bg-slate-50">
-                        <td className={cellPadClass} />
-                        <td
-                          className={`${cellPadClass} font-semibold text-slate-800`}
-                        >
-                          Total Deductions
-                        </td>
-                        <td
-                          className={`${cellPadRightClass} font-semibold text-slate-900 whitespace-nowrap`}
-                        >
-                          {formatAmount(
-                            singleTotals.total_deductions,
-                            singleTotals.currency,
-                          )}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
+                      {deductions.length === 0 ? (
+                        <tr>
+                          <td
+                            className={`${cellPadClass} text-slate-500`}
+                            colSpan={3}
+                          >
+                            No landlord deductions found in this period.
+                          </td>
+                        </tr>
+                      ) : (
+                        deductions.map((d, idx) => {
+                          const n = idx + 2;
+                          const amtText = formatAmount(d.amount, "UGX");
+                          const desc = d.description || "Deduction";
 
-              {payableLine.length > 0 ? (
+                          return (
+                            <tr key={d.id} className="border-b last:border-b-0">
+                              <td className={cellPadClass}>{n}</td>
+                              <td className={cellPadClass}>{desc}</td>
+                              <td
+                                className={`${cellPadRightClass} font-medium text-slate-800 whitespace-nowrap`}
+                              >
+                                {amtText}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+
+                      {singleTotals ? (
+                        <tr className="bg-slate-50">
+                          <td className={cellPadClass} />
+                          <td
+                            className={`${cellPadClass} font-semibold text-slate-800`}
+                          >
+                            Total Deductions
+                          </td>
+                          <td
+                            className={`${cellPadRightClass} font-semibold text-slate-900 whitespace-nowrap`}
+                          >
+                            {formatAmount(
+                              singleTotals.total_deductions,
+                              singleTotals.currency,
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+
+                {payableLine.length > 0 ? (
+                  <div className={payableWrapClass}>
+                    {payableLine.map((p) => {
+                      const lineClass = isPrinting
+                        ? "text-slate-800"
+                        : "text-sm text-slate-800";
+                      const valueFontSize = "0.9625rem";
+                      return (
+                        <div key={p.currency} className={lineClass}>
+                          <span className="font-medium">{p.label}</span>{" "}
+                          <span
+                            className="font-bold"
+                            style={{ fontSize: valueFontSize }}
+                          >
+                            {p.value}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </>
+              )}
+
+              {isSnapshot ? (
                 <div className={payableWrapClass}>
-                  {payableLine.map((p) => {
-                    const lineClass = isPrinting
-                      ? "text-slate-800"
-                      : "text-sm text-slate-800";
-                    // Calculate 10% increase: text-sm is 0.875rem, +10% = 0.9625rem
-                    const valueFontSize = "0.9625rem";
-                    return (
-                      <div key={p.currency} className={lineClass}>
-                        <span className="font-medium">{p.label}</span>{" "}
-                        <span
-                          className="font-bold"
-                          style={{ fontSize: valueFontSize }}
-                        >
-                          {p.value}
-                        </span>
-                      </div>
-                    );
-                  })}
+                  <div className="text-sm text-slate-800">
+                    <span className="font-medium">Payable this Month:</span>{" "}
+                    <span className="font-bold" style={{ fontSize: "0.9625rem" }}>
+                      {formatCurrencyUGX(paymentNoteQuery.data?.net_payable)}
+                    </span>
+                  </div>
                 </div>
               ) : null}
             </div>

@@ -1,6 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
-import { ensureCanCreditAccount } from "@/app/api/utils/accounting";
+import { ensureCanCreditAccount, getAccountIdByCode } from "@/app/api/utils/accounting";
 import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
@@ -213,6 +213,81 @@ export async function POST(request) {
           reference_type: "landlord_payout",
         });
       }
+    }
+
+    // Snapshot save — non-blocking, does not affect payout success
+    try {
+      const [snYear, snMonth] = payoutDate.split("-").map(Number);
+      const snYearMonth = snYear * 100 + snMonth;
+      const snMM = String(snMonth).padStart(2, "0");
+      const snFirstDay = `${snYear}-${snMM}-01`;
+      const snLastDay = `${snYear}-${snMM}-${String(new Date(snYear, snMonth, 0).getDate()).padStart(2, "0")}`;
+
+      const [acct2100Id, propRows] = await Promise.all([
+        getAccountIdByCode("2100"),
+        sql`SELECT management_fee_type, management_fee_percent, management_fee_fixed_amount FROM properties WHERE id = ${propertyId} LIMIT 1`,
+      ]);
+
+      const prop = propRows?.[0] || {};
+      const feeType = String(prop.management_fee_type || "percent").toLowerCase();
+      const feePercent = Number(prop.management_fee_percent || 0);
+      const feeFixed = Number(prop.management_fee_fixed_amount || 0);
+
+      const [invoiceRows, arrearsRows, dedRows, maintRows] = await Promise.all([
+        sql`SELECT amount FROM invoices WHERE property_id = ${propertyId} AND invoice_year * 100 + invoice_month = ${snYearMonth} AND status <> 'void' AND COALESCE(is_deleted, false) = false AND lease_id IS NOT NULL`,
+        sql`SELECT pia.amount_applied FROM payment_invoice_allocations pia JOIN payments p ON p.id = pia.payment_id JOIN invoices i ON i.id = pia.invoice_id WHERE i.property_id = ${propertyId} AND i.lease_id IS NULL AND COALESCE(i.is_deleted, false) = false AND p.is_reversed = false AND p.payment_date >= ${snFirstDay}::date AND p.payment_date <= ${snLastDay}::date`,
+        sql`SELECT id, deduction_date, description, amount FROM landlord_deductions WHERE landlord_id = ${landlordId} AND property_id = ${propertyId} AND COALESCE(is_deleted, false) = false AND deduction_date >= ${snFirstDay}::date AND deduction_date <= ${snLastDay}::date AND LOWER(description) NOT LIKE 'fees on recovered arrears%'`,
+        acct2100Id
+          ? sql`SELECT id, transaction_date, description, amount FROM transactions WHERE property_id = ${propertyId} AND landlord_id = ${landlordId} AND source_type = 'maintenance' AND debit_account_id = ${acct2100Id} AND COALESCE(is_deleted, false) = false AND transaction_date >= ${snFirstDay}::date AND transaction_date <= ${snLastDay}::date`
+          : Promise.resolve([]),
+      ]);
+
+      const currentRent = invoiceRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+      const recoveredArrears = arrearsRows.reduce((s, r) => s + Number(r.amount_applied || 0), 0);
+      const grossRent = currentRent + recoveredArrears;
+
+      let mgmtFee = 0;
+      if (feeType === "percent") {
+        mgmtFee = Math.round((grossRent * feePercent / 100) * 100) / 100;
+      } else if (feeType === "fixed" && grossRent > 0) {
+        mgmtFee = Math.min(feeFixed, grossRent);
+      }
+
+      const deductionsSum = dedRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+      const deductionsJson = dedRows.map((r) => ({ id: r.id, date: r.deduction_date, description: r.description, amount: Number(r.amount || 0) }));
+
+      const maintenanceSum = maintRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+      const maintenanceJson = maintRows.map((r) => ({ id: r.id, date: r.transaction_date, description: r.description, amount: Number(r.amount || 0) }));
+
+      const netPayable = grossRent - mgmtFee - deductionsSum - maintenanceSum;
+      const txnId = post.transaction?.id || null;
+
+      await sql(
+        `INSERT INTO landlord_payment_notes (
+          landlord_id, property_id, month, year,
+          payout_date, gross_rent, management_fee,
+          deductions, maintenance, net_payable,
+          amount_paid, payment_account_id, payout_transaction_id, created_by
+        ) VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14)
+        ON CONFLICT (landlord_id, property_id, month, year) DO UPDATE SET
+          payout_date = EXCLUDED.payout_date,
+          gross_rent = EXCLUDED.gross_rent,
+          management_fee = EXCLUDED.management_fee,
+          deductions = EXCLUDED.deductions,
+          maintenance = EXCLUDED.maintenance,
+          net_payable = EXCLUDED.net_payable,
+          amount_paid = EXCLUDED.amount_paid,
+          payment_account_id = EXCLUDED.payment_account_id,
+          payout_transaction_id = EXCLUDED.payout_transaction_id`,
+        [
+          landlordId, propertyId, snMonth, snYear,
+          payoutDate, grossRent, mgmtFee,
+          JSON.stringify(deductionsJson), JSON.stringify(maintenanceJson), netPayable,
+          amount, creditAccountId, txnId, perm.staff.id,
+        ],
+      );
+    } catch (snapshotErr) {
+      console.error("Payment note snapshot failed (non-blocking):", snapshotErr.message);
     }
 
     return Response.json({ payout });

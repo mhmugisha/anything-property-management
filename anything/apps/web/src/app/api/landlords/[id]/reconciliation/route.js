@@ -155,6 +155,30 @@ export async function GET(request, { params }) {
       paymentNoteNet += totalRent - mgmtFee - deductions - maintenanceTotal;
     }
 
+    // Check if a payout snapshot exists for this landlord this month
+    const [snapshotRow] = await sql`
+      SELECT COUNT(*) AS cnt, COALESCE(SUM(amount_paid), 0) AS total_paid
+      FROM landlord_payment_notes
+      WHERE landlord_id = ${landlordId}
+        AND month = ${month}
+        AND year = ${year}
+    `;
+
+    if (Number(snapshotRow?.cnt || 0) > 0) {
+      return Response.json({
+        landlord_id: landlordId,
+        landlord_name: landlord.full_name,
+        month,
+        year,
+        closing_balance: round2(closingBalance),
+        payment_note_net: round2(paymentNoteNet),
+        difference: 0,
+        is_reconciled: true,
+        suggested_action: null,
+        snapshot_paid: round2(Number(snapshotRow?.total_paid || 0)),
+      });
+    }
+
     // positive difference → GL overstates (deduction needed)
     // negative difference → GL understates (credit needed)
     const difference = round2(closingBalance - paymentNoteNet);
