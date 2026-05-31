@@ -28,6 +28,7 @@ export async function POST(request) {
     const description = (body?.description || "").trim();
     const amount = toNumber(body?.amount);
     const paymentAccountId = toNumber(body?.payment_account_id);
+    const referenceNumber = (body?.reference_number || "").trim() || null;
 
     if (
       !landlordId ||
@@ -117,12 +118,14 @@ export async function POST(request) {
       INSERT INTO landlord_deductions (
         landlord_id, property_id, deduction_date,
         description, amount, created_by,
+        reference_number,
         is_deleted,
         approval_status, approved_by, approved_at
       )
       VALUES (
         ${landlordId}, ${propertyId}, ${deductionDate}::date,
         ${description}, ${amount}, ${perm.staff.id},
+        ${referenceNumber},
         false,
         ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
@@ -138,7 +141,7 @@ export async function POST(request) {
     const post = await postAccountingEntryFromIntents({
       transactionDate: deductionDate,
       description: txDesc,
-      referenceNumber: null,
+      referenceNumber,
       debitIntent: "landlord_liability",
       creditIntent, // Use creditIntent instead of creditAccountId
       amount,

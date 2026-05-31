@@ -32,6 +32,7 @@ export async function POST(request) {
     const description = (body?.description || "").trim();
     const amount = toNumber(body?.amount);
     const paymentAccountId = toNumber(body?.payment_account_id);
+    const referenceNumber = (body?.reference_number || "").trim() || null;
 
     if (
       !tenantId ||
@@ -107,11 +108,13 @@ export async function POST(request) {
     const rows = await sql`
       INSERT INTO tenant_deductions (
         tenant_id, property_id, deduction_date, description, amount, created_by,
+        reference_number,
         is_deleted,
         approval_status, approved_by, approved_at
       )
       VALUES (
         ${tenantId}, ${propertyId || null}, ${deductionDate}::date, ${description}, ${amount}, ${perm.staff.id},
+        ${referenceNumber},
         false,
         ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
@@ -143,7 +146,7 @@ export async function POST(request) {
         approval_status, approved_by, approved_at
       )
       VALUES (
-        ${deductionDate}::date, ${txDesc}, NULL,
+        ${deductionDate}::date, ${txDesc}, ${referenceNumber},
         ${receivableId}, ${creditAccountId},
         ${amount}, 'UGX', ${perm.staff.id},
         ${landlordId || null}, ${propertyId || null},

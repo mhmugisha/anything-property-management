@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Save } from "lucide-react";
 import { Field } from "./Field";
 import DatePopoverInput from "@/components/DatePopoverInput";
@@ -23,6 +24,14 @@ export function JournalEntryForm({
 }) {
   const canPost =
     date && description && debitAccount && creditAccount && amount;
+
+  const [refWarning, setRefWarning] = useState(false);
+
+  const handleSubmit = () => {
+    // Soft warning: warn when the reference is blank, but still allow submission.
+    setRefWarning(!reference || !reference.trim());
+    onSubmit();
+  };
 
   return (
     <div className="bg-gray-50 rounded-xl p-5">
@@ -64,9 +73,17 @@ export function JournalEntryForm({
           <Field label="Reference (Optional)">
             <input
               value={reference}
-              onChange={(e) => onReferenceChange(e.target.value)}
+              onChange={(e) => {
+                onReferenceChange(e.target.value);
+                if (refWarning) setRefWarning(false);
+              }}
               className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
             />
+            {refWarning && (!reference || !reference.trim()) ? (
+              <div className="mt-1 text-[11px] text-amber-600">
+                No reference number — are you sure?
+              </div>
+            ) : null}
           </Field>
         </div>
 
@@ -117,7 +134,7 @@ export function JournalEntryForm({
 
       <div className="mt-4 flex items-center justify-end gap-2">
         <button
-          onClick={onSubmit}
+          onClick={handleSubmit}
           disabled={isPending || !canPost}
           className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
         >

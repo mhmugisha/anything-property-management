@@ -66,6 +66,7 @@ export default function MaintenancePage() {
   const [chargeType, setChargeType] = useState("company");
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
+  const [refError, setRefError] = useState("");
 
   const propertiesQuery = useQuery({
     queryKey: ["lookups", "properties"],
@@ -188,6 +189,7 @@ export default function MaintenancePage() {
     setChargeType("company");
     setPaymentAccountId("");
     setReferenceNumber("");
+    setRefError("");
   }, []);
 
   const openEditClosedModal = useCallback((item) => {
@@ -203,10 +205,12 @@ export default function MaintenancePage() {
       item.payment_account_id != null ? String(item.payment_account_id) : "",
     );
     setReferenceNumber(item.reference_number || "");
+    setRefError("");
   }, []);
 
   const closeCompletionModal = useCallback(() => {
     setCompletionItem(null);
+    setRefError("");
   }, []);
 
   const onConfirmComplete = useCallback(() => {
@@ -214,9 +218,10 @@ export default function MaintenancePage() {
     const isEditingClosed = completionItem.status === "closed";
     const hasCost = completedCost !== "" && Number(completedCost) > 0;
     if (hasCost && !referenceNumber.trim()) {
-      alert("Reference / Voucher # is required when a cost is entered.");
+      setRefError("Reference number is required");
       return;
     }
+    setRefError("");
     const payload = isEditingClosed
       ? {
           completed_cost: hasCost ? Number(completedCost) : null,
@@ -657,10 +662,20 @@ export default function MaintenancePage() {
                 <input
                   type="text"
                   value={referenceNumber}
-                  onChange={(e) => setReferenceNumber(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+                  onChange={(e) => {
+                    setReferenceNumber(e.target.value);
+                    if (refError) setRefError("");
+                  }}
+                  className={`w-full px-3 py-2 rounded-lg border bg-gray-50 outline-none ${
+                    refError ? "border-rose-400" : "border-gray-200"
+                  }`}
                   placeholder="e.g. MV-2026-001"
                 />
+                {refError ? (
+                  <div className="mt-1 text-[11px] text-rose-600">
+                    {refError}
+                  </div>
+                ) : null}
               </Field>
             </div>
 

@@ -19,12 +19,21 @@ export function LandlordDeductionForm({
   onDescriptionChange,
   onAmountChange,
   onPaymentAccountChange,
+  onReferenceChange,
+  reference,
   onSubmit,
   isPending,
 }) {
   const [landlordSearch, setLandlordSearch] = useState("");
   const [showLandlordDropdown, setShowLandlordDropdown] = useState(false);
   const [propertyDisplay, setPropertyDisplay] = useState("");
+  const [refWarning, setRefWarning] = useState(false);
+
+  const handleSubmit = () => {
+    // Soft warning: warn when the reference is blank, but still allow submission.
+    setRefWarning(!reference || !reference.trim());
+    onSubmit();
+  };
 
   const canPost =
     !!landlordId &&
@@ -236,6 +245,24 @@ export function LandlordDeductionForm({
             </select>
           </Field>
         </div>
+
+        {/* Row 4: Reference (optional) */}
+        <Field label="Reference (Optional)">
+          <input
+            value={reference || ""}
+            onChange={(e) => {
+              onReferenceChange(e.target.value);
+              if (refWarning) setRefWarning(false);
+            }}
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+            placeholder="e.g. MV-2026-001"
+          />
+          {refWarning && (!reference || !reference.trim()) ? (
+            <div className="mt-1 text-[11px] text-amber-600">
+              No reference number — are you sure?
+            </div>
+          ) : null}
+        </Field>
       </div>
 
       {landlordDropdownVisible && (
@@ -247,7 +274,7 @@ export function LandlordDeductionForm({
 
       <div className="mt-4 flex items-center justify-end gap-2">
         <button
-          onClick={onSubmit}
+          onClick={handleSubmit}
           disabled={isPending || !canPost}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
         >

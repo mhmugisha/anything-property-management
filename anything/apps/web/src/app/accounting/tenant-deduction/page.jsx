@@ -32,6 +32,7 @@ export default function TenantDeductionPage() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentAccountId, setPaymentAccountId] = useState("");
+  const [reference, setReference] = useState("");
 
   const lookups = useAccountingLookups(
     !userLoading && !!user && canUseAccounting,
@@ -92,12 +93,14 @@ export default function TenantDeductionPage() {
       description,
       amount: amount === "" ? null : Number(amount),
       payment_account_id: paymentAccountId ? Number(paymentAccountId) : null,
+      reference_number: reference.trim() || null,
     };
 
     createTenantDeductionMutation.mutate(payload, {
       onSuccess: () => {
         setDescription("");
         setAmount("");
+        setReference("");
         setSuccessMessage("Tenant deduction saved successfully!");
       },
     });
@@ -108,6 +111,7 @@ export default function TenantDeductionPage() {
     description,
     amount,
     paymentAccountId,
+    reference,
     createTenantDeductionMutation,
   ]);
 
@@ -176,6 +180,7 @@ export default function TenantDeductionPage() {
               description={description}
               amount={amount}
               paymentAccountId={paymentAccountId}
+              reference={reference}
               tenants={tenants}
               paymentAccounts={paymentAccounts}
               onTenantChange={setTenantId}
@@ -183,6 +188,7 @@ export default function TenantDeductionPage() {
               onDescriptionChange={setDescription}
               onAmountChange={setAmount}
               onPaymentAccountChange={setPaymentAccountId}
+              onReferenceChange={setReference}
               onSubmit={onSubmit}
               isPending={createTenantDeductionMutation.isPending}
             />

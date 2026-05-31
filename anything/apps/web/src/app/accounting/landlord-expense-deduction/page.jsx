@@ -32,6 +32,7 @@ export default function LandlordExpenseDeductionPage() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentAccountId, setPaymentAccountId] = useState("");
+  const [reference, setReference] = useState("");
 
   const lookups = useAccountingLookups(
     !userLoading && !!user && canUseAccounting,
@@ -89,12 +90,14 @@ export default function LandlordExpenseDeductionPage() {
       description,
       amount: amount === "" ? null : Number(amount),
       payment_account_id: paymentAccountId ? Number(paymentAccountId) : null,
+      reference_number: reference.trim() || null,
     };
 
     createLandlordDeductionMutation.mutate(payload, {
       onSuccess: () => {
         setDescription("");
         setAmount("");
+        setReference("");
         setSuccessMessage("Landlord deduction saved successfully!");
       },
     });
@@ -105,6 +108,7 @@ export default function LandlordExpenseDeductionPage() {
     description,
     amount,
     paymentAccountId,
+    reference,
     createLandlordDeductionMutation,
   ]);
 
@@ -171,6 +175,7 @@ export default function LandlordExpenseDeductionPage() {
               description={description}
               amount={amount}
               paymentAccountId={paymentAccountId}
+              reference={reference}
               landlords={lookups.landlords || []}
               properties={lookups.properties || []}
               paymentAccounts={paymentAccounts}
@@ -180,6 +185,7 @@ export default function LandlordExpenseDeductionPage() {
               onDescriptionChange={setDescription}
               onAmountChange={setAmount}
               onPaymentAccountChange={setPaymentAccountId}
+              onReferenceChange={setReference}
               onSubmit={onSubmit}
               isPending={createLandlordDeductionMutation.isPending}
             />

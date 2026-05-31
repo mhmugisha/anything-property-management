@@ -1,5 +1,5 @@
 import { Save } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import DatePopoverInput from "@/components/DatePopoverInput";
 import { Field } from "./Field";
 import { formatCurrencyUGX } from "@/utils/formatCurrencyUGX";
@@ -60,6 +60,17 @@ export function InvoicePaymentForm({
     if (form.tenantId) {
       form.setTenantId("");
     }
+  };
+
+  const [refError, setRefError] = useState("");
+
+  const handleSubmit = () => {
+    if (!form.receiptNumber || !form.receiptNumber.trim()) {
+      setRefError("Reference number is required");
+      return;
+    }
+    setRefError("");
+    onSubmit();
   };
 
   const invoiceOutstandingText = form.selectedInvoice
@@ -216,13 +227,21 @@ export function InvoicePaymentForm({
             </select>
           </Field>
 
-          <Field label="Ref. (Optional)">
+          <Field label="Reference number">
             <input
               value={form.receiptNumber}
-              onChange={(e) => form.setReceiptNumber(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+              onChange={(e) => {
+                form.setReceiptNumber(e.target.value);
+                if (refError) setRefError("");
+              }}
+              className={`w-full px-3 py-2 rounded-lg border bg-white outline-none ${
+                refError ? "border-rose-400" : "border-gray-200"
+              }`}
               placeholder="e.g. RCT-001"
             />
+            {refError ? (
+              <div className="mt-1 text-[11px] text-rose-600">{refError}</div>
+            ) : null}
           </Field>
         </div>
 
@@ -250,7 +269,7 @@ export function InvoicePaymentForm({
           Cancel
         </button>
         <button
-          onClick={onSubmit}
+          onClick={handleSubmit}
           disabled={isSaving || !form.isValid()}
           className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
         >
