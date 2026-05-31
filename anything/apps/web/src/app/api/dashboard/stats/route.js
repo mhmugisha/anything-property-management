@@ -224,6 +224,11 @@ export async function GET(request) {
             i.invoice_year < ${currentYear}
             OR (i.invoice_year = ${currentYear} AND i.invoice_month < ${currentMonth})
           )
+          AND EXISTS (
+            SELECT 1 FROM leases l
+            WHERE l.id = i.lease_id
+              AND l.status = 'active'
+          )
       `,
 
       // Legacy arrears calculation
@@ -235,6 +240,11 @@ export async function GET(request) {
           AND COALESCE(i.is_deleted, false) = false
           AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.due_date < ${monthStart}::date
+          AND EXISTS (
+            SELECT 1 FROM leases l
+            WHERE l.id = i.lease_id
+              AND l.status = 'active'
+          )
       `,
 
       // Active tenants count
