@@ -21,6 +21,11 @@ export async function GET(request) {
           AND COALESCE(i.is_deleted, false) = false
           AND COALESCE(i.approval_status, 'approved') = 'approved'
           AND i.due_date < CURRENT_DATE
+          AND EXISTS (
+            SELECT 1 FROM leases l
+            WHERE l.id = i.lease_id
+              AND l.status = 'active'
+          )
       )
       SELECT
         u.lease_id,
