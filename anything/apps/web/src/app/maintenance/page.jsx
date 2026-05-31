@@ -217,7 +217,7 @@ export default function MaintenancePage() {
     if (!completionItem) return;
     const isEditingClosed = completionItem.status === "closed";
     const hasCost = completedCost !== "" && Number(completedCost) > 0;
-    if (hasCost && !referenceNumber.trim()) {
+    if (!referenceNumber.trim()) {
       setRefError("Reference number is required");
       return;
     }
@@ -658,7 +658,7 @@ export default function MaintenancePage() {
                 </select>
               </Field>
 
-              <Field label={`Reference / Voucher #${completedCost !== "" && Number(completedCost) > 0 ? " *" : " (optional)"}`}>
+              <Field label="Reference / Voucher # *">
                 <input
                   type="text"
                   value={referenceNumber}
