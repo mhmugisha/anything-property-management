@@ -20,7 +20,7 @@ export async function GET(request) {
           AND i.status <> 'void'
           AND COALESCE(i.is_deleted, false) = false
           AND COALESCE(i.approval_status, 'approved') = 'approved'
-          AND i.due_date < CURRENT_DATE
+          AND i.invoice_year * 100 + i.invoice_month < EXTRACT(YEAR FROM CURRENT_DATE)::int * 100 + EXTRACT(MONTH FROM CURRENT_DATE)::int
           AND EXISTS (
             SELECT 1 FROM leases l
             WHERE l.id = i.lease_id
