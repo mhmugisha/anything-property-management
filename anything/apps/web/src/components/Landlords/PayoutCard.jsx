@@ -1,4 +1,4 @@
-import { Wallet, Save, FileText, AlertTriangle } from "lucide-react";
+import { Wallet, Save, FileText } from "lucide-react";
 import { Field } from "./Field";
 import DatePopoverInput from "@/components/DatePopoverInput";
 
@@ -19,14 +19,7 @@ export function PayoutCard({
   onOpenPaymentNote,
   paymentNoteDisabled,
   paymentNoteTitle,
-  // reconciliation
-  reconciliation,
-  onOpenReconcileModal,
 }) {
-  const isReconciled = reconciliation?.is_reconciled ?? null;
-  const showReconcileFirst =
-    reconciliation != null && isReconciled === false;
-
   return (
     <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
       <div className="flex items-center gap-2 mb-2">
@@ -87,25 +80,14 @@ export function PayoutCard({
           Payment Note
         </button>
 
-        {showReconcileFirst ? (
-          <button
-            onClick={onOpenReconcileModal}
-            disabled={isSaving}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 w-full sm:w-auto sm:ml-auto"
-          >
-            <AlertTriangle className="w-4 h-4" />
-            Reconcile First
-          </button>
-        ) : (
-          <button
-            onClick={onRecordPayout}
-            disabled={!isPropertySelected || !payoutAmount || isSaving}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 w-full sm:w-auto sm:ml-auto"
-          >
-            <Save className="w-4 h-4" />
-            {isSaving ? "Saving..." : "Save Payout"}
-          </button>
-        )}
+        <button
+          onClick={onRecordPayout}
+          disabled={!isPropertySelected || !payoutAmount || isSaving}
+          className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 w-full sm:w-auto sm:ml-auto"
+        >
+          <Save className="w-4 h-4" />
+          {isSaving ? "Saving..." : "Save Payout"}
+        </button>
       </div>
       {success ? (
         <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700">
