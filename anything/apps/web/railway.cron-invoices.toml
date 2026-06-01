@@ -2,7 +2,10 @@
 builder = "NIXPACKS"
 buildCommand = "echo 'cron service — no build required'"
 
+[build.nixpacksPlan.phases.setup]
+nixPkgs = ["curl"]
+
 [deploy]
-startCommand = "node scripts/cron-generate-invoices.mjs"
+startCommand = "curl -s -X POST $APP_URL/api/invoices/generate-monthly -H 'Authorization: Bearer $CRON_SECRET' -H 'Content-Type: application/json'"
 cronSchedule = "0 1 1 * *"
 restartPolicyType = "NEVER"

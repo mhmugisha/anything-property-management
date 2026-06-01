@@ -3,9 +3,9 @@ builder = "NIXPACKS"
 buildCommand = "echo 'no build required'"
 
 [build.nixpacksPlan.phases.setup]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["curl"]
 
 [deploy]
-startCommand = "node scripts/cron-check-due-dates.mjs"
+startCommand = "curl -s -X POST $APP_URL/api/notifications/check-landlord-due-dates -H 'Authorization: Bearer $CRON_SECRET' -H 'Content-Type: application/json'"
 cronSchedule = "0 0 * * *"
 restartPolicyType = "NEVER"
