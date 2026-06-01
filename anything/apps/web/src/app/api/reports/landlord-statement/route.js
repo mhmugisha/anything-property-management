@@ -227,6 +227,10 @@ export async function GET(request) {
         )
       : [];
 
+    arrearsRecoveryRows.forEach((r, idx) => {
+      if (idx === 0) console.log("arrears row raw", JSON.stringify(r));
+    });
+
     for (const r of arrearsRecoveryRows || []) {
       const date = toDateStr(r.payment_date);
       if (!date) continue;
