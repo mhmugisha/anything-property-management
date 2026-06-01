@@ -135,7 +135,6 @@ export async function GET(request) {
               FROM invoices
               WHERE property_id = ANY(${scopedPropIds}::int[])
                 AND COALESCE(is_deleted, false) = false
-                AND COALESCE(approval_status, 'approved') = 'approved'
                 AND COALESCE(status, '') <> 'void'
               GROUP BY property_id, invoice_year, invoice_month
             `
@@ -146,7 +145,6 @@ export async function GET(request) {
           FROM landlord_deductions
           WHERE landlord_id = ${landlordId}
             AND COALESCE(is_deleted, false) = false
-            AND COALESCE(approval_status, 'approved') = 'approved'
         `,
         scopedPropIds.length
           ? sql`
