@@ -226,6 +226,11 @@ export async function GET(request) {
         `
       : [];
 
+    console.log(
+      "landlord-statement arrearsRecoveryRows.length",
+      (arrearsRecoveryRows || []).length,
+    );
+
     for (const r of arrearsRecoveryRows || []) {
       const date = toDateStr(r.payment_date);
       if (!date) continue;
