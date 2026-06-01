@@ -50,27 +50,79 @@ export async function GET(request, { params }) {
         { status: 500 },
       );
 
-    // Closing balance of account 2100 for this landlord — all cumulative movements up to end of month
-    const [balRow] = await sql`
-      SELECT
-        COALESCE(SUM(CASE WHEN credit_account_id = ${acct2100Id} THEN amount ELSE 0 END), 0)
-        - COALESCE(SUM(CASE WHEN debit_account_id = ${acct2100Id} THEN amount ELSE 0 END), 0)
-        AS closing_balance
-      FROM transactions
-      WHERE (debit_account_id = ${acct2100Id} OR credit_account_id = ${acct2100Id})
-        AND landlord_id = ${landlordId}
-        AND COALESCE(is_deleted, false) = false
-        AND transaction_date <= ${lastDay}::date
-    `;
-
-    const closingBalance = Number(balRow?.closing_balance || 0);
-
-    // Payment note net across all active properties for this landlord
+    // All properties for this landlord
     const properties = await sql`
       SELECT id, management_fee_type, management_fee_percent, management_fee_fixed_amount
       FROM properties
       WHERE landlord_id = ${landlordId}
     `;
+
+    // Closing balance from statement logic, cumulative up to end of month:
+    //   gross_rent - management_fees - deductions - maintenance - payouts
+    // summed across all properties of this landlord.
+    let closingBalance = 0;
+
+    for (const prop of properties || []) {
+      const propId = Number(prop.id);
+      const feeType = String(prop.management_fee_type || "percent").toLowerCase();
+      const feePercent = Number(prop.management_fee_percent || 0);
+      const feeFixed = Number(prop.management_fee_fixed_amount || 0);
+
+      // Gross rent and per-month management fee, grouped by (year, month)
+      const invoiceGroups = await sql`
+        SELECT invoice_year, invoice_month, COALESCE(SUM(amount), 0)::numeric AS gross
+        FROM invoices
+        WHERE property_id = ${propId}
+          AND invoice_date <= ${lastDay}::date
+          AND status <> 'void'
+          AND COALESCE(is_deleted, false) = false
+        GROUP BY invoice_year, invoice_month
+      `;
+      let grossRent = 0;
+      let mgmtFee = 0;
+      for (const g of invoiceGroups || []) {
+        const gross = Number(g.gross || 0);
+        grossRent += gross;
+        if (gross > 0) {
+          if (feeType === "percent") {
+            mgmtFee += round2((gross * feePercent) / 100);
+          } else if (feeType === "fixed") {
+            mgmtFee += Math.min(feeFixed, gross);
+          }
+        }
+      }
+
+      const [dedRow] = await sql`
+        SELECT COALESCE(SUM(amount), 0)::numeric AS total
+        FROM landlord_deductions
+        WHERE property_id = ${propId}
+          AND deduction_date <= ${lastDay}::date
+          AND COALESCE(is_deleted, false) = false
+      `;
+      const deductions = Number(dedRow?.total || 0);
+
+      const [maintRow] = await sql`
+        SELECT COALESCE(SUM(completed_cost), 0)::numeric AS total
+        FROM maintenance_requests
+        WHERE property_id = ${propId}
+          AND charge_type = 'landlord'
+          AND status IN ('completed', 'closed')
+          AND completed_cost IS NOT NULL
+          AND COALESCE(completed_date, completed_at::date) <= ${lastDay}::date
+      `;
+      const maintenance = Number(maintRow?.total || 0);
+
+      const [payoutRow] = await sql`
+        SELECT COALESCE(SUM(amount), 0)::numeric AS total
+        FROM landlord_payouts
+        WHERE property_id = ${propId}
+          AND payout_date <= ${lastDay}::date
+          AND COALESCE(is_deleted, false) = false
+      `;
+      const payouts = Number(payoutRow?.total || 0);
+
+      closingBalance += grossRent - mgmtFee - deductions - maintenance - payouts;
+    }
 
     let paymentNoteNet = 0;
 
