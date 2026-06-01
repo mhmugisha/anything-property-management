@@ -122,6 +122,8 @@ export async function GET(request) {
         : []
       : allPropIds;
 
+    console.log("landlord-statement scopedPropIds", scopedPropIds);
+
     const propertyName = (pid) =>
       propertyMap.get(Number(pid))?.property_name || `Property #${pid}`;
 
@@ -229,6 +231,11 @@ export async function GET(request) {
     console.log(
       "landlord-statement arrearsRecoveryRows.length",
       (arrearsRecoveryRows || []).length,
+    );
+
+    console.log(
+      "landlord-statement first arrears row",
+      (arrearsRecoveryRows || [])[0] ?? "none",
     );
 
     for (const r of arrearsRecoveryRows || []) {
