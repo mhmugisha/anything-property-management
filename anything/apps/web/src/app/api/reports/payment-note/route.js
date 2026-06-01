@@ -348,7 +348,30 @@ export async function GET(request) {
       toDate,
     ]);
 
-    // Merge landlord_deductions + maintenance GL rows, sorted by date
+    // Rent reversals charged back to the landlord (Dr rental income, account 7)
+    const rentReversalsQuery = `
+      SELECT
+        t.id,
+        t.transaction_date AS deduction_date,
+        t.description,
+        t.amount
+      FROM transactions t
+      WHERE t.property_id = $1
+        AND t.source_type = 'rent_reversal'
+        AND t.debit_account_id = 7
+        AND COALESCE(t.is_deleted, false) = false
+        AND t.transaction_date >= $2::date
+        AND t.transaction_date <= $3::date
+      ORDER BY t.transaction_date ASC, t.id ASC
+    `;
+
+    const rentReversals = await sql(rentReversalsQuery, [
+      propertyId,
+      fromDate,
+      toDate,
+    ]);
+
+    // Merge landlord_deductions + maintenance GL rows + rent reversals, sorted by date
     const allDeductions = [
       ...(deductions || []),
       ...(maintenanceDeductions || []).map((r) => ({
@@ -357,6 +380,13 @@ export async function GET(request) {
         description: r.description,
         amount: r.amount,
         _source: "maintenance",
+      })),
+      ...(rentReversals || []).map((r) => ({
+        id: r.id,
+        deduction_date: r.deduction_date,
+        description: r.description,
+        amount: r.amount,
+        _source: "rent_reversal",
       })),
     ].sort((a, b) => {
       const da = String(a.deduction_date || "");

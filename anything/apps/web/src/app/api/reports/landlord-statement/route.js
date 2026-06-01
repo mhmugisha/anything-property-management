@@ -71,6 +71,7 @@ function computeMonthlyFee(property, gross) {
 
 const TYPE_ORDER = {
   rent_billed: 1,
+  arrears_recovery: 1.5,
   management_fee: 2,
   landlord_deduction: 3,
   maintenance_charge: 4,
@@ -202,6 +203,40 @@ export async function GET(request) {
           credit: 0,
         });
       }
+    }
+
+    // Recovered arrears: payments applied to arrears invoices (lease_id IS NULL).
+    const arrearsRecoveryRows = scopedPropIds.length
+      ? await sql`
+          SELECT
+            pia.id AS allocation_id,
+            p.payment_date AS date,
+            pia.amount_applied AS amount,
+            i.description AS invoice_description,
+            tn.full_name AS tenant_name
+          FROM payment_invoice_allocations pia
+          JOIN payments p ON p.id = pia.payment_id
+          JOIN invoices i ON i.id = pia.invoice_id
+          LEFT JOIN tenants tn ON tn.id = i.tenant_id
+          WHERE i.property_id = ANY(${scopedPropIds}::int[])
+            AND i.lease_id IS NULL
+            AND COALESCE(i.is_deleted, false) = false
+            AND p.is_reversed = false
+          ORDER BY p.payment_date ASC, pia.id ASC
+        `
+      : [];
+
+    for (const r of arrearsRecoveryRows || []) {
+      const date = toDateStr(r.date);
+      if (!date) continue;
+      events.push({
+        id: `arrears-recovery-${Number(r.allocation_id)}`,
+        date,
+        description: `Recovered arrears - ${r.tenant_name || "Unknown"}`,
+        source_type: "arrears_recovery",
+        debit: 0,
+        credit: Number(r.amount || 0),
+      });
     }
 
     // Landlord deductions (optionally filtered to a single property).
