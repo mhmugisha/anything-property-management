@@ -210,7 +210,7 @@ export async function GET(request) {
       ? await sql`
           SELECT
             pia.id AS allocation_id,
-            p.payment_date AS date,
+            p.payment_date,
             pia.amount_applied AS amount,
             i.description AS invoice_description,
             tn.full_name AS tenant_name
@@ -227,7 +227,7 @@ export async function GET(request) {
       : [];
 
     for (const r of arrearsRecoveryRows || []) {
-      const date = toDateStr(r.date);
+      const date = toDateStr(r.payment_date);
       if (!date) continue;
       events.push({
         id: `arrears-recovery-${Number(r.allocation_id)}`,
