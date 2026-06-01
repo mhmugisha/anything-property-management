@@ -170,8 +170,12 @@ export default function LandlordsPage() {
   } = useLandlordPayout();
 
   const now = new Date();
-  const reconcileMonth = now.getMonth() + 1;
-  const reconcileYear = now.getFullYear();
+  const reconcileMonth = from
+    ? new Date(from).getMonth() + 1
+    : now.getMonth() + 1;
+  const reconcileYear = from
+    ? new Date(from).getFullYear()
+    : now.getFullYear();
 
   const reconciliationQuery = useLandlordReconciliation(
     selected?.id,
