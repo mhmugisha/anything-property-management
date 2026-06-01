@@ -122,8 +122,6 @@ export async function GET(request) {
         : []
       : allPropIds;
 
-    console.log("landlord-statement scopedPropIds", scopedPropIds);
-
     const propertyName = (pid) =>
       propertyMap.get(Number(pid))?.property_name || `Property #${pid}`;
 
@@ -207,36 +205,27 @@ export async function GET(request) {
       }
     }
 
-    // Recovered arrears: payments applied to arrears invoices (lease_id IS NULL).
+    // Recovered arrears: payments on arrears invoices (lease_id IS NULL)
+    // Use sql() function call with explicit array parameter — not tagged template
     const arrearsRecoveryRows = scopedPropIds.length
-      ? await sql`
-          SELECT
+      ? await sql(
+          `SELECT
             pia.id AS allocation_id,
             p.payment_date,
             pia.amount_applied AS amount,
-            i.description AS invoice_description,
             tn.full_name AS tenant_name
           FROM payment_invoice_allocations pia
           JOIN payments p ON p.id = pia.payment_id
           JOIN invoices i ON i.id = pia.invoice_id
           LEFT JOIN tenants tn ON tn.id = i.tenant_id
-          WHERE i.property_id = ANY(${scopedPropIds}::int[])
+          WHERE i.property_id = ANY($1::int[])
             AND i.lease_id IS NULL
             AND COALESCE(i.is_deleted, false) = false
             AND p.is_reversed = false
-          ORDER BY p.payment_date ASC, pia.id ASC
-        `
+          ORDER BY p.payment_date ASC, pia.id ASC`,
+          [scopedPropIds]
+        )
       : [];
-
-    console.log(
-      "landlord-statement arrearsRecoveryRows.length",
-      (arrearsRecoveryRows || []).length,
-    );
-
-    console.log(
-      "landlord-statement first arrears row",
-      (arrearsRecoveryRows || [])[0] ?? "none",
-    );
 
     for (const r of arrearsRecoveryRows || []) {
       const date = toDateStr(r.payment_date);
