@@ -1,6 +1,5 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
-import { getAccountIdByCode } from "@/app/api/utils/accounting";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -36,19 +35,11 @@ export async function GET(request, { params }) {
     const lastDayDate = new Date(year, month, 0);
     const lastDay = `${year}-${mm}-${String(lastDayDate.getDate()).padStart(2, "0")}`;
 
-    const [landlordRows, acct2100Id] = await Promise.all([
-      sql`SELECT id, full_name FROM landlords WHERE id = ${landlordId} LIMIT 1`,
-      getAccountIdByCode("2100"),
-    ]);
+    const landlordRows = await sql`SELECT id, full_name FROM landlords WHERE id = ${landlordId} LIMIT 1`;
 
     const landlord = landlordRows?.[0] || null;
     if (!landlord)
       return Response.json({ error: "Landlord not found" }, { status: 404 });
-    if (!acct2100Id)
-      return Response.json(
-        { error: "Account 2100 not configured" },
-        { status: 500 },
-      );
 
     // All properties for this landlord
     const properties = await sql`
@@ -188,21 +179,18 @@ export async function GET(request, { params }) {
         0,
       );
 
-      // Maintenance GL charges to this landlord (Dr 2100) in month
-      const maintRows = await sql`
-        SELECT amount FROM transactions
+      // Maintenance charged to this landlord in month
+      const [maintRow] = await sql`
+        SELECT COALESCE(SUM(completed_cost), 0)::numeric AS total
+        FROM maintenance_requests
         WHERE property_id = ${propId}
-          AND landlord_id = ${landlordId}
-          AND source_type = 'maintenance'
-          AND debit_account_id = ${acct2100Id}
-          AND COALESCE(is_deleted, false) = false
-          AND transaction_date >= ${firstDay}::date
-          AND transaction_date <= ${lastDay}::date
+          AND charge_type = 'landlord'
+          AND status IN ('completed', 'closed')
+          AND completed_cost IS NOT NULL
+          AND COALESCE(completed_date, completed_at::date) >= ${firstDay}::date
+          AND COALESCE(completed_date, completed_at::date) <= ${lastDay}::date
       `;
-      const maintenanceTotal = maintRows.reduce(
-        (s, r) => s + Number(r.amount || 0),
-        0,
-      );
+      const maintenanceTotal = Number(maintRow?.total || 0);
 
       paymentNoteNet += totalRent - mgmtFee - deductions - maintenanceTotal;
     }
