@@ -45,7 +45,6 @@ export default function AccountingSidebar({ isAdmin = false }) {
           title: "Post Manual Invoice",
           href: "/accounting/post-manual-invoice",
         },
-        { title: "Post Arrears", href: "/accounting/post-arrears" },
         { title: "Reverse Invoice", href: "/accounting/reverse-invoice" },
         { title: "Credit Landlord", href: "/accounting/credit-landlord" },
         ...(isAdmin ? [{ title: "Void Transaction", href: "/accounting/void-transaction" }] : []),
