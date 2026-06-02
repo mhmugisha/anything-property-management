@@ -277,6 +277,10 @@ export async function PUT(request, { params: { id } }) {
   }
 }
 
+export async function POST() {
+  return Response.json({ error: "Method not allowed" }, { status: 405 });
+}
+
 export async function DELETE(request, { params: { id } }) {
   const perm = await requirePermission(request, "accounting");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });

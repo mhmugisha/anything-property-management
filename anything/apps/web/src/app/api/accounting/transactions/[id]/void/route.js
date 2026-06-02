@@ -58,10 +58,9 @@ export async function POST(request, { params: { id } }) {
       `UPDATE transactions
        SET is_deleted = true,
            deleted_at = NOW(),
-           deleted_by = $2,
-           deletion_reason = $3
+           deleted_by = $2
        WHERE id = $1`,
-      [txId, perm.staff.id, reason],
+      [txId, perm.staff.id],
     );
 
     await writeAuditLog({
