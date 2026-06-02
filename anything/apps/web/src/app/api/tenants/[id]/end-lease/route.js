@@ -122,7 +122,7 @@ export async function POST(request, { params: { id } }) {
         // 2: void invoices after termination month + explicit voids (skip explicit keeps)
         txn(
           `UPDATE invoices
-           SET status = 'void'
+           SET status = 'void', is_deleted = true
            WHERE lease_id = $1
              AND paid_amount = 0
              AND status <> 'paid'
