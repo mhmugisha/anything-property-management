@@ -8,7 +8,7 @@ import Sidebar from "@/components/Shell/Sidebar";
 import MobileMenu from "@/components/Shell/MobileMenu";
 import AccountingSidebar from "@/components/Shell/AccountingSidebar";
 import AccessDenied from "@/components/Shell/AccessDenied";
-import { fetchJson } from "@/utils/api";
+import { fetchJson, postJson } from "@/utils/api";
 import { X } from "lucide-react";
 
 function fmt(n) {
@@ -187,9 +187,8 @@ export default function VoidTransactionPage() {
 
   const handleVoidClick = async (txId) => {
     try {
-      const data = await fetchJson(`/api/accounting/transactions/${txId}/void`, {
-        method: "POST",
-        body: JSON.stringify({ confirm: false }),
+      const data = await postJson(`/api/accounting/transactions/${txId}/void`, {
+        confirm: false,
       });
       if (data.requires_confirmation) {
         setPreview(data);
@@ -204,9 +203,9 @@ export default function VoidTransactionPage() {
     if (!previewTxId) return;
     setVoidPending(true);
     try {
-      await fetchJson(`/api/accounting/transactions/${previewTxId}/void`, {
-        method: "POST",
-        body: JSON.stringify({ confirm: true, reason }),
+      await postJson(`/api/accounting/transactions/${previewTxId}/void`, {
+        confirm: true,
+        reason,
       });
       setTransactions((prev) => (prev || []).filter((t) => Number(t.id) !== previewTxId));
       setSuccessMsg("Transaction voided.");
