@@ -209,6 +209,7 @@ export default function VoidTransactionPage() {
       });
       setTransactions((prev) => (prev || []).filter((t) => Number(t.id) !== previewTxId));
       setSuccessMsg("Transaction voided.");
+      setTimeout(() => setSuccessMsg(""), 3000);
       setPreview(null);
       setPreviewTxId(null);
     } catch (e) {
