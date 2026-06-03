@@ -98,6 +98,29 @@ export async function POST(request, { params: { id } }) {
       prepaymentBalance = Number(balRows?.[0]?.balance || 0);
     }
 
+    // Fetch the invoices that will be voided by step 2 (same WHERE clause)
+    // along with their property/landlord info, so we can post reversing
+    // GL entries that keep the landlord statement in sync with the Payment Note.
+    const voidedInvoiceRows = await sql(
+      `SELECT i.id, i.amount, i.property_id, i.invoice_year, i.invoice_month,
+              p.landlord_id, u.id AS unit_id
+       FROM invoices i
+       LEFT JOIN properties p ON p.id = i.property_id
+       LEFT JOIN units u ON u.id = i.unit_id
+       WHERE i.lease_id = $1
+         AND i.paid_amount = 0
+         AND i.status <> 'paid'
+         AND (i.invoice_year * 100 + i.invoice_month > $2 OR i.id = ANY($3::int[]))
+         AND NOT i.id = ANY($4::int[])
+         AND COALESCE(i.is_deleted, false) = false`,
+      [leaseId, termYM, explicitVoidIds, explicitKeepIds],
+    );
+
+    const [acct2100Id, acct1210Id] = await Promise.all([
+      getAccountIdByCode("2100"),
+      getAccountIdByCode("1210"),
+    ]);
+
     // Build transaction operations
     const txOps = (txn) => {
       const ops = [
@@ -130,6 +153,41 @@ export async function POST(request, { params: { id } }) {
              AND NOT id = ANY($4::int[])`,
           [leaseId, termYM, explicitVoidIds, explicitKeepIds],
         ),
+
+        // 2b: post reversing GL entries for voided invoices (Dr 2100 / Cr 1210)
+        // This keeps the landlord statement in sync with the Payment Note
+        ...voidedInvoiceRows
+          .filter((r) => Number(r.amount) > 0 && r.property_id && r.landlord_id)
+          .map((r) =>
+            txn(
+              `INSERT INTO transactions (
+                 transaction_date, description,
+                 debit_account_id, credit_account_id,
+                 amount, currency, created_by,
+                 source_type, source_id,
+                 property_id, landlord_id,
+                 approval_status
+               ) VALUES (
+                 $1::date, $2,
+                 $3, $4,
+                 $5, 'UGX', $6,
+                 'rent_reversal', $7,
+                 $8, $9,
+                 'approved'
+               )`,
+              [
+                terminationDate,
+                `Rent invoice reversal - lease termination - ${tenantName}`,
+                acct2100Id,
+                acct1210Id,
+                Number(r.amount),
+                perm.staff.id,
+                Number(r.id),
+                Number(r.property_id),
+                Number(r.landlord_id),
+              ],
+            ),
+          ),
 
         // 3: resolve open review flags
         txn(
