@@ -232,15 +232,6 @@ export async function GET(request) {
         period_payouts +
         period_other;
 
-      totals.opening_balance += opening_balance;
-      totals.period_rent += period_rent;
-      totals.period_fees += period_fees;
-      totals.period_deductions += period_deductions;
-      totals.period_maintenance += period_maintenance;
-      totals.period_payouts += period_payouts;
-      totals.period_other += period_other;
-      totals.closing_balance += closing_balance;
-
       return {
         landlord_id: b.landlord_id,
         landlord_name: b.landlord_name,
@@ -255,9 +246,26 @@ export async function GET(request) {
       };
     });
 
+    // Drop landlords whose opening and closing balances are both effectively
+    // zero (within 1 UGX either side) — they have nothing to report on.
+    const filteredLandlords = landlordsOut.filter(
+      (l) => Math.abs(l.opening_balance) > 1 || Math.abs(l.closing_balance) > 1,
+    );
+
+    for (const l of filteredLandlords) {
+      totals.opening_balance += l.opening_balance;
+      totals.period_rent += l.period_rent;
+      totals.period_fees += l.period_fees;
+      totals.period_deductions += l.period_deductions;
+      totals.period_maintenance += l.period_maintenance;
+      totals.period_payouts += l.period_payouts;
+      totals.period_other += l.period_other;
+      totals.closing_balance += l.closing_balance;
+    }
+
     return Response.json({
       filters: { from, to },
-      landlords: landlordsOut,
+      landlords: filteredLandlords,
       totals,
     });
   } catch (error) {
