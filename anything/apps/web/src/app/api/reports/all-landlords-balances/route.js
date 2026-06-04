@@ -21,34 +21,24 @@ function toDateStr(value) {
   return d.toISOString().slice(0, 10);
 }
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-// First day of an invoice month, used to anchor monthly rent/fee rows.
-function monthAnchorDate(year, month) {
-  const y = Number(year);
-  const m = Number(month);
-  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
-  return `${y}-${pad2(m)}-01`;
-}
-
-// Management fee for one month of gross rent on a property.
-function computeMonthlyFee(property, gross) {
-  if (!property) return 0;
-  const type = String(property.management_fee_type || "percent")
-    .trim()
-    .toLowerCase();
-  if (type === "fixed") {
-    const fixed = Number(property.management_fee_fixed_amount || 0);
-    return Number.isFinite(fixed) && fixed > 0 ? Math.round(fixed) : 0;
-  }
-  const pct = Number(property.management_fee_percent || 0);
-  if (!Number.isFinite(pct) || pct <= 0) return 0;
-  return Math.round((Number(gross || 0) * pct) / 100);
-}
-
 const isIsoDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
+
+// Which report column a GL transaction's source_type contributes to. Every
+// source_type that can touch account 2100 is mapped so the visible columns
+// always reconcile to the raw credit/debit net. Unknown types fall to "other".
+const SOURCE_TYPE_CATEGORY = {
+  rent_accrual_summary: "rent",
+  rent_reversal: "rent",
+  mgmt_fee_summary: "fee",
+  mgmt_fee_fixed: "fee",
+  mgmt_fee_reversal: "fee",
+  landlord_deduction: "deduction",
+  maintenance: "maintenance",
+  landlord_payout: "payout",
+  landlord_balance_payout: "payout",
+  landlord_credit: "other",
+  reconciliation: "other",
+};
 
 export async function GET(request) {
   const perm = await requirePermission(request, "reports");
@@ -73,177 +63,146 @@ export async function GET(request) {
       );
     }
 
-    // 1. Landlords (all, or a single one when filtered) + every property they
-    //    own (with fee settings) so we can map property -> landlord and compute
-    //    per-month management fees later.
-    const [landlordRows, propertyRows] = await Promise.all([
+    // 1. Account 2100 (Due to Landlords) is the source of truth for landlord
+    //    balances — the same ledger account the landlord property statement
+    //    uses. Credits to 2100 increase what we owe; debits decrease it.
+    const [acct2100Rows, landlordRows, propertyRows] = await Promise.all([
+      sql`SELECT id FROM chart_of_accounts WHERE account_code = '2100' LIMIT 1`,
       landlordId
         ? sql`SELECT id, full_name FROM landlords WHERE id = ${landlordId} ORDER BY full_name ASC`
         : sql`SELECT id, full_name FROM landlords ORDER BY full_name ASC`,
       landlordId
-        ? sql`
-            SELECT id, property_name, landlord_id, management_fee_type,
-                   management_fee_percent, management_fee_fixed_amount
-            FROM properties
-            WHERE landlord_id = ${landlordId}
-          `
-        : sql`
-            SELECT id, property_name, landlord_id, management_fee_type,
-                   management_fee_percent, management_fee_fixed_amount
-            FROM properties
-          `,
+        ? sql`SELECT id, landlord_id FROM properties WHERE landlord_id = ${landlordId}`
+        : sql`SELECT id, landlord_id FROM properties`,
     ]);
+
+    const acct2100Id = Number(acct2100Rows?.[0]?.id) || null;
+    if (!acct2100Id) {
+      return Response.json(
+        { error: "Account 2100 (Due to Landlords) not configured" },
+        { status: 500 },
+      );
+    }
 
     const landlords = landlordRows || [];
     const landlordIds = landlords.map((l) => Number(l.id));
 
-    // property_id -> property (fee settings + owning landlord)
-    const propertyMap = new Map();
+    // property_id -> owning landlord_id, so property-level postings roll up to
+    // the right landlord.
+    const propertyToLandlord = new Map();
     for (const p of propertyRows || []) {
-      propertyMap.set(Number(p.id), p);
+      propertyToLandlord.set(Number(p.id), Number(p.landlord_id));
     }
-    const propertyIds = Array.from(propertyMap.keys());
+    const propertyIds = Array.from(propertyToLandlord.keys());
 
-    // Initialise an accumulator for each landlord. Every landlord in scope
-    // appears in the output, even with no activity in the period.
+    // One accumulator per landlord. Every landlord in scope appears in the
+    // output, even with no ledger activity.
     const acc = new Map();
     for (const l of landlords) {
       acc.set(Number(l.id), {
         landlord_id: Number(l.id),
         landlord_name: l.full_name || `Landlord #${l.id}`,
-        // Opening = statement closing balance as of (from - 1 day): the net of
-        // every component accumulated separately, then combined at the end.
-        opening_rent: 0,
-        opening_fees: 0,
-        opening_deductions: 0,
-        opening_maintenance: 0,
-        opening_payouts: 0,
-        period_rent: 0,
-        period_fees: 0,
-        period_deductions: 0,
-        period_maintenance: 0,
-        period_payouts: 0,
+        // Signed net effect on amount owed (credit +, debit -), per category.
+        // opening = all activity before `from`; cat* = activity within range.
+        opening: 0,
+        catRent: 0,
+        catFee: 0,
+        catDeduction: 0,
+        catMaintenance: 0,
+        catPayout: 0,
+        catOther: 0,
       });
     }
 
-    // 2. Pull every source for the whole of history; the opening-vs-period
-    //    split happens in JS using the `from` boundary so opening balances
-    //    dynamically reflect any corrections made to historical data.
-    const [invoiceRows, deductionRows, maintenanceRows, payoutRows] =
-      await Promise.all([
-        propertyIds.length
-          ? sql`
-              SELECT property_id, invoice_year, invoice_month,
-                     SUM(amount) AS gross
-              FROM invoices
-              WHERE property_id = ANY(${propertyIds}::int[])
-                AND COALESCE(is_deleted, false) = false
-                AND COALESCE(status, '') <> 'void'
-                AND lease_id IS NOT NULL
-              GROUP BY property_id, invoice_year, invoice_month
-            `
-          : Promise.resolve([]),
-        landlordIds.length
-          ? sql`
-              SELECT landlord_id, property_id, deduction_date, amount
-              FROM landlord_deductions
-              WHERE landlord_id = ANY(${landlordIds}::int[])
-                AND COALESCE(is_deleted, false) = false
-            `
-          : Promise.resolve([]),
-        propertyIds.length
-          ? sql`
-              SELECT property_id, completed_cost,
-                     COALESCE(completed_date, completed_at::date) AS event_date
-              FROM maintenance_requests
-              WHERE property_id = ANY(${propertyIds}::int[])
-                AND charge_type = 'landlord'
-                AND status IN ('completed', 'closed')
-                AND completed_cost IS NOT NULL
-            `
-          : Promise.resolve([]),
-        landlordIds.length
-          ? sql`
-              SELECT landlord_id, payout_date, amount
-              FROM landlord_payouts
-              WHERE landlord_id = ANY(${landlordIds}::int[])
-                AND COALESCE(is_deleted, false) = false
-            `
-          : Promise.resolve([]),
-      ]);
+    if (landlordIds.length === 0) {
+      return Response.json({
+        filters: { from, to },
+        landlords: [],
+        totals: {
+          opening_balance: 0,
+          period_rent: 0,
+          period_fees: 0,
+          period_deductions: 0,
+          period_maintenance: 0,
+          period_payouts: 0,
+          period_other: 0,
+          closing_balance: 0,
+        },
+      });
+    }
 
-    // Helper: classify a date against the period boundary.
-    //   < from           -> opening
-    //   from..to (incl.) -> period
-    //   > to             -> ignored (future activity)
-    const inOpening = (date) => date < from;
-    const inPeriod = (date) => date >= from && date <= to;
+    // 2. Every approved, non-deleted GL movement touching account 2100 for the
+    //    scoped properties (property-level entries) plus landlord-level entries
+    //    that carry no property. Fetch all history; the opening-vs-period split
+    //    happens in JS so opening balances reflect any historical corrections.
+    const txnRows = await sql`
+      SELECT transaction_date, amount, debit_account_id, credit_account_id,
+             property_id, landlord_id, source_type
+      FROM transactions
+      WHERE (debit_account_id = ${acct2100Id} OR credit_account_id = ${acct2100Id})
+        AND COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
+        AND (
+          property_id = ANY(${propertyIds}::int[])
+          OR (property_id IS NULL AND landlord_id = ANY(${landlordIds}::int[]))
+        )
+    `;
 
-    // 3. Rent (gross) + management fee, one pair per property-month.
-    for (const r of invoiceRows || []) {
-      const property = propertyMap.get(Number(r.property_id));
-      if (!property) continue;
-      const bucket = acc.get(Number(property.landlord_id));
+    for (const t of txnRows || []) {
+      // Attribute to a landlord: property-level entries via the property's
+      // owner; landlord-level (no property) entries via landlord_id.
+      let lid = null;
+      if (t.property_id !== null && t.property_id !== undefined) {
+        lid = propertyToLandlord.get(Number(t.property_id)) ?? null;
+      } else if (t.landlord_id !== null && t.landlord_id !== undefined) {
+        lid = Number(t.landlord_id);
+      }
+      if (lid === null) continue;
+
+      const bucket = acc.get(lid);
       if (!bucket) continue;
-      const date = monthAnchorDate(r.invoice_year, r.invoice_month);
-      if (!date) continue;
-      const gross = Number(r.gross || 0);
-      const fee = computeMonthlyFee(property, gross);
 
-      if (inOpening(date)) {
-        bucket.opening_rent += gross;
-        bucket.opening_fees += fee;
-      } else if (inPeriod(date)) {
-        bucket.period_rent += gross;
-        bucket.period_fees += fee;
+      const date = toDateStr(t.transaction_date);
+      if (!date) continue;
+      if (date > to) continue; // ignore activity after the period
+
+      const amount = Number(t.amount || 0);
+      const isCredit = Number(t.credit_account_id) === acct2100Id;
+      const delta = isCredit ? amount : -amount; // effect on amount owed
+
+      if (date < from) {
+        bucket.opening += delta;
+        continue;
+      }
+
+      // Within [from, to]: bucket the signed delta by source_type category.
+      const category = SOURCE_TYPE_CATEGORY[t.source_type] || "other";
+      switch (category) {
+        case "rent":
+          bucket.catRent += delta;
+          break;
+        case "fee":
+          bucket.catFee += delta;
+          break;
+        case "deduction":
+          bucket.catDeduction += delta;
+          break;
+        case "maintenance":
+          bucket.catMaintenance += delta;
+          break;
+        case "payout":
+          bucket.catPayout += delta;
+          break;
+        default:
+          bucket.catOther += delta;
+          break;
       }
     }
 
-    // 4. Landlord deductions (reduce the amount owed to the landlord).
-    for (const r of deductionRows || []) {
-      const bucket = acc.get(Number(r.landlord_id));
-      if (!bucket) continue;
-      const date = toDateStr(r.deduction_date);
-      if (!date) continue;
-      const amount = Number(r.amount || 0);
-      if (inOpening(date)) {
-        bucket.opening_deductions += amount;
-      } else if (inPeriod(date)) {
-        bucket.period_deductions += amount;
-      }
-    }
-
-    // 5. Maintenance charged to the landlord.
-    for (const r of maintenanceRows || []) {
-      const property = propertyMap.get(Number(r.property_id));
-      if (!property) continue;
-      const bucket = acc.get(Number(property.landlord_id));
-      if (!bucket) continue;
-      const date = toDateStr(r.event_date);
-      if (!date) continue;
-      const amount = Number(r.completed_cost || 0);
-      if (inOpening(date)) {
-        bucket.opening_maintenance += amount;
-      } else if (inPeriod(date)) {
-        bucket.period_maintenance += amount;
-      }
-    }
-
-    // 6. Landlord payouts (money already paid out to the landlord).
-    for (const r of payoutRows || []) {
-      const bucket = acc.get(Number(r.landlord_id));
-      if (!bucket) continue;
-      const date = toDateStr(r.payout_date);
-      if (!date) continue;
-      const amount = Number(r.amount || 0);
-      if (inOpening(date)) {
-        bucket.opening_payouts += amount;
-      } else if (inPeriod(date)) {
-        bucket.period_payouts += amount;
-      }
-    }
-
-    // 7. Closing balance + totals.
+    // 3. Project signed accumulators onto the report columns and reconcile.
+    //    Rent/Other are credits (shown positive); Fees/Deductions/Maintenance/
+    //    Payouts are charges (the negated debit net, shown positive and then
+    //    subtracted). closing = opening + net of every period movement.
     const totals = {
       opening_balance: 0,
       period_rent: 0,
@@ -251,45 +210,47 @@ export async function GET(request) {
       period_deductions: 0,
       period_maintenance: 0,
       period_payouts: 0,
+      period_other: 0,
       closing_balance: 0,
     };
 
     const landlordsOut = Array.from(acc.values()).map((b) => {
-      // Opening balance mirrors the landlord statement's closing-balance logic,
-      // applied to all activity strictly before `from`. Positive => we owe the
-      // landlord money.
-      const opening_balance =
-        b.opening_rent -
-        b.opening_fees -
-        b.opening_deductions -
-        b.opening_maintenance -
-        b.opening_payouts;
+      const opening_balance = b.opening;
+      const period_rent = b.catRent;
+      const period_fees = -b.catFee;
+      const period_deductions = -b.catDeduction;
+      const period_maintenance = -b.catMaintenance;
+      const period_payouts = -b.catPayout;
+      const period_other = b.catOther;
 
       const closing_balance =
         opening_balance +
-        b.period_rent -
-        b.period_fees -
-        b.period_deductions -
-        b.period_maintenance -
-        b.period_payouts;
+        period_rent -
+        period_fees -
+        period_deductions -
+        period_maintenance -
+        period_payouts +
+        period_other;
 
       totals.opening_balance += opening_balance;
-      totals.period_rent += b.period_rent;
-      totals.period_fees += b.period_fees;
-      totals.period_deductions += b.period_deductions;
-      totals.period_maintenance += b.period_maintenance;
-      totals.period_payouts += b.period_payouts;
+      totals.period_rent += period_rent;
+      totals.period_fees += period_fees;
+      totals.period_deductions += period_deductions;
+      totals.period_maintenance += period_maintenance;
+      totals.period_payouts += period_payouts;
+      totals.period_other += period_other;
       totals.closing_balance += closing_balance;
 
       return {
         landlord_id: b.landlord_id,
         landlord_name: b.landlord_name,
         opening_balance,
-        period_rent: b.period_rent,
-        period_fees: b.period_fees,
-        period_deductions: b.period_deductions,
-        period_maintenance: b.period_maintenance,
-        period_payouts: b.period_payouts,
+        period_rent,
+        period_fees,
+        period_deductions,
+        period_maintenance,
+        period_payouts,
+        period_other,
         closing_balance,
       };
     });

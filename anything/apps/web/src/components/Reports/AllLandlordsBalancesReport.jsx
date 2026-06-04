@@ -87,6 +87,7 @@ export function AllLandlordsBalancesReport({
     period_deductions: 0,
     period_maintenance: 0,
     period_payouts: 0,
+    period_other: 0,
     closing_balance: 0,
   };
 
@@ -127,6 +128,7 @@ export function AllLandlordsBalancesReport({
       Deductions: l.period_deductions,
       Maintenance: l.period_maintenance,
       Payouts: l.period_payouts,
+      "Other Adjustments": l.period_other,
       "Closing Balance": l.closing_balance,
     }));
 
@@ -139,6 +141,7 @@ export function AllLandlordsBalancesReport({
       Deductions: totals.period_deductions,
       Maintenance: totals.period_maintenance,
       Payouts: totals.period_payouts,
+      "Other Adjustments": totals.period_other,
       "Closing Balance": totals.closing_balance,
     });
 
@@ -376,7 +379,7 @@ export function AllLandlordsBalancesReport({
 function BalancesTable({ landlords, totals }) {
   return (
     <div className="overflow-auto">
-      <table className="w-full text-sm" style={{ minWidth: 1000 }}>
+      <table className="w-full text-sm" style={{ minWidth: 1100 }}>
         <thead>
           <tr className="text-left text-slate-500 border-b-2 border-slate-700">
             <th className="py-2 pr-3" style={{ width: "60px" }}>
@@ -389,6 +392,7 @@ function BalancesTable({ landlords, totals }) {
             <th className="py-2 pr-3 text-right">Deductions</th>
             <th className="py-2 pr-3 text-right">Maintenance</th>
             <th className="py-2 pr-3 text-right">Payouts</th>
+            <th className="py-2 pr-3 text-right">Other Adj.</th>
             <th className="py-2 pr-3 text-right">Closing Balance</th>
           </tr>
         </thead>
@@ -420,6 +424,9 @@ function BalancesTable({ landlords, totals }) {
               <td className="py-2 pr-3 text-right text-slate-700">
                 {formatCurrencyUGX(l.period_payouts)}
               </td>
+              <td className="py-2 pr-3 text-right text-slate-700">
+                {formatCurrencyUGX(l.period_other)}
+              </td>
               <td className="py-2 pr-3 text-right font-semibold text-slate-900">
                 {formatCurrencyUGX(l.closing_balance)}
               </td>
@@ -448,6 +455,9 @@ function BalancesTable({ landlords, totals }) {
             </td>
             <td className="py-2 pr-3 text-right font-bold text-slate-900">
               {formatCurrencyUGX(totals.period_payouts)}
+            </td>
+            <td className="py-2 pr-3 text-right font-bold text-slate-900">
+              {formatCurrencyUGX(totals.period_other)}
             </td>
             <td className="py-2 pr-3 text-right font-bold text-slate-900">
               {formatCurrencyUGX(totals.closing_balance)}
