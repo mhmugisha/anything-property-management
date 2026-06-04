@@ -18,6 +18,7 @@ import { PropertyStatementReport } from "@/components/Reports/PropertyStatementR
 import { LandlordPayoutsSummary } from "@/components/Reports/LandlordPayoutsSummary";
 import { PaymentStatusReport } from "@/components/Reports/PaymentStatusReport";
 import { ConsolidatedBalancesDueReport } from "@/components/Reports/ConsolidatedBalancesDueReport";
+import { AllLandlordsBalancesReport } from "@/components/Reports/AllLandlordsBalancesReport";
 import { AllTenantsReport } from "@/components/Reports/AllTenantsReport";
 
 export default function ReportsPage() {
@@ -135,6 +136,14 @@ export default function ReportsPage() {
       case "consolidated-balances-due":
         return (
           <ConsolidatedBalancesDueReport
+            userLoading={userLoading}
+            user={user}
+            canViewReports={canViewReports}
+          />
+        );
+      case "all-landlords-balances":
+        return (
+          <AllLandlordsBalancesReport
             userLoading={userLoading}
             user={user}
             canViewReports={canViewReports}

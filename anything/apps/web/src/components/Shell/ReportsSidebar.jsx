@@ -56,6 +56,11 @@ export default function ReportsSidebar() {
       icon: FileText,
     },
     {
+      title: "All Landlords Balances",
+      href: "/reports?report=all-landlords-balances",
+      icon: DollarSign,
+    },
+    {
       title: "All Tenants",
       href: "/reports?report=all-tenants",
       icon: List,
