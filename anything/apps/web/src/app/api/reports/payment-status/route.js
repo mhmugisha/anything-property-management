@@ -229,14 +229,8 @@ export async function GET(request) {
         ? currentMap[u.lease_id]?.invoiced || 0
         : 0;
       const total = arrears + currentMonthRent;
-      const currentMonthOutstanding = isOccupied
-        ? currentMap[u.lease_id]?.outstanding ?? currentMonthRent
-        : 0;
-      const paidOnInvoice = isOccupied
-        ? currentMap[u.lease_id]?.paidOnInvoice || 0
-        : 0;
-      const balance = arrears + currentMonthOutstanding;
-      const paid = paidOnInvoice;
+      const paid = isOccupied ? paymentsMap[u.lease_id] || 0 : 0;
+      const balance = arrears + currentMonthRent - paid;
 
       // Rent is the monthly rent amount (from lease if occupied, from unit if vacant)
       const rent = isOccupied
