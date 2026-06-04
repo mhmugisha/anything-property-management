@@ -161,10 +161,20 @@ export async function GET(request) {
     // ----------------------------------------------------------------
     let arrearsMap = {};
     if (leaseIds.length > 0 && tenantIds.length > 0) {
+      const firstDay = `${year}-${String(month).padStart(2, "0")}-01`;
       const arrearsRows = await sql(
         `SELECT
            COALESCE(i.lease_id, l.id) AS lease_id,
-           COALESCE(SUM(i.amount - i.paid_amount), 0) AS arrears
+           COALESCE(SUM(
+             i.amount - COALESCE((
+               SELECT SUM(pia.amount_applied)
+               FROM payment_invoice_allocations pia
+               JOIN payments p ON p.id = pia.payment_id
+               WHERE pia.invoice_id = i.id
+                 AND p.is_reversed = false
+                 AND p.payment_date < $5::date
+             ), 0)
+           ), 0) AS arrears
          FROM invoices i
          LEFT JOIN leases l ON l.tenant_id = i.tenant_id AND l.id = ANY($1)
          WHERE (
@@ -173,13 +183,23 @@ export async function GET(request) {
          )
            AND COALESCE(i.is_deleted, false) = false
            AND COALESCE(i.approval_status, 'approved') = 'approved'
+           AND COALESCE(i.status, '') <> 'void'
            AND (
              i.invoice_year < $3
              OR (i.invoice_year = $3 AND i.invoice_month < $4)
            )
-           AND (i.amount - i.paid_amount) > 0
-         GROUP BY COALESCE(i.lease_id, l.id)`,
-        [leaseIds, tenantIds, year, month],
+         GROUP BY COALESCE(i.lease_id, l.id)
+         HAVING COALESCE(SUM(
+             i.amount - COALESCE((
+               SELECT SUM(pia.amount_applied)
+               FROM payment_invoice_allocations pia
+               JOIN payments p ON p.id = pia.payment_id
+               WHERE pia.invoice_id = i.id
+                 AND p.is_reversed = false
+                 AND p.payment_date < $5::date
+             ), 0)
+           ), 0) > 0`,
+        [leaseIds, tenantIds, year, month, firstDay],
       );
 
       for (const row of arrearsRows) {
