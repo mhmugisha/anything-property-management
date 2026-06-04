@@ -111,7 +111,13 @@ export async function GET(request) {
       acc.set(Number(l.id), {
         landlord_id: Number(l.id),
         landlord_name: l.full_name || `Landlord #${l.id}`,
-        opening_balance: 0,
+        // Opening = statement closing balance as of (from - 1 day): the net of
+        // every component accumulated separately, then combined at the end.
+        opening_rent: 0,
+        opening_fees: 0,
+        opening_deductions: 0,
+        opening_maintenance: 0,
+        opening_payouts: 0,
         period_rent: 0,
         period_fees: 0,
         period_deductions: 0,
@@ -185,7 +191,8 @@ export async function GET(request) {
       const fee = computeMonthlyFee(property, gross);
 
       if (inOpening(date)) {
-        bucket.opening_balance += gross - fee;
+        bucket.opening_rent += gross;
+        bucket.opening_fees += fee;
       } else if (inPeriod(date)) {
         bucket.period_rent += gross;
         bucket.period_fees += fee;
@@ -200,7 +207,7 @@ export async function GET(request) {
       if (!date) continue;
       const amount = Number(r.amount || 0);
       if (inOpening(date)) {
-        bucket.opening_balance -= amount;
+        bucket.opening_deductions += amount;
       } else if (inPeriod(date)) {
         bucket.period_deductions += amount;
       }
@@ -216,7 +223,7 @@ export async function GET(request) {
       if (!date) continue;
       const amount = Number(r.completed_cost || 0);
       if (inOpening(date)) {
-        bucket.opening_balance -= amount;
+        bucket.opening_maintenance += amount;
       } else if (inPeriod(date)) {
         bucket.period_maintenance += amount;
       }
@@ -230,7 +237,7 @@ export async function GET(request) {
       if (!date) continue;
       const amount = Number(r.amount || 0);
       if (inOpening(date)) {
-        bucket.opening_balance -= amount;
+        bucket.opening_payouts += amount;
       } else if (inPeriod(date)) {
         bucket.period_payouts += amount;
       }
@@ -248,15 +255,25 @@ export async function GET(request) {
     };
 
     const landlordsOut = Array.from(acc.values()).map((b) => {
+      // Opening balance mirrors the landlord statement's closing-balance logic,
+      // applied to all activity strictly before `from`. Positive => we owe the
+      // landlord money.
+      const opening_balance =
+        b.opening_rent -
+        b.opening_fees -
+        b.opening_deductions -
+        b.opening_maintenance -
+        b.opening_payouts;
+
       const closing_balance =
-        b.opening_balance +
+        opening_balance +
         b.period_rent -
         b.period_fees -
         b.period_deductions -
         b.period_maintenance -
         b.period_payouts;
 
-      totals.opening_balance += b.opening_balance;
+      totals.opening_balance += opening_balance;
       totals.period_rent += b.period_rent;
       totals.period_fees += b.period_fees;
       totals.period_deductions += b.period_deductions;
@@ -264,7 +281,17 @@ export async function GET(request) {
       totals.period_payouts += b.period_payouts;
       totals.closing_balance += closing_balance;
 
-      return { ...b, closing_balance };
+      return {
+        landlord_id: b.landlord_id,
+        landlord_name: b.landlord_name,
+        opening_balance,
+        period_rent: b.period_rent,
+        period_fees: b.period_fees,
+        period_deductions: b.period_deductions,
+        period_maintenance: b.period_maintenance,
+        period_payouts: b.period_payouts,
+        closing_balance,
+      };
     });
 
     return Response.json({
