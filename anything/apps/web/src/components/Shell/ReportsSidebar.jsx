@@ -8,7 +8,6 @@ import {
   Users,
   BookOpen,
   ClipboardList,
-  FileText,
   List,
   GitCompare,
 } from "lucide-react";
@@ -49,11 +48,6 @@ export default function ReportsSidebar() {
       title: "Property Statement",
       href: "/reports?report=property-statement",
       icon: Building,
-    },
-    {
-      title: "Consolidated Balances Due",
-      href: "/reports?report=consolidated-balances-due",
-      icon: FileText,
     },
     {
       title: "All Landlords Balances",
