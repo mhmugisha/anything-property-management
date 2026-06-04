@@ -136,6 +136,8 @@ export async function GET(request) {
            AND invoice_month = $2
            AND invoice_year  = $3
            AND COALESCE(approval_status, 'approved') = 'approved'
+           AND COALESCE(is_deleted, false) = false
+           AND COALESCE(status, '') <> 'void'
          GROUP BY lease_id`,
         [leaseIds, month, year],
       );
