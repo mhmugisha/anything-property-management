@@ -98,21 +98,27 @@ export async function POST(request, { params: { id } }) {
       prepaymentBalance = Number(balRows?.[0]?.balance || 0);
     }
 
-    // Fetch the invoices that will be voided by step 2 (same WHERE clause)
-    // along with their property/landlord info, so we can post reversing
-    // GL entries that keep the landlord statement in sync with the Payment Note.
+    // Fetch the invoices that will be voided/written off by step 2 (same
+    // WHERE clauses as steps 2a + 2b) along with their property/landlord info,
+    // so we can post reversing GL entries that keep the landlord statement in
+    // sync with the Payment Note. We capture paid_amount so the reversing entry
+    // can use the OUTSTANDING amount (amount - paid_amount) for partially paid
+    // invoices that were explicitly voided.
     const voidedInvoiceRows = await sql(
-      `SELECT i.id, i.amount, i.property_id, i.invoice_year, i.invoice_month,
+      `SELECT i.id, i.amount, i.paid_amount, i.property_id, i.invoice_year, i.invoice_month,
               p.landlord_id, u.id AS unit_id
        FROM invoices i
        LEFT JOIN properties p ON p.id = i.property_id
        LEFT JOIN units u ON u.id = i.unit_id
        WHERE i.lease_id = $1
-         AND i.paid_amount = 0
          AND i.status <> 'paid'
-         AND (i.invoice_year * 100 + i.invoice_month > $2 OR i.id = ANY($3::int[]))
          AND NOT i.id = ANY($4::int[])
-         AND COALESCE(i.is_deleted, false) = false`,
+         AND COALESCE(i.is_deleted, false) = false
+         AND (
+           (i.paid_amount = 0 AND (i.invoice_year * 100 + i.invoice_month > $2 OR i.id = ANY($3::int[])))
+           OR
+           (i.paid_amount > 0 AND i.id = ANY($3::int[]))
+         )`,
       [leaseId, termYM, explicitVoidIds, explicitKeepIds],
     );
 
@@ -142,7 +148,7 @@ export async function POST(request, { params: { id } }) {
             )
           : txn`SELECT 1`,
 
-        // 2: void invoices after termination month + explicit voids (skip explicit keeps)
+        // 2a: void fully unpaid invoices after termination month + explicit voids (skip explicit keeps)
         txn(
           `UPDATE invoices
            SET status = 'void', is_deleted = true
@@ -154,10 +160,32 @@ export async function POST(request, { params: { id } }) {
           [leaseId, termYM, explicitVoidIds, explicitKeepIds],
         ),
 
-        // 2b: post reversing GL entries for voided invoices (Dr 2100 / Cr 1210)
-        // This keeps the landlord statement in sync with the Payment Note
+        // 2b: write off partially paid invoices that were explicitly voided.
+        // Preserve the paid portion and write off only the outstanding balance
+        // by setting amount = paid_amount, so the invoice shows fully paid with
+        // zero outstanding (rather than deleting it entirely).
+        txn(
+          `UPDATE invoices
+           SET amount = paid_amount, status = 'paid'
+           WHERE lease_id = $1
+             AND paid_amount > 0
+             AND status <> 'paid'
+             AND id = ANY($2::int[])
+             AND NOT id = ANY($3::int[])`,
+          [leaseId, explicitVoidIds, explicitKeepIds],
+        ),
+
+        // 2c: post reversing GL entries for voided/written-off invoices (Dr 2100 / Cr 1210)
+        // using the OUTSTANDING amount (amount - paid_amount) so the landlord
+        // statement stays in sync with the Payment Note for both fully unpaid
+        // and partially paid invoices.
         ...voidedInvoiceRows
-          .filter((r) => Number(r.amount) > 0 && r.property_id && r.landlord_id)
+          .filter(
+            (r) =>
+              Number(r.amount) - Number(r.paid_amount) > 0 &&
+              r.property_id &&
+              r.landlord_id,
+          )
           .map((r) =>
             txn(
               `INSERT INTO transactions (
@@ -180,7 +208,7 @@ export async function POST(request, { params: { id } }) {
                 `Rent invoice reversal - lease termination - ${tenantName}`,
                 acct2100Id,
                 acct1210Id,
-                Number(r.amount),
+                Number(r.amount) - Number(r.paid_amount),
                 perm.staff.id,
                 Number(r.id),
                 Number(r.property_id),
