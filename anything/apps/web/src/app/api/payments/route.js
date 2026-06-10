@@ -386,9 +386,9 @@ export async function POST(request) {
       JOIN tenants t ON t.id = l.tenant_id
       JOIN units u ON u.id = l.unit_id
       JOIN properties p ON p.id = u.property_id
-      WHERE l.status = 'active'
-        AND l.tenant_id = ${tenantId}
+      WHERE l.tenant_id = ${tenantId}
         AND p.id = ${propertyId}
+        AND l.status IN ('active', 'ended')
       ORDER BY l.start_date DESC, l.id DESC
       LIMIT 1
     `;

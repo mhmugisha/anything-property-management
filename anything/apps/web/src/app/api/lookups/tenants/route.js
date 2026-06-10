@@ -38,8 +38,7 @@ export async function GET(request) {
         FROM leases l
         JOIN units u ON u.id = l.unit_id
         WHERE l.tenant_id = t.id
-          AND l.status = 'active'
-        ORDER BY l.start_date DESC
+        ORDER BY l.start_date DESC, l.id DESC
         LIMIT 1
       ) cl ON true
       LEFT JOIN properties p ON p.id = cl.property_id
