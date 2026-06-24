@@ -239,6 +239,29 @@ export async function GET(request) {
       for (const row of paymentsRows) {
         paymentsMap[row.lease_id] = Number(row.total_paid);
       }
+
+      const arrearsPaymentsRows = await sql(
+        `SELECT
+           l.id AS lease_id,
+           COALESCE(SUM(p.amount), 0) AS total_paid
+         FROM payments p
+         JOIN payment_invoice_allocations pia ON pia.payment_id = p.id
+         JOIN invoices i ON i.id = pia.invoice_id
+         JOIN leases l ON l.tenant_id = i.tenant_id AND l.id = ANY($1)
+         WHERE i.lease_id IS NULL
+           AND COALESCE(i.is_deleted, false) = false
+           AND p.is_reversed = false
+           AND COALESCE(p.approval_status, 'approved') = 'approved'
+           AND p.payment_date >= $2::date
+           AND p.payment_date < $3::date
+         GROUP BY l.id`,
+        [leaseIds, firstDay, lastDayExclusive],
+      );
+
+      for (const row of arrearsPaymentsRows) {
+        const prev = paymentsMap[row.lease_id] || 0;
+        paymentsMap[row.lease_id] = prev + Number(row.total_paid || 0);
+      }
     }
 
     // ----------------------------------------------------------------
