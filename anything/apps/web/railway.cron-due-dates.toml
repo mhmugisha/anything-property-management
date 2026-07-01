@@ -6,6 +6,6 @@ buildCommand = "echo 'no build required'"
 nixPkgs = ["curl"]
 
 [deploy]
-startCommand = "curl -s -X POST $APP_URL/api/notifications/check-landlord-due-dates -H 'Authorization: Bearer $CRON_SECRET' -H 'Content-Type: application/json'"
+startCommand = "curl -v -X POST $APP_URL/api/notifications/check-landlord-due-dates -H 'Authorization: Bearer $CRON_SECRET' -H 'Content-Type: application/json' && echo 'SUCCESS' || echo 'FAILED'"
 cronSchedule = "0 0 * * *"
 restartPolicyType = "NEVER"
