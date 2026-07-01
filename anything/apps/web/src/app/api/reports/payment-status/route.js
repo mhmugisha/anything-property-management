@@ -184,6 +184,7 @@ export async function GET(request) {
            AND COALESCE(i.is_deleted, false) = false
            AND COALESCE(i.approval_status, 'approved') = 'approved'
            AND COALESCE(i.status, '') <> 'void'
+           AND COALESCE(i.status, '') <> 'paid'
            AND (
              i.invoice_year < $3
              OR (i.invoice_year = $3 AND i.invoice_month < $4)
