@@ -178,23 +178,24 @@ export async function POST(request) {
       // Non-fatal — rent reversal already succeeded
     }
 
-    // Update the invoice record based on reversal type
+    // Update the invoice record based on reversal type.
+    // Only void invoices with zero payments — if any payment has been
+    // applied, preserve the paid portion.
     const remainingUnpaidBalance = unpaidBalance - amount;
-    const isFullReversal = remainingUnpaidBalance <= 0.01; // Floating point tolerance
+    const isFullReversal = remainingUnpaidBalance <= 0.01 && paidAmount === 0;
 
     if (isFullReversal) {
-      // Full reversal of unpaid balance: Mark invoice as void
       await sql`
         UPDATE invoices
         SET status = 'void'
         WHERE id = ${invoiceId}
       `;
     } else {
-      // Partial reversal: Reduce invoice amount by reversed amount
-      const newInvoiceAmount = originalInvoiceAmount - amount;
+      const newInvoiceAmount =
+        paidAmount > 0 ? paidAmount : originalInvoiceAmount - amount;
       await sql`
         UPDATE invoices
-        SET amount = ${newInvoiceAmount}
+        SET amount = ${newInvoiceAmount}, status = 'paid'
         WHERE id = ${invoiceId}
       `;
     }
@@ -221,7 +222,11 @@ export async function POST(request) {
       unpaid_balance_before_reversal: unpaidBalance,
       reversed_amount: amount,
       remaining_unpaid_balance: isFullReversal ? 0 : remainingUnpaidBalance,
-      new_invoice_amount: isFullReversal ? 0 : originalInvoiceAmount - amount,
+      new_invoice_amount: isFullReversal
+        ? 0
+        : paidAmount > 0
+          ? paidAmount
+          : originalInvoiceAmount - amount,
       transaction_id: rentReversalPost.transaction?.id || null,
       mgmt_fee_reversed: mgmtFeeReversed,
       accrual_synced: accrualSynced,
