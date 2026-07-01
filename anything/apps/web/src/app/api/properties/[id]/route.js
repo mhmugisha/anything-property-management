@@ -87,6 +87,7 @@ export async function PUT(request, { params: { id } }) {
       management_fee_fixed_amount,
       notes,
       landlord_id,
+      assigned_officer_id,
     } = body || {};
 
     const setClauses = [];
@@ -167,6 +168,15 @@ export async function PUT(request, { params: { id } }) {
           );
         }
       }
+    }
+
+    if (assigned_officer_id !== undefined) {
+      let officerId = null;
+      if (assigned_officer_id !== null && assigned_officer_id !== "") {
+        const parsed = Number(assigned_officer_id);
+        if (Number.isFinite(parsed)) officerId = parsed;
+      }
+      pushSet("assigned_officer_id", officerId);
     }
 
     if (setClauses.length === 0) {

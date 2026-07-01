@@ -54,7 +54,7 @@ export async function GET(request) {
     const query = `
       SELECT id, property_name, address, property_type, total_units,
              management_fee_type, management_fee_percent, management_fee_fixed_amount,
-             notes, landlord_id, created_by, created_at
+             notes, landlord_id, assigned_officer_id, created_by, created_at
       FROM properties
       ${whereSql}
       ORDER BY created_at DESC
@@ -91,6 +91,7 @@ export async function POST(request) {
       management_fee_fixed_amount,
       notes,
       landlord_id,
+      assigned_officer_id,
     } = body || {};
 
     // Validate required fields
@@ -158,6 +159,16 @@ export async function POST(request) {
       }
     }
 
+    let officerId = null;
+    if (
+      assigned_officer_id !== null &&
+      assigned_officer_id !== undefined &&
+      assigned_officer_id !== ""
+    ) {
+      const parsedOfficer = Number(assigned_officer_id);
+      if (Number.isFinite(parsedOfficer)) officerId = parsedOfficer;
+    }
+
     const approval = getApprovalFields(perm.staff);
     const created = await sql`
       INSERT INTO properties (
@@ -165,6 +176,7 @@ export async function POST(request) {
         management_fee_type, management_fee_percent, management_fee_fixed_amount,
         notes,
         landlord_id,
+        assigned_officer_id,
         created_by,
         approval_status, approved_by, approved_at
       ) VALUES (
@@ -176,6 +188,7 @@ export async function POST(request) {
         ${feeType === "fixed" ? feeFixed : null},
         ${typeof notes === "string" && notes.trim() ? notes.trim() : null},
         ${landlordId},
+        ${officerId},
         ${perm.staff.id},
         ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
       )
