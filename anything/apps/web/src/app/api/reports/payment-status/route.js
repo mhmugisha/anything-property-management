@@ -4,9 +4,20 @@ import { requirePermission } from "@/app/api/utils/staff";
 /**
  * Monthly Payment Status Report
  *
- * READ-ONLY: This endpoint only reads from invoices, payments, and
- * related lookup tables.  It does NOT create, update, or delete any
- * data anywhere.
+ * READ-ONLY: This endpoint only reads from invoices, payments,
+ * tenant_deductions, and related lookup tables. It does NOT create,
+ * update, or delete any data anywhere.
+ *
+ * Architecture (statement-based):
+ *   arrears           = tenant-statement closing balance as of the last
+ *                       day of the previous month
+ *                     = SUM(invoice amounts before selected month)
+ *                       - SUM(payments before selected month)
+ *                       + SUM(tenant deductions before selected month)
+ *   current_month_rent = SUM(invoice amounts for the selected month)
+ *   total              = arrears + current_month_rent
+ *   paid               = SUM(payments received within the selected month)
+ *   balance            = total - paid  (may be negative)
  *
  * Query-string parameters
  *   month  (required) – 1-12
@@ -50,18 +61,13 @@ export async function GET(request) {
     const conditions = [];
     const values = [];
 
-    // Only active leases that overlap the selected month
-    // Lease must have started on or before the last day of selected month
-    // and must not have ended before the first day of selected month
     conditions.push(`l.status = 'active'`);
 
-    // Landlord filter
     if (landlordId) {
       conditions.push(`p.landlord_id = $${paramIdx++}`);
       values.push(landlordId);
     }
 
-    // Property filter
     if (propertyId) {
       conditions.push(`p.id = $${paramIdx++}`);
       values.push(propertyId);
@@ -89,7 +95,7 @@ export async function GET(request) {
         t.full_name AS tenant_name,
         t.phone AS tenant_phone,
         COALESCE(u.monthly_rent_ugx, 0) AS unit_monthly_rent,
-        CASE 
+        CASE
           WHEN l.id IS NOT NULL THEN 'Occupied'
           ELSE 'Vacant'
         END AS status
@@ -99,7 +105,7 @@ export async function GET(request) {
       LEFT JOIN leases l ON l.unit_id = u.id AND l.status = 'active'
       LEFT JOIN tenants t ON t.id = l.tenant_id
       ${whereClause.replace("l.status = 'active'", "1=1")}
-      ORDER BY 
+      ORDER BY
         p.property_name,
         (CASE WHEN u.unit_number ~ '^\d+$' THEN u.unit_number::integer ELSE 999999 END),
         u.unit_number
@@ -111,7 +117,6 @@ export async function GET(request) {
       return Response.json({ rows: [], month, year });
     }
 
-    // Collect lease IDs and tenant IDs for occupied units only
     const leaseIds = units
       .filter((u) => u.lease_id !== null)
       .map((u) => u.lease_id);
@@ -120,18 +125,28 @@ export async function GET(request) {
       .filter((u) => u.tenant_id !== null)
       .map((u) => u.tenant_id);
 
+    // Map tenant → active lease for this report scope, so per-tenant
+    // opening-balance sums can be attributed to a lease row.
+    const tenantToLease = new Map();
+    for (const u of units) {
+      if (u.tenant_id && u.lease_id) tenantToLease.set(u.tenant_id, u.lease_id);
+    }
+
+    const firstDay = `${year}-${String(month).padStart(2, "0")}-01`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const lastDayExclusive = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
     // ----------------------------------------------------------------
     // 2. Current-month invoices  (invoice_month = month, invoice_year = year)
-    //    Only for occupied units
     // ----------------------------------------------------------------
     let currentMap = {};
     if (leaseIds.length > 0) {
       const currentMonthInvoices = await sql(
         `SELECT
            lease_id,
-           COALESCE(SUM(i.amount), 0)       AS invoiced,
-           COALESCE(SUM(i.paid_amount), 0)   AS paid_on_invoice
-         FROM invoices i
+           COALESCE(SUM(amount), 0) AS invoiced
+         FROM invoices
          WHERE lease_id = ANY($1)
            AND invoice_month = $2
            AND invoice_year  = $3
@@ -143,86 +158,80 @@ export async function GET(request) {
       );
 
       for (const row of currentMonthInvoices) {
-        currentMap[row.lease_id] = {
-          invoiced: Number(row.invoiced),
-          paidOnInvoice: Number(row.paid_on_invoice),
-          outstanding: Number(row.invoiced) - Number(row.paid_on_invoice),
-        };
+        currentMap[row.lease_id] = Number(row.invoiced);
       }
     }
 
     // ----------------------------------------------------------------
-    // 3. Arrears – all invoices BEFORE the selected month that still
-    //    have an outstanding balance  (amount - paid_amount > 0).
-    //    This now includes BOTH:
-    //    a) Regular invoices with lease_id before the selected month
-    //    b) Arrears invoices (lease_id IS NULL) posted via Post Arrears form
-    //    Only for occupied units
+    // 3. Arrears = tenant-statement closing balance as of the last day
+    //    of the previous month.
+    //      arrears = SUM(invoices before firstDay)
+    //              - SUM(payment allocations before firstDay)
+    //              + SUM(tenant deductions before firstDay)
+    //    Computed per tenant, then attributed to the active lease.
     // ----------------------------------------------------------------
     let arrearsMap = {};
-    if (leaseIds.length > 0 && tenantIds.length > 0) {
-      const firstDay = `${year}-${String(month).padStart(2, "0")}-01`;
-      const arrearsRows = await sql(
-        `SELECT
-           COALESCE(i.lease_id, l.id) AS lease_id,
-           COALESCE(SUM(
-             i.amount - COALESCE((
-               SELECT SUM(pia.amount_applied)
-               FROM payment_invoice_allocations pia
-               JOIN payments p ON p.id = pia.payment_id
-               WHERE pia.invoice_id = i.id
-                 AND p.is_reversed = false
-                 AND p.payment_date < $5::date
-             ), 0)
-           ), 0) AS arrears
-         FROM invoices i
-         LEFT JOIN leases l ON l.tenant_id = i.tenant_id AND l.id = ANY($1)
-         WHERE (
-           (i.lease_id = ANY($1))
-           OR (i.lease_id IS NULL AND i.tenant_id = ANY($2))
-         )
-           AND COALESCE(i.is_deleted, false) = false
-           AND COALESCE(i.approval_status, 'approved') = 'approved'
-           AND COALESCE(i.status, '') <> 'void'
-           AND COALESCE(i.status, '') <> 'paid'
-           AND (
-             i.invoice_year < $3
-             OR (i.invoice_year = $3 AND i.invoice_month < $4)
-           )
-         GROUP BY COALESCE(i.lease_id, l.id)
-         HAVING COALESCE(SUM(
-             i.amount - COALESCE((
-               SELECT SUM(pia.amount_applied)
-               FROM payment_invoice_allocations pia
-               JOIN payments p ON p.id = pia.payment_id
-               WHERE pia.invoice_id = i.id
-                 AND p.is_reversed = false
-                 AND p.payment_date < $5::date
-             ), 0)
-           ), 0) > 0`,
-        [leaseIds, tenantIds, year, month, firstDay],
-      );
+    if (tenantIds.length > 0) {
+      const [obInvoices, obPayments, obDeductions] = await Promise.all([
+        sql(
+          `SELECT tenant_id, COALESCE(SUM(amount), 0) AS total
+           FROM invoices
+           WHERE tenant_id = ANY($1)
+             AND COALESCE(is_deleted, false) = false
+             AND COALESCE(approval_status, 'approved') = 'approved'
+             AND COALESCE(status, '') <> 'void'
+             AND invoice_date < $2::date
+           GROUP BY tenant_id`,
+          [tenantIds, firstDay],
+        ),
+        sql(
+          `SELECT p.tenant_id, COALESCE(SUM(pia.amount_applied), 0) AS total
+           FROM payments p
+           JOIN payment_invoice_allocations pia ON pia.payment_id = p.id
+           WHERE p.tenant_id = ANY($1)
+             AND p.is_reversed = false
+             AND COALESCE(p.approval_status, 'approved') = 'approved'
+             AND p.payment_date < $2::date
+           GROUP BY p.tenant_id`,
+          [tenantIds, firstDay],
+        ),
+        sql(
+          `SELECT tenant_id, COALESCE(SUM(amount), 0) AS total
+           FROM tenant_deductions
+           WHERE tenant_id = ANY($1)
+             AND COALESCE(is_deleted, false) = false
+             AND COALESCE(approval_status, 'approved') = 'approved'
+             AND deduction_date < $2::date
+           GROUP BY tenant_id`,
+          [tenantIds, firstDay],
+        ),
+      ]);
 
-      for (const row of arrearsRows) {
-        if (row.lease_id) {
-          arrearsMap[row.lease_id] = Number(row.arrears);
+      const perTenant = new Map();
+      const bucket = (tid) => {
+        let b = perTenant.get(tid);
+        if (!b) {
+          b = { inv: 0, pay: 0, ded: 0 };
+          perTenant.set(tid, b);
         }
+        return b;
+      };
+      for (const r of obInvoices) bucket(r.tenant_id).inv = Number(r.total);
+      for (const r of obPayments) bucket(r.tenant_id).pay = Number(r.total);
+      for (const r of obDeductions) bucket(r.tenant_id).ded = Number(r.total);
+
+      for (const [tid, { inv, pay, ded }] of perTenant.entries()) {
+        const leaseId = tenantToLease.get(tid);
+        if (leaseId) arrearsMap[leaseId] = inv - pay + ded;
       }
     }
 
     // ----------------------------------------------------------------
     // 4. Payments received during the selected month
-    //    (payment_date falls within the calendar month).
-    //    Only for occupied units
+    //    All payments per lease_id, regardless of allocation to invoices.
     // ----------------------------------------------------------------
     let paymentsMap = {};
     if (leaseIds.length > 0) {
-      const firstDay = `${year}-${String(month).padStart(2, "0")}-01`;
-      // last day of selected month
-      const nextMonth = month === 12 ? 1 : month + 1;
-      const nextYear = month === 12 ? year + 1 : year;
-      const lastDayExclusive = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
-
       const paymentsRows = await sql(
         `SELECT
            lease_id,
@@ -240,29 +249,6 @@ export async function GET(request) {
       for (const row of paymentsRows) {
         paymentsMap[row.lease_id] = Number(row.total_paid);
       }
-
-      const arrearsPaymentsRows = await sql(
-        `SELECT
-           l.id AS lease_id,
-           COALESCE(SUM(p.amount), 0) AS total_paid
-         FROM payments p
-         JOIN payment_invoice_allocations pia ON pia.payment_id = p.id
-         JOIN invoices i ON i.id = pia.invoice_id
-         JOIN leases l ON l.tenant_id = i.tenant_id AND l.id = ANY($1)
-         WHERE i.lease_id IS NULL
-           AND COALESCE(i.is_deleted, false) = false
-           AND p.is_reversed = false
-           AND COALESCE(p.approval_status, 'approved') = 'approved'
-           AND p.payment_date >= $2::date
-           AND p.payment_date < $3::date
-         GROUP BY l.id`,
-        [leaseIds, firstDay, lastDayExclusive],
-      );
-
-      for (const row of arrearsPaymentsRows) {
-        const prev = paymentsMap[row.lease_id] || 0;
-        paymentsMap[row.lease_id] = prev + Number(row.total_paid || 0);
-      }
     }
 
     // ----------------------------------------------------------------
@@ -271,18 +257,11 @@ export async function GET(request) {
     const rows = units.map((u) => {
       const isOccupied = u.status === "Occupied";
       const arrears = isOccupied ? arrearsMap[u.lease_id] || 0 : 0;
-      const currentMonthRent = isOccupied
-        ? currentMap[u.lease_id]?.invoiced || 0
-        : 0;
-      const currentMonthOutstanding = isOccupied
-        ? (currentMap[u.lease_id]?.invoiced || 0) -
-          (currentMap[u.lease_id]?.paidOnInvoice || 0)
-        : 0;
+      const currentMonthRent = isOccupied ? currentMap[u.lease_id] || 0 : 0;
       const total = arrears + currentMonthRent;
       const paid = isOccupied ? paymentsMap[u.lease_id] || 0 : 0;
-      const balance = arrears + currentMonthOutstanding;
+      const balance = total - paid;
 
-      // Rent is the monthly rent amount (from lease if occupied, from unit if vacant)
       const rent = isOccupied
         ? Number(u.lease_monthly_rent || 0)
         : Number(u.unit_monthly_rent || 0);
@@ -299,12 +278,12 @@ export async function GET(request) {
         landlord_id: u.landlord_id,
         landlord_name: u.landlord_name,
         status: u.status,
-        rent: rent,
+        rent,
         arrears,
         current_month_rent: currentMonthRent,
         total,
         paid,
-        balance: balance < 0 ? 0 : balance,
+        balance,
       };
     });
 
