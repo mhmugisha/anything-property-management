@@ -31,7 +31,7 @@ export async function GET(request, { params: { id } }) {
     const rows = await sql`
       SELECT id, property_name, address, property_type, total_units,
              management_fee_type, management_fee_percent, management_fee_fixed_amount,
-             notes, landlord_id, created_by, created_at
+             notes, landlord_id, assigned_officer_id, created_by, created_at
       FROM properties
       WHERE id = ${propertyId}
       LIMIT 1
@@ -67,7 +67,7 @@ export async function PUT(request, { params: { id } }) {
     const existingRows = await sql`
       SELECT id, property_name, address, property_type, total_units,
              management_fee_type, management_fee_percent, management_fee_fixed_amount,
-             notes, landlord_id
+             notes, landlord_id, assigned_officer_id
       FROM properties
       WHERE id = ${propertyId}
       LIMIT 1
