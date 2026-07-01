@@ -141,24 +141,31 @@ export async function GET(request) {
     // 2. Current-month invoices  (invoice_month = month, invoice_year = year)
     // ----------------------------------------------------------------
     let currentMap = {};
-    if (leaseIds.length > 0) {
+    if (leaseIds.length > 0 && tenantIds.length > 0) {
       const currentMonthInvoices = await sql(
         `SELECT
-           lease_id,
-           COALESCE(SUM(amount), 0) AS invoiced
-         FROM invoices
-         WHERE lease_id = ANY($1)
-           AND invoice_month = $2
-           AND invoice_year  = $3
-           AND COALESCE(approval_status, 'approved') = 'approved'
-           AND COALESCE(is_deleted, false) = false
-           AND COALESCE(status, '') <> 'void'
-         GROUP BY lease_id`,
-        [leaseIds, month, year],
+           COALESCE(i.lease_id, l.id) AS lease_id,
+           COALESCE(SUM(i.amount), 0) AS invoiced
+         FROM invoices i
+         LEFT JOIN leases l ON l.tenant_id = i.tenant_id
+           AND l.id = ANY($1)
+         WHERE (
+           i.lease_id = ANY($1)
+           OR (i.lease_id IS NULL AND i.tenant_id = ANY($2))
+         )
+           AND invoice_month = $3
+           AND invoice_year = $4
+           AND COALESCE(i.is_deleted, false) = false
+           AND COALESCE(i.approval_status, 'approved') = 'approved'
+           AND COALESCE(i.status, '') <> 'void'
+         GROUP BY COALESCE(i.lease_id, l.id)`,
+        [leaseIds, tenantIds, month, year],
       );
 
       for (const row of currentMonthInvoices) {
-        currentMap[row.lease_id] = Number(row.invoiced);
+        if (row.lease_id) {
+          currentMap[row.lease_id] = Number(row.invoiced);
+        }
       }
     }
 
