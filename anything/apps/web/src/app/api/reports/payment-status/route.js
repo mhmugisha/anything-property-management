@@ -129,9 +129,9 @@ export async function GET(request) {
       const currentMonthInvoices = await sql(
         `SELECT
            lease_id,
-           COALESCE(SUM(amount), 0)       AS invoiced,
-           COALESCE(SUM(paid_amount), 0)   AS paid_on_invoice
-         FROM invoices
+           COALESCE(SUM(i.amount), 0)       AS invoiced,
+           COALESCE(SUM(i.paid_amount), 0)   AS paid_on_invoice
+         FROM invoices i
          WHERE lease_id = ANY($1)
            AND invoice_month = $2
            AND invoice_year  = $3
@@ -274,9 +274,13 @@ export async function GET(request) {
       const currentMonthRent = isOccupied
         ? currentMap[u.lease_id]?.invoiced || 0
         : 0;
+      const currentMonthOutstanding = isOccupied
+        ? (currentMap[u.lease_id]?.invoiced || 0) -
+          (currentMap[u.lease_id]?.paidOnInvoice || 0)
+        : 0;
       const total = arrears + currentMonthRent;
       const paid = isOccupied ? paymentsMap[u.lease_id] || 0 : 0;
-      const balance = arrears + currentMonthRent - paid;
+      const balance = arrears + currentMonthOutstanding;
 
       // Rent is the monthly rent amount (from lease if occupied, from unit if vacant)
       const rent = isOccupied
