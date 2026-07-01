@@ -50,12 +50,14 @@ export function usePaymentStatusReport(filters, enabled) {
   const year = filters?.year;
   const landlordId = filters?.landlordId || "";
   const propertyId = filters?.propertyId || "";
+  const officerId = filters?.officerId || "";
 
   const qs = new URLSearchParams();
   if (month) qs.set("month", String(month));
   if (year) qs.set("year", String(year));
   if (landlordId) qs.set("landlordId", String(landlordId));
   if (propertyId) qs.set("propertyId", String(propertyId));
+  if (officerId) qs.set("officerId", String(officerId));
 
   const url = `/api/reports/payment-status?${qs.toString()}`;
 
@@ -63,7 +65,7 @@ export function usePaymentStatusReport(filters, enabled) {
     queryKey: [
       "reports",
       "paymentStatus",
-      { month, year, landlordId, propertyId },
+      { month, year, landlordId, propertyId, officerId },
     ],
     queryFn: async () => {
       const data = await fetchJson(url);

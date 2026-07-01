@@ -24,6 +24,9 @@ import { requirePermission } from "@/app/api/utils/staff";
  *   year   (required) – e.g. 2025
  *   landlordId  (optional) – filter by landlord
  *   propertyId  (optional) – filter by property
+ *   officerId   (optional) – filter by portfolio manager id, or the
+ *                            literal "unassigned" for properties with
+ *                            no assigned officer
  */
 export async function GET(request) {
   const perm = await requirePermission(request, "reports");
@@ -50,9 +53,16 @@ export async function GET(request) {
 
     const landlordIdRaw = (searchParams.get("landlordId") || "").trim();
     const propertyIdRaw = (searchParams.get("propertyId") || "").trim();
+    const officerIdRaw = (searchParams.get("officerId") || "").trim();
 
     const landlordId = landlordIdRaw ? Number(landlordIdRaw) : null;
     const propertyId = propertyIdRaw ? Number(propertyIdRaw) : null;
+    const officerId =
+      officerIdRaw === "unassigned"
+        ? "unassigned"
+        : officerIdRaw
+          ? Number(officerIdRaw)
+          : null;
 
     // ----------------------------------------------------------------
     // Build dynamic WHERE conditions for the base lease set
@@ -71,6 +81,13 @@ export async function GET(request) {
     if (propertyId) {
       conditions.push(`p.id = $${paramIdx++}`);
       values.push(propertyId);
+    }
+
+    if (officerId === "unassigned") {
+      conditions.push(`p.assigned_officer_id IS NULL`);
+    } else if (officerId) {
+      conditions.push(`p.assigned_officer_id = $${paramIdx++}`);
+      values.push(officerId);
     }
 
     const whereClause = conditions.length

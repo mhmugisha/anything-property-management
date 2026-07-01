@@ -57,6 +57,7 @@ export function PaymentStatusReport({ userLoading, user, canViewReports }) {
   const [selectedYear, setSelectedYear] = useState(getDefaultYear);
   const [selectedLandlordId, setSelectedLandlordId] = useState("");
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
+  const [selectedOfficerId, setSelectedOfficerId] = useState("");
 
   // Lookups
   const landlordsQuery = useQuery({
@@ -78,8 +79,18 @@ export function PaymentStatusReport({ userLoading, user, canViewReports }) {
     enabled: !userLoading && !!user && canViewReports,
   });
 
+  const officersQuery = useQuery({
+    queryKey: ["lookups", "officers"],
+    queryFn: async () => {
+      const data = await fetchJson("/api/lookups/officers");
+      return data.officers || [];
+    },
+    enabled: !userLoading && !!user && canViewReports,
+  });
+
   const landlords = landlordsQuery.data || [];
   const properties = propertiesQuery.data || [];
+  const officers = officersQuery.data || [];
 
   // When landlord changes, reset property
   const onLandlordChange = useCallback((e) => {
@@ -94,6 +105,7 @@ export function PaymentStatusReport({ userLoading, user, canViewReports }) {
       year: selectedYear,
       landlordId: selectedLandlordId,
       propertyId: selectedPropertyId,
+      officerId: selectedOfficerId,
     },
     !userLoading && !!user && canViewReports,
   );
@@ -119,6 +131,15 @@ export function PaymentStatusReport({ userLoading, user, canViewReports }) {
     );
     return found ? found.property_name : "—";
   }, [selectedPropertyId, properties]);
+
+  const officerLabel = useMemo(() => {
+    if (!selectedOfficerId) return "All Managers";
+    if (selectedOfficerId === "unassigned") return "Unassigned";
+    const found = officers.find(
+      (o) => String(o.id) === String(selectedOfficerId),
+    );
+    return found ? found.full_name : "—";
+  }, [selectedOfficerId, officers]);
 
   // Totals
   const totals = useMemo(() => {
@@ -279,6 +300,12 @@ export function PaymentStatusReport({ userLoading, user, canViewReports }) {
             <span className="font-medium text-slate-700">Property Name:</span>{" "}
             {propertyLabel}
           </div>
+          <div>
+            <span className="font-medium text-slate-700">
+              Portfolio Manager:
+            </span>{" "}
+            {officerLabel}
+          </div>
         </div>
       </div>
 
@@ -357,6 +384,26 @@ export function PaymentStatusReport({ userLoading, user, canViewReports }) {
               {properties.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.property_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Portfolio Manager */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Portfolio Manager
+            </label>
+            <select
+              value={selectedOfficerId}
+              onChange={(e) => setSelectedOfficerId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none text-sm"
+            >
+              <option value="">All Managers</option>
+              <option value="unassigned">Unassigned</option>
+              {officers.map((o) => (
+                <option key={o.id} value={String(o.id)}>
+                  {o.full_name}
                 </option>
               ))}
             </select>
