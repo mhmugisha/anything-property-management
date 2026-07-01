@@ -28,6 +28,7 @@ import { fetchJson } from "@/utils/api";
 
 const INITIAL_PROPERTY_FORM = {
   landlord_id: "",
+  assigned_officer_id: "",
   property_name: "",
   address: "",
   property_type: "",
@@ -117,6 +118,20 @@ export default function PropertiesPage() {
     });
   }, [landlordLookupQuery.data]);
 
+  const officersLookupQuery = useQuery({
+    queryKey: ["lookups", "officers"],
+    queryFn: async () => {
+      const data = await fetchJson("/api/lookups/officers");
+      return data.officers || [];
+    },
+    enabled: !userLoading && !!user,
+  });
+
+  const officerOptions = useMemo(() => {
+    const list = officersLookupQuery.data || [];
+    return list.map((o) => ({ value: String(o.id), label: o.full_name }));
+  }, [officersLookupQuery.data]);
+
   const onOpenCreateProperty = useCallback(() => {
     setShowCreateProperty(true);
     setEditingProperty(false);
@@ -154,6 +169,9 @@ export default function PropertiesPage() {
 
     setPropertyForm({
       landlord_id: p.landlord_id ? String(p.landlord_id) : "",
+      assigned_officer_id: p.assigned_officer_id
+        ? String(p.assigned_officer_id)
+        : "",
       property_name: p.property_name || "",
       address: p.address || "",
       property_type: p.property_type || "",
@@ -193,6 +211,11 @@ export default function PropertiesPage() {
     const payload = {
       landlord_id:
         landlordIdNum && Number.isFinite(landlordIdNum) ? landlordIdNum : null,
+      assigned_officer_id:
+        propertyForm.assigned_officer_id &&
+        propertyForm.assigned_officer_id !== ""
+          ? Number(propertyForm.assigned_officer_id)
+          : null,
       property_name: propertyForm.property_name,
       address: propertyForm.address,
       property_type: propertyForm.property_type || null,
@@ -470,6 +493,7 @@ export default function PropertiesPage() {
                 createPropertyMutation.error || updatePropertyMutation.error
               }
               landlordOptions={landlordOptions}
+              officerOptions={officerOptions}
               units={units}
               onCreateUnit={onOpenCreateUnit}
               onEditUnit={onOpenEditUnit}

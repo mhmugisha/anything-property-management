@@ -14,6 +14,7 @@ export function PropertyDetails({
   isSavingProperty,
   propertyError,
   landlordOptions,
+  officerOptions,
   units,
   onCreateUnit,
   onEditUnit,
@@ -49,6 +50,9 @@ export function PropertyDetails({
     : property
       ? {
           landlord_id: property.landlord_id ? String(property.landlord_id) : "",
+          assigned_officer_id: property.assigned_officer_id
+            ? String(property.assigned_officer_id)
+            : "",
           property_name: property.property_name || "",
           address: property.address || "",
           property_type: property.property_type || "",
@@ -63,6 +67,12 @@ export function PropertyDetails({
         }
       : propertyForm;
 
+  const assignedOfficerName = property?.assigned_officer_id
+    ? (officerOptions || []).find(
+        (o) => String(o.value) === String(property.assigned_officer_id),
+      )?.label || null
+    : null;
+
   return (
     <div className="flex-1 bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-gray-100">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
@@ -71,6 +81,22 @@ export function PropertyDetails({
           <p className="text-slate-500 text-sm">
             Manage property details and units
           </p>
+          {property && !isInEditMode && (
+            <div className="mt-2">
+              {assignedOfficerName ? (
+                <span className="text-sm text-slate-600">
+                  Managed by:{" "}
+                  <span className="font-medium text-slate-800">
+                    {assignedOfficerName}
+                  </span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                  No Manager Assigned
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 sm:ml-auto">
@@ -128,6 +154,7 @@ export function PropertyDetails({
           onChange={onPropertyFormChange}
           error={propertyError}
           landlordOptions={landlordOptions || []}
+          officerOptions={officerOptions || []}
           disabled={!isInEditMode}
         />
       )}

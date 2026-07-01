@@ -10,6 +10,7 @@ export function PropertyForm({
   onChange,
   error,
   landlordOptions,
+  officerOptions,
   disabled,
 }) {
   const [feeFixedFocused, setFeeFixedFocused] = useState(false);
@@ -21,6 +22,14 @@ export function PropertyForm({
   }));
 
   landlordSelectOptions.unshift({ value: "", label: "Select landlord…" });
+
+  const officerSelectOptions = [
+    { value: "", label: "— No manager assigned —" },
+    ...(officerOptions || []).map((o) => ({
+      value: String(o.value),
+      label: o.label,
+    })),
+  ];
 
   const propertyTypeOptions = useMemo(() => {
     const base = [
@@ -71,6 +80,15 @@ export function PropertyForm({
         options={landlordSelectOptions}
         disabled={disabled}
         required
+      />
+
+      <Field
+        label="Manager / Officer"
+        value={String(form.assigned_officer_id || "")}
+        onChange={(v) => onChange({ ...form, assigned_officer_id: v })}
+        asSelect
+        options={officerSelectOptions}
+        disabled={disabled}
       />
 
       <Field
