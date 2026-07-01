@@ -314,7 +314,7 @@ export function PaymentStatusReport({ userLoading, user, canViewReports }) {
         className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-4"
         data-no-print="true"
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {/* Month */}
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">
