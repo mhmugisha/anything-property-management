@@ -10,7 +10,7 @@ export async function GET(request) {
       SELECT su.id, su.full_name, su.email, su.phone
       FROM staff_users su
       JOIN user_roles ur ON ur.id = su.role_id
-      WHERE ur.role_name = 'Collection Officer'
+      WHERE ur.role_name = 'Portfolio Manager'
         AND COALESCE(su.is_active, true) = true
       ORDER BY su.full_name ASC
     `;
