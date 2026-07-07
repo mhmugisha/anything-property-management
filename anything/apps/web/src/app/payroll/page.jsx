@@ -459,7 +459,9 @@ function EditEmployeeForm({ employee, onClose, onSuccess }) {
   const [form, setForm] = useState({
     full_name: employee.full_name || "",
     position: employee.position || "",
-    start_date: employee.start_date || "",
+    start_date: employee?.start_date
+      ? String(employee.start_date).slice(0, 10)
+      : "",
     employee_type: employee.employee_type || "staff",
     phone: employee.phone || "",
     email: employee.email || "",
@@ -474,7 +476,7 @@ function EditEmployeeForm({ employee, onClose, onSuccess }) {
   const mutation = useUpdateEmployee();
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
-  const canSubmit = form.full_name.trim() && form.position.trim() && form.start_date;
+  const canSubmit = form.full_name.trim() && form.position.trim();
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -482,7 +484,7 @@ function EditEmployeeForm({ employee, onClose, onSuccess }) {
     const payload = {
       full_name: form.full_name.trim(),
       position: form.position.trim(),
-      start_date: form.start_date,
+      ...(form.start_date ? { start_date: form.start_date } : {}),
       employee_type: form.employee_type,
       phone: form.phone.trim() || null,
       email: form.email.trim() || null,
@@ -507,8 +509,8 @@ function EditEmployeeForm({ employee, onClose, onSuccess }) {
         <FormField label="Position" required>
           <Input value={form.position} onChange={(e) => set("position", e.target.value)} required />
         </FormField>
-        <FormField label="Start Date" required>
-          <Input type="date" value={form.start_date} onChange={(e) => set("start_date", e.target.value)} required />
+        <FormField label="Start Date">
+          <Input type="date" value={form.start_date} onChange={(e) => set("start_date", e.target.value)} />
         </FormField>
         <FormField label="Type">
           <Select value={form.employee_type} onChange={(e) => set("employee_type", e.target.value)}>
