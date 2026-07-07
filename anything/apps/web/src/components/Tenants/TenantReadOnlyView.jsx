@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download, ReceiptText, Printer, DollarSign } from "lucide-react";
 import { fetchJson } from "@/utils/api";
@@ -10,6 +10,7 @@ import { formatCurrencyUGX } from "@/utils/formatCurrency";
 
 export function TenantReadOnlyView({ selectedTenant }) {
   const printRef = useRef(null);
+  const autoRangeAppliedRef = useRef(null);
   const [from, setFrom] = useState(() => {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -34,6 +35,38 @@ export function TenantReadOnlyView({ selectedTenant }) {
   });
 
   const statement = statementQuery.data || null;
+
+  useEffect(() => {
+    autoRangeAppliedRef.current = null;
+  }, [selectedTenant?.id]);
+
+  // Terminated tenants have no current-month activity, so the default
+  // month range would show an empty statement. Widen to full history once
+  // per tenant; manual date changes afterwards are left alone.
+  useEffect(() => {
+    if (!statement || !selectedTenant?.id) return;
+    if (autoRangeAppliedRef.current === selectedTenant.id) return;
+
+    const leasesList = statement.leases || [];
+    if (leasesList.length === 0) return;
+
+    const sorted = [...leasesList].sort((a, b) =>
+      String(b.start_date || "").localeCompare(String(a.start_date || "")),
+    );
+    const latest = sorted[0];
+
+    if (latest && latest.status === "ended") {
+      const startYmd = latest.start_date
+        ? String(latest.start_date).slice(0, 10)
+        : null;
+      const todayYmd = new Date().toISOString().slice(0, 10);
+      if (startYmd) {
+        setFrom(startYmd);
+        setTo(todayYmd);
+      }
+      autoRangeAppliedRef.current = selectedTenant.id;
+    }
+  }, [statement, selectedTenant?.id]);
   const invoices = statement?.invoices || [];
   const payments = statement?.payments || [];
   const deductions = statement?.deductions || [];
