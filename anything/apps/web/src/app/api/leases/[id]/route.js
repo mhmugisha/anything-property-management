@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureInvoicesForLease } from "@/app/api/utils/invoices";
+import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
@@ -182,7 +183,6 @@ export async function PUT(request, { params: { id } }) {
       UPDATE invoices
       SET unit_id = ${unitId},
           property_id = ${unit.property_id},
-          amount = ${monthlyRent},
           currency = ${currency},
           commission_rate = 0,
           commission_amount = 0
@@ -194,8 +194,37 @@ export async function PUT(request, { params: { id } }) {
         AND description LIKE 'Rent for:%'
     `;
 
+    // Apply the new rent to current-month and future rent invoices that are
+    // not fully paid (Option 2 scope). paid_amount is left untouched, so a
+    // partially paid invoice keeps a balance of (new rent - paid).
+    // Edge case: if the new rent is below paid_amount, the invoice is skipped
+    // (paid_amount < new amount guard) to avoid a negative balance — review later.
+    if (Number(monthlyRent) !== Number(oldLease.monthly_rent)) {
+      await sql(
+        `UPDATE invoices
+         SET amount = $1
+         WHERE lease_id = $2
+           AND COALESCE(is_deleted, false) = false
+           AND status <> 'void'
+           AND status <> 'paid'
+           AND (invoice_year * 100 + invoice_month) >= $3
+           AND paid_amount < $1
+           AND description LIKE 'Rent for:%'`,
+        [monthlyRent, leaseId, currentYear * 100 + currentMonth],
+      );
+    }
+
     // Ensure invoices exist (handles newly extended date range up to current month)
     await ensureInvoicesForLease(leaseId);
+
+    // Re-sync the landlord GL accrual (rent accrual + management fee) from
+    // current invoice sums, same lifecycle as the reverse-invoice route.
+    try {
+      await ensureInvoiceAccrualLedgerEntries({ force: true, leaseId });
+    } catch (syncErr) {
+      console.error("Accrual sync after rent change failed:", syncErr);
+      // Non-fatal — lease and invoice updates already succeeded
+    }
 
     await writeAuditLog({
       staffId: perm.staff.id,
