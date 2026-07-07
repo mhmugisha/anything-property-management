@@ -55,6 +55,14 @@ export function TenantReadOnlyView({ selectedTenant }) {
     );
     const latest = sorted[0];
 
+    console.log("auto-range debug", {
+      tenantId: selectedTenant?.id,
+      leasesCount: leasesList.length,
+      latestStatus: latest?.status,
+      latestStart: latest?.start_date,
+      alreadyApplied: autoRangeAppliedRef.current,
+    });
+
     if (latest && latest.status === "ended") {
       const startYmd = latest.start_date
         ? String(latest.start_date).slice(0, 10)
