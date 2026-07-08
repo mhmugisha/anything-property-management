@@ -79,6 +79,14 @@ export function TenantReadOnlyView({ selectedTenant }) {
   const payments = statement?.payments || [];
   const deductions = statement?.deductions || [];
   const leases = statement?.leases || [];
+  const isEndedLease = useMemo(() => {
+    const list = statement?.leases || [];
+    if (list.length === 0) return false;
+    const sorted = [...list].sort((a, b) =>
+      String(b.start_date || "").localeCompare(String(a.start_date || ""))
+    );
+    return sorted[0]?.status === "ended";
+  }, [statement]);
   const openingBalance = Number(statement?.openingBalance ?? 0);
   const unitNumber = leases[0]?.unit_number || null;
   const propertyName = leases[0]?.property_name || null;
@@ -311,7 +319,7 @@ export function TenantReadOnlyView({ selectedTenant }) {
   );
 
   return (
-    <div className="mt-4" ref={printRef}>
+    <div className={`mt-4 ${isEndedLease ? "text-slate-400" : ""}`} ref={printRef}>
       <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -323,6 +331,11 @@ export function TenantReadOnlyView({ selectedTenant }) {
               <div className="text-sm font-semibold text-slate-800">
                 Tenant statement
               </div>
+              {isEndedLease && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">
+                  ENDED — read only
+                </span>
+              )}
             </div>
             <div className="text-xs text-slate-500" data-no-print="true">
               Debits = rent invoices + tenant deductions. Credits = payments.
