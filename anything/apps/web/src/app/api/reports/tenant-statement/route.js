@@ -74,7 +74,7 @@ export async function GET(request) {
         Number(obDeductions[0]?.total || 0);
     }
 
-    const [leases, invoices, deductions] = await Promise.all([
+    const [leases, invoices, deductions, voidedInvoices] = await Promise.all([
       sql`
       SELECT l.*, u.unit_number, p.property_name
       FROM leases l
@@ -115,6 +115,24 @@ export async function GET(request) {
         AND COALESCE(is_deleted, false) = false
         AND COALESCE(approval_status, 'approved') = 'approved'
       ORDER BY deduction_date DESC, id DESC
+    `,
+
+      sql`
+      SELECT
+        i.id, i.amount, i.paid_amount, i.status, i.is_deleted,
+        i.invoice_year, i.invoice_month, i.description,
+        p.property_name, u.unit_number
+      FROM invoices i
+      LEFT JOIN properties p ON p.id = i.property_id
+      LEFT JOIN units u ON u.id = i.unit_id
+      WHERE i.tenant_id = ${tenantId}
+        AND (
+          COALESCE(i.status, '') = 'void'
+          OR COALESCE(i.is_deleted, false) = true
+        )
+        AND COALESCE(i.approval_status, 'approved') = 'approved'
+      ORDER BY i.invoice_year DESC, i.invoice_month DESC, i.id DESC
+      LIMIT 60
     `,
     ]);
 
@@ -196,7 +214,7 @@ export async function GET(request) {
       ORDER BY payment_date DESC, id DESC, invoice_id ASC NULLS LAST
     `;
 
-    return Response.json({ tenant, leases, invoices, payments, deductions, openingBalance, from, to });
+    return Response.json({ tenant, leases, invoices, payments, deductions, voidedInvoices, openingBalance, from, to });
   } catch (error) {
     console.error("GET /api/reports/tenant-statement error", error);
     return Response.json(

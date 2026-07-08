@@ -78,6 +78,7 @@ export function TenantReadOnlyView({ selectedTenant }) {
   const invoices = statement?.invoices || [];
   const payments = statement?.payments || [];
   const deductions = statement?.deductions || [];
+  const voidedInvoices = statement?.voidedInvoices || [];
   const leases = statement?.leases || [];
   const isEndedLease = useMemo(() => {
     const list = statement?.leases || [];
@@ -515,6 +516,40 @@ export function TenantReadOnlyView({ selectedTenant }) {
                 align="right"
               />
             </div>
+
+            {voidedInvoices.length > 0 && (
+              <div className="mt-6 border-t border-dashed border-amber-300 pt-4">
+                <div className="text-sm font-semibold text-amber-700 mb-2">
+                  Voided at Termination (for reference — not included in balance)
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500">
+                      <th className="py-1">Period</th>
+                      <th className="py-1">Description</th>
+                      <th className="py-1 text-right">Original Amount</th>
+                      <th className="py-1 text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {voidedInvoices.map((v) => (
+                      <tr key={v.id} className="text-slate-400 line-through">
+                        <td className="py-1">
+                          {v.invoice_month}/{v.invoice_year}
+                        </td>
+                        <td className="py-1">{v.description}</td>
+                        <td className="py-1 text-right">
+                          {formatCurrencyUGX(Number(v.amount) || 0)}
+                        </td>
+                        <td className="py-1 text-right no-underline">
+                          VOIDED
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>
