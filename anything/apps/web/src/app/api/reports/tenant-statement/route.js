@@ -126,10 +126,7 @@ export async function GET(request) {
       LEFT JOIN properties p ON p.id = i.property_id
       LEFT JOIN units u ON u.id = i.unit_id
       WHERE i.tenant_id = ${tenantId}
-        AND (
-          COALESCE(i.status, '') = 'void'
-          OR COALESCE(i.is_deleted, false) = true
-        )
+        AND COALESCE(i.voided_at_termination, false) = true
         AND COALESCE(i.approval_status, 'approved') = 'approved'
       ORDER BY i.invoice_year DESC, i.invoice_month DESC, i.id DESC
       LIMIT 60
