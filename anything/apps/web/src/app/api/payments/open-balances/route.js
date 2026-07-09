@@ -26,7 +26,7 @@ export async function GET(request) {
     // Build WHERE clauses
     const whereClauses = [
       "(i.amount - i.paid_amount) > 0",
-      "i.status NOT IN ('void', 'paid')",
+      "COALESCE(i.status, '') <> 'void'",
       "COALESCE(i.is_deleted, false) = false",
       "COALESCE(i.approval_status, 'approved') = 'approved'",
     ];
