@@ -252,26 +252,26 @@ export async function GET(request) {
 
     // ----------------------------------------------------------------
     // 4. Payments received during the selected month
-    //    All payments per lease_id, regardless of allocation to invoices.
+    //    All payments per tenant_id, regardless of allocation to invoices.
     // ----------------------------------------------------------------
     let paymentsMap = {};
-    if (leaseIds.length > 0) {
+    if (tenantIds.length > 0) {
       const paymentsRows = await sql(
         `SELECT
-           lease_id,
+           tenant_id,
            COALESCE(SUM(amount), 0) AS total_paid
          FROM payments
-         WHERE lease_id = ANY($1)
+         WHERE tenant_id = ANY($1)
            AND is_reversed = false
            AND COALESCE(approval_status, 'approved') = 'approved'
            AND payment_date >= $2::date
            AND payment_date <  $3::date
-         GROUP BY lease_id`,
-        [leaseIds, firstDay, lastDayExclusive],
+         GROUP BY tenant_id`,
+        [tenantIds, firstDay, lastDayExclusive],
       );
 
       for (const row of paymentsRows) {
-        paymentsMap[row.lease_id] = Number(row.total_paid);
+        paymentsMap[row.tenant_id] = Number(row.total_paid);
       }
     }
 
@@ -283,7 +283,7 @@ export async function GET(request) {
       const arrears = isOccupied ? arrearsMap[u.lease_id] || 0 : 0;
       const currentMonthRent = isOccupied ? currentMap[u.lease_id] || 0 : 0;
       const total = arrears + currentMonthRent;
-      const paid = isOccupied ? paymentsMap[u.lease_id] || 0 : 0;
+      const paid = isOccupied ? paymentsMap[u.tenant_id] || 0 : 0;
       const balance = total - paid;
 
       const rent = isOccupied
