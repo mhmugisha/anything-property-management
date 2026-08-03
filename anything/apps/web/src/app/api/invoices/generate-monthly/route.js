@@ -99,17 +99,18 @@ export async function POST(request) {
     const monthlyDue = await isMonthlyInvoiceGenerationDue(new Date());
 
     // We always force here because this is an explicit action.
-    const insertedCount =
-      await ensureInvoicesForAllActiveLeasesUpToCurrentMonth({
-        force: true,
-        runDate,
-        recordMonthlyRun,
-      });
+    const result = await ensureInvoicesForAllActiveLeasesUpToCurrentMonth({
+      force: true,
+      runDate,
+      recordMonthlyRun,
+    });
 
     return Response.json({
       ok: true,
       monthlyDue,
-      insertedCount,
+      insertedCount: result.created,
+      created: result.created,
+      skipped: result.skipped,
       recordedFor: recordMonthlyRun
         ? { month: targetMonth, year: targetYear }
         : null,
@@ -151,17 +152,18 @@ export async function GET(request) {
 
     const monthlyDue = await isMonthlyInvoiceGenerationDue(new Date());
 
-    const insertedCount =
-      await ensureInvoicesForAllActiveLeasesUpToCurrentMonth({
-        force: force === true,
-        runDate: parsed.runDate,
-        recordMonthlyRun: parsed.recordMonthlyRun,
-      });
+    const result = await ensureInvoicesForAllActiveLeasesUpToCurrentMonth({
+      force: force === true,
+      runDate: parsed.runDate,
+      recordMonthlyRun: parsed.recordMonthlyRun,
+    });
 
     return Response.json({
       ok: true,
       monthlyDue,
-      insertedCount,
+      insertedCount: result.created,
+      created: result.created,
+      skipped: result.skipped,
       recordedFor: parsed.recordMonthlyRun
         ? { month: parsed.month, year: parsed.year }
         : null,

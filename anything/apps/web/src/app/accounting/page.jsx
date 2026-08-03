@@ -30,6 +30,101 @@ import { JournalTab } from "@/components/Accounting/JournalTab";
 import { StatementsTab } from "@/components/Accounting/StatementsTab";
 import QuickLinkTile from "@/components/QuickLinkTile";
 
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function MonthlyInvoicingCard() {
+  // The server derives month/year in Africa/Kampala; mirror that here for the
+  // label so what the button says matches what will happen.
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Kampala",
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(new Date());
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
+
+  const [running, setRunning] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const [error, setError] = useState(null);
+
+  const onClick = useCallback(async () => {
+    setRunning(true);
+    setSummary(null);
+    setError(null);
+    try {
+      const res = await fetch(
+        "/api/accounting/generate-current-month-invoices",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.ok) {
+        setError(body?.error || `Request failed (${res.status})`);
+      } else {
+        setSummary({
+          created: Number(body.created || 0),
+          skipped: Number(body.skipped || 0),
+        });
+      }
+    } catch (e) {
+      setError(e?.message || "Request failed");
+    } finally {
+      setRunning(false);
+    }
+  }, []);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 md:p-5">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">
+            Monthly Invoicing
+          </h2>
+          <p className="text-sm text-slate-500">
+            Generate rent invoices for all active leases for {monthLabel}. Safe
+            to run more than once — existing invoices are skipped.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={running}
+          className="px-4 py-2 rounded-lg bg-[#0E1D33] hover:bg-[#1a2d4d] disabled:bg-slate-400 text-white text-sm font-semibold whitespace-nowrap"
+        >
+          {running
+            ? `Generating ${monthLabel}…`
+            : `Generate ${monthLabel} Invoices`}
+        </button>
+      </div>
+      {summary ? (
+        <div className="mt-3 text-sm text-slate-700">
+          {summary.created} invoices created, {summary.skipped} skipped (already
+          existed for this month).
+        </div>
+      ) : null}
+      {error ? (
+        <div className="mt-3 text-sm text-rose-600">{error}</div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function AccountingPage() {
   const { data: user, loading: userLoading } = useUser();
   const staffQuery = useStaffProfile(!userLoading && !!user);
@@ -226,6 +321,8 @@ export default function AccountingPage() {
 
             <TabNavigation activeTab={state.tab} onTabChange={state.setTab} />
           </div>
+
+          {isAdmin ? <MonthlyInvoicingCard /> : null}
 
           <DateRangeFilter
             from={state.from}

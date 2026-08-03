@@ -34,6 +34,30 @@ export async function ensureInvoicesForAllActiveLeasesUpToCurrentMonth(
   const recordMonthlyRun = options?.recordMonthlyRun === true;
   const now = Date.now();
 
+  const singleMonth = options?.singleMonth === true;
+  const singleMonthMonth = singleMonth ? Number(options?.month) : null;
+  const singleMonthYear = singleMonth ? Number(options?.year) : null;
+  if (singleMonth) {
+    if (
+      !Number.isFinite(singleMonthMonth) ||
+      singleMonthMonth < 1 ||
+      singleMonthMonth > 12
+    ) {
+      throw new Error(
+        "ensureInvoicesForAllActiveLeasesUpToCurrentMonth: singleMonth requires month 1-12",
+      );
+    }
+    if (
+      !Number.isFinite(singleMonthYear) ||
+      singleMonthYear < 2000 ||
+      singleMonthYear > 2100
+    ) {
+      throw new Error(
+        "ensureInvoicesForAllActiveLeasesUpToCurrentMonth: singleMonth requires year 2000-2100",
+      );
+    }
+  }
+
   // If a run is already in progress, wait for it.
   // IMPORTANT: do NOT early-return for forced/monthly runs, because the in-flight run
   // may have started before the caller's lease changes were committed.
@@ -62,6 +86,7 @@ export async function ensureInvoicesForAllActiveLeasesUpToCurrentMonth(
   if (
     !force &&
     !monthlyDue &&
+    !singleMonth &&
     now - getLastEnsureInvoicesAtMs() < getEnsureInvoicesIntervalMs()
   ) {
     // Even if we skip invoice generation, keep the ledger synced (best effort).
@@ -77,7 +102,7 @@ export async function ensureInvoicesForAllActiveLeasesUpToCurrentMonth(
       console.error("ensureInvoiceAccrualLedgerEntries (throttled) failed", e);
     }
 
-    return 0;
+    return { created: 0, skipped: 0 };
   }
 
   setLastEnsureInvoicesAtMs(now);
@@ -93,6 +118,9 @@ export async function ensureInvoicesForAllActiveLeasesUpToCurrentMonth(
 
     await enforceLeaseAndLandlordEndings();
 
+    // Params: $1 = singleMonth flag, $2 = target month, $3 = target year.
+    // When singleMonth is false, month/year are ignored by the CASE branches
+    // but PostgreSQL still needs valid ints, so we pass 1/2000 as safe defaults.
     const query = `
       WITH lease_months AS (
         SELECT
@@ -115,11 +143,28 @@ export async function ensureInvoicesForAllActiveLeasesUpToCurrentMonth(
         JOIN properties p ON p.id = u.property_id
         JOIN landlords ld ON ld.id = p.landlord_id
         JOIN LATERAL generate_series(
-          GREATEST(
-            date_trunc('month', l.start_date)::date,
-            date_trunc('month', COALESCE(ld.start_date, l.start_date))::date
-          ),
-          date_trunc('month', LEAST(l.end_date, COALESCE(ld.end_date, l.end_date), CURRENT_DATE))::date,
+          CASE
+            WHEN $1::boolean = true THEN
+              GREATEST(
+                date_trunc('month', l.start_date)::date,
+                date_trunc('month', COALESCE(ld.start_date, l.start_date))::date,
+                date_trunc('month', make_date($3::int, $2::int, 1))::date
+              )
+            ELSE
+              GREATEST(
+                date_trunc('month', l.start_date)::date,
+                date_trunc('month', COALESCE(ld.start_date, l.start_date))::date
+              )
+          END,
+          CASE
+            WHEN $1::boolean = true THEN
+              LEAST(
+                date_trunc('month', LEAST(l.end_date, COALESCE(ld.end_date, l.end_date)))::date,
+                date_trunc('month', make_date($3::int, $2::int, 1))::date
+              )
+            ELSE
+              date_trunc('month', LEAST(l.end_date, COALESCE(ld.end_date, l.end_date), CURRENT_DATE))::date
+          END,
           interval '1 month'
         ) AS gs(month_start) ON true
         WHERE l.status = 'active'
@@ -154,6 +199,9 @@ export async function ensureInvoicesForAllActiveLeasesUpToCurrentMonth(
             AND i.is_deleted = true
         )
       ),
+      candidate_count AS (
+        SELECT COUNT(*)::int AS c FROM to_insert
+      ),
       inserted AS (
         INSERT INTO invoices (
           lease_id, tenant_id, property_id, unit_id,
@@ -187,11 +235,20 @@ export async function ensureInvoicesForAllActiveLeasesUpToCurrentMonth(
         DO NOTHING
         RETURNING 1
       )
-      SELECT (SELECT COUNT(*)::int FROM inserted) AS inserted_count
+      SELECT
+        (SELECT COUNT(*)::int FROM inserted) AS inserted_count,
+        (SELECT c FROM candidate_count) AS candidate_count
     `;
 
-    const rows = await sql(query, []);
+    const params = [
+      singleMonth,
+      singleMonth ? singleMonthMonth : 1,
+      singleMonth ? singleMonthYear : 2000,
+    ];
+    const rows = await sql(query, params);
     const insertedCount = Number(rows?.[0]?.inserted_count || 0);
+    const candidateCount = Number(rows?.[0]?.candidate_count || 0);
+    const skippedCount = Math.max(0, candidateCount - insertedCount);
 
     // NEW: wipe legacy fixed-fee allocations (best effort)
     try {
@@ -218,14 +275,14 @@ export async function ensureInvoicesForAllActiveLeasesUpToCurrentMonth(
       await recordMonthlyRunSuccess(runMonth, runYear, insertedCount);
     }
 
-    return insertedCount;
+    return { created: insertedCount, skipped: skippedCount };
   })();
 
   setEnsureInvoicesPromise(promise);
 
   try {
-    const insertedCount = await promise;
-    return insertedCount;
+    const result = await promise;
+    return result;
   } catch (error) {
     if (monthlyDue) {
       await recordMonthlyRunFailure(runMonth, runYear, error);
