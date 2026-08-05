@@ -203,6 +203,11 @@ export async function resolveAccountIntent(intentRaw) {
       keywords: ["tenant deposit", "deposits payable", "security deposit"],
       codeFallback: "2200",
     },
+    holding: {
+      type: "Liability",
+      keywords: ["holding"],
+      codeFallback: "2500",
+    },
   };
 
   const h = heuristics[intent] || null;

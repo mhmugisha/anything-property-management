@@ -2,9 +2,9 @@ import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
-import { autoApplyAdvancePaymentsForTenant } from "@/app/api/utils/payments/autoApply";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 import { createArrearsRecoveryFee } from "@/app/api/utils/payments/arrearsFeesHandler";
+import { recordAdvancePayment } from "@/app/api/utils/payments/recordAdvancePayment";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -374,175 +374,39 @@ export async function POST(request) {
       );
     }
 
-    // Find the active lease for this tenant in this property
-    const leaseRows = await sql`
-      SELECT
-        l.id AS lease_id,
-        l.currency,
-        t.full_name AS tenant_name,
-        p.property_name,
-        p.landlord_id
-      FROM leases l
-      JOIN tenants t ON t.id = l.tenant_id
-      JOIN units u ON u.id = l.unit_id
-      JOIN properties p ON p.id = u.property_id
-      WHERE l.tenant_id = ${tenantId}
-        AND p.id = ${propertyId}
-        AND l.status IN ('active', 'ended')
-      ORDER BY l.start_date DESC, l.id DESC
-      LIMIT 1
-    `;
-
-    const lease = leaseRows?.[0] || null;
-
-    if (!lease) {
-      return Response.json(
-        {
-          error:
-            "No active lease found for this tenant in the selected property",
-        },
-        { status: 400 },
-      );
-    }
-
-    const advDesc = description || "Payment on Account";
-
-    // STEP 1: Insert payment row.
-    const approvalB = getApprovalFields(perm.staff);
-    let payment;
-    try {
-      const paymentRows = await sql`
-        INSERT INTO payments (
-          lease_id, tenant_id, property_id,
-          payment_date, amount, currency, payment_method,
-          reference_number,
-          recorded_by, notes,
-          period_month, period_year,
-          description,
-          approval_status, approved_by, approved_at
-        )
-        VALUES (
-          ${lease.lease_id}, ${tenantId}, ${propertyId},
-          ${paymentDate}::date, ${amount}, ${lease.currency || "UGX"}, ${paymentMethod},
-          ${referenceNumber},
-          ${perm.staff.id}, ${notes},
-          NULL, NULL,
-          ${advDesc},
-          ${approvalB.approval_status}, ${approvalB.approved_by}, ${approvalB.approved_at}
-        )
-        RETURNING *
-      `;
-      payment = paymentRows?.[0] || null;
-    } catch (insertErr) {
-      return Response.json(
-        { error: `Payment creation failed: ${insertErr.message}` },
-        { status: 500 },
-      );
-    }
-
-    if (!payment) {
-      return Response.json(
-        { error: "Payment creation returned no row" },
-        { status: 500 },
-      );
-    }
-
-    // STEP 2: Post accounting. If it fails, delete the payment row to avoid an orphan.
-    // Dr Undeposited Funds (Asset - cash received)
-    // Cr Tenant Prepayments (Liability - obligation to provide future rent)
-    const prepaymentDesc = `Payment on Account - ${lease.tenant_name || "Tenant"} - ${lease.property_name}`;
-
-    const post = await postAccountingEntryFromIntents({
-      transactionDate: paymentDate,
-      description: prepaymentDesc,
-      referenceNumber: referenceNumber,
+    const result = await recordAdvancePayment({
+      staff: perm.staff,
+      ipAddress: perm.ipAddress,
+      tenantId,
+      propertyId,
+      paymentDate,
+      amount,
+      paymentMethod,
+      referenceNumber,
+      notes,
+      description: description || "Payment on Account",
       debitIntent: "undeposited_funds",
       creditIntent: "tenant_prepayments",
-      amount: amount,
-      currency: lease.currency || "UGX",
-      createdBy: perm.staff.id,
-      landlordId: lease.landlord_id || null,
-      propertyId: propertyId,
       sourceType: "payment_advance",
-      sourceId: payment.id,
-      approvalStatus: getApprovalStatus(perm.staff),
-      auditContext: {
-        sourceModule: "property",
-        businessEvent: "TENANT_ADVANCE_PAYMENT_RECEIVED",
-        sourceEntity: { type: "payment", id: payment.id },
+      businessEvent: "TENANT_ADVANCE_PAYMENT_RECEIVED",
+      labels: {
+        flow: "Payment on Account",
+        pending: "Advance Payment",
       },
     });
 
-    if (!post.ok) {
-      try {
-        await sql`DELETE FROM payments WHERE id = ${payment.id}`;
-      } catch (rollbackErr) {
-        console.error(
-          "CRITICAL: GL post failed AND payment delete failed. Manual cleanup required.",
-          {
-            paymentId: payment.id,
-            glError: post.error,
-            rollbackError: rollbackErr.message,
-          },
-        );
-      }
-      return Response.json(
-        {
-          error: `Accounting posting failed; payment was rolled back: ${post.error || "unknown error"}`,
-        },
-        { status: 500 },
-      );
-    }
-
-    await writeAuditLog({
-      staffId: perm.staff.id,
-      action: "payment.create",
-      entityType: "payment",
-      entityId: payment?.id || null,
-      oldValues: null,
-      newValues: payment,
-      ipAddress: perm.ipAddress,
-    });
-
-    // 🔔 Notify admins about advance payment
-    notifyAllAdminsAsync({
-      title: "Payment on Account Received",
-      message: `New payment on account of ${lease.currency || "UGX"} ${Number(amount).toLocaleString()} received from ${lease.tenant_name || "Tenant"} at ${lease.property_name}. Recorded by ${perm.staff.full_name || "Staff"}`,
-      type: "payment",
-      reference_id: payment.id,
-      reference_type: "payment",
-    });
-
-    if (approvalB.approval_status === "pending") {
-      notifyAllAdminsAsync({
-        title: "New Advance Payment Pending Approval",
-        message: `New advance payment of ${lease.currency || "UGX"} ${Number(amount).toLocaleString()} from ${lease.tenant_name || "Tenant"} at ${lease.property_name} is pending approval. Recorded by ${perm.staff.full_name || "Staff"}`,
-        type: "payment",
-        reference_id: payment.id,
-        reference_type: "payment",
-      });
-    }
-
-    // ENHANCEMENT: Immediately auto-apply advance payment to outstanding invoices
-    let autoApplyResult = null;
-    try {
-      autoApplyResult = await autoApplyAdvancePaymentsForTenant(tenantId);
-      if (!autoApplyResult.ok) {
-        console.error("Auto-apply failed:", autoApplyResult.error);
-      }
-    } catch (e) {
-      console.error("Error during auto-apply:", e);
-      // Don't fail the payment creation if auto-apply fails
+    if (!result.ok) {
+      return Response.json({ error: result.error }, { status: result.status });
     }
 
     return Response.json({
-      payment,
+      payment: result.payment,
       invoice: null,
       advance: true,
-      autoApplied: autoApplyResult?.ok
+      autoApplied: result.autoApplyResult?.ok
         ? {
-            count: autoApplyResult.appliedCount || 0,
-            amount: autoApplyResult.appliedAmount || 0,
+            count: result.autoApplyResult.appliedCount || 0,
+            amount: result.autoApplyResult.appliedAmount || 0,
           }
         : null,
     });
