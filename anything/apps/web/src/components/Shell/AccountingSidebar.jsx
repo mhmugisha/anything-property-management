@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ArrowRightLeft,
   RefreshCw,
+  HandCoins,
 } from "lucide-react";
 
 export default function AccountingSidebar({ isAdmin = false }) {
@@ -72,6 +73,11 @@ export default function AccountingSidebar({ isAdmin = false }) {
       title: "Deposit Funds",
       href: "/accounting/deposit-funds",
       icon: PiggyBank,
+    },
+    {
+      title: "Allocate Payment",
+      href: "/accounting/allocate-payment",
+      icon: HandCoins,
     },
   ];
 
