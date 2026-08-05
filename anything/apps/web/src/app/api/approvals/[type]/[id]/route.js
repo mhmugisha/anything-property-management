@@ -75,9 +75,15 @@ export async function POST(request, { params }) {
       let cleanupSummary = {};
 
       if (type === 'payments') {
-        const [deletedTxns, updatedInvoices, deletedAllocations] = await sql.transaction([
+        const [
+          deletedTxns,
+          updatedInvoices,
+          deletedAllocations,
+          _updatedPayment,
+          resetHoldingPointers,
+        ] = await sql.transaction([
           sql`UPDATE transactions SET is_deleted = true
-              WHERE source_type = ANY(ARRAY['payment','payment_advance']::text[])
+              WHERE source_type = ANY(ARRAY['payment','payment_advance','payment_allocation']::text[])
                 AND source_id = ${entryId}
               RETURNING id`,
           sql`UPDATE invoices i
@@ -96,13 +102,25 @@ export async function POST(request, { params }) {
               RETURNING i.id`,
           sql`DELETE FROM payment_invoice_allocations WHERE payment_id = ${entryId} RETURNING id`,
           sql`UPDATE payments SET is_reversed = true WHERE id = ${entryId}`,
+          // Return any originating Holding entries to the worklist. The subquery
+          // reads (source_type,source_id), not is_deleted, so it still identifies
+          // the clearing txn even though it was just marked is_deleted above.
+          sql`UPDATE transactions
+              SET allocated_by_transaction_id = NULL
+              WHERE allocated_by_transaction_id IN (
+                SELECT id FROM transactions
+                WHERE source_type = 'payment_allocation'
+                  AND source_id = ${entryId}
+              )
+              RETURNING id`,
         ]);
         cleanupSummary = {
           ledger_txns_deleted: deletedTxns?.length ?? 0,
           invoices_restored: updatedInvoices?.length ?? 0,
           allocations_deleted: deletedAllocations?.length ?? 0,
+          holding_pointers_reset: resetHoldingPointers?.length ?? 0,
         };
-        console.log(`Rejected payments ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}, invoices updated=${cleanupSummary.invoices_restored}`);
+        console.log(`Rejected payments ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}, invoices updated=${cleanupSummary.invoices_restored}, holding pointers reset=${cleanupSummary.holding_pointers_reset}`);
       }
 
       else if (type === 'transactions') {

@@ -502,6 +502,31 @@ export async function DELETE(request, { params: { id } }) {
           `);
         }
 
+        // 7. Soft-delete 'payment_allocation' ledger entries (Allocate-from-Holding flow).
+        queries.push(txn`
+          UPDATE transactions
+          SET is_deleted = true,
+              deleted_at = now(),
+              deleted_by = ${staffId}
+          WHERE source_type = 'payment_allocation'
+            AND source_id = ${paymentId}
+            AND COALESCE(is_deleted, false) = false
+        `);
+
+        // 8. Return the originating Holding entry to the worklist by nulling its
+        //    pointer. Uses (source_type,source_id) to identify the clearing txn,
+        //    so it works regardless of the is_deleted flip in step 7.
+        //    No-op for non-allocation payments (subquery returns 0 rows).
+        queries.push(txn`
+          UPDATE transactions
+          SET allocated_by_transaction_id = NULL
+          WHERE allocated_by_transaction_id IN (
+            SELECT id FROM transactions
+            WHERE source_type = 'payment_allocation'
+              AND source_id = ${paymentId}
+          )
+        `);
+
         return queries;
       });
     } catch (txnErr) {
