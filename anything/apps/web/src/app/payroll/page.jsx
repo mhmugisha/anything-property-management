@@ -15,6 +15,7 @@ import {
   useAddEmployeeSalary,
   useAdvances,
   useCreateAdvance,
+  useVoidAdvance,
   useLoans,
   useCreateLoan,
   useLoanSchedule,
@@ -117,6 +118,7 @@ function Badge({ type }) {
     outstanding: "bg-amber-100 text-amber-800",
     partial: "bg-orange-100 text-orange-800",
     recovered: "bg-green-100 text-green-700",
+    voided: "bg-slate-200 text-slate-600",
     active: "bg-green-100 text-green-700",
     completed: "bg-slate-100 text-slate-500",
     inactive: "bg-red-100 text-red-700",
@@ -1400,7 +1402,7 @@ function NewAdvanceForm({ employees, assetAccounts, onClose, onSuccess }) {
   );
 }
 
-function AdvancesTab() {
+function AdvancesTab({ isAdmin = false }) {
   const [showForm, setShowForm] = useState(false);
   const [filterEmployeeId, setFilterEmployeeId] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
@@ -1418,6 +1420,17 @@ function AdvancesTab() {
 
   const assetAccountsQuery = usePayrollAssetAccounts();
   const assetAccounts = assetAccountsQuery.data || [];
+
+  const voidMutation = useVoidAdvance();
+  const handleVoid = (adv) => {
+    if (typeof window !== "undefined") {
+      const ok = window.confirm(
+        `Void this advance for ${adv.employee_name} (${fmt(adv.amount)})?\n\nThis will reverse the GL entry (soft-delete) and mark the advance as voided. It cannot be undone.`,
+      );
+      if (!ok) return;
+    }
+    voidMutation.mutate({ id: adv.id });
+  };
 
   return (
     <div className="space-y-4">
@@ -1478,19 +1491,43 @@ function AdvancesTab() {
                 <th className="text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Outstanding</th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
+                <th className="text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {advances.map((adv) => (
-                <tr key={adv.id} className="hover:bg-gray-50">
-                  <td className="px-5 py-3 font-medium text-slate-800">{adv.employee_name}</td>
-                  <td className="px-5 py-3 text-right text-slate-700">{fmt(adv.amount)}</td>
-                  <td className="px-5 py-3 text-slate-600">{fmtDate(adv.advance_date)}</td>
-                  <td className="px-5 py-3 text-right font-semibold text-slate-800">{fmt(adv.outstanding)}</td>
-                  <td className="px-5 py-3"><Badge type={adv.status} /></td>
-                  <td className="px-5 py-3 text-slate-500">{adv.description || "—"}</td>
-                </tr>
-              ))}
+              {advances.map((adv) => {
+                const canVoid =
+                  isAdmin && !adv.is_voided && Number(adv.recovered_amount || 0) === 0;
+                return (
+                  <tr
+                    key={adv.id}
+                    className={`hover:bg-gray-50 ${adv.is_voided ? "opacity-60" : ""}`}
+                  >
+                    <td className="px-5 py-3 font-medium text-slate-800">{adv.employee_name}</td>
+                    <td className="px-5 py-3 text-right text-slate-700">{fmt(adv.amount)}</td>
+                    <td className="px-5 py-3 text-slate-600">{fmtDate(adv.advance_date)}</td>
+                    <td className="px-5 py-3 text-right font-semibold text-slate-800">{fmt(adv.outstanding)}</td>
+                    <td className="px-5 py-3">
+                      {adv.is_voided ? <Badge type="voided" /> : <Badge type={adv.status} />}
+                    </td>
+                    <td className="px-5 py-3 text-slate-500">{adv.description || "—"}</td>
+                    <td className="px-5 py-3 text-right">
+                      {canVoid ? (
+                        <button
+                          onClick={() => handleVoid(adv)}
+                          disabled={voidMutation.isPending}
+                          className="text-xs font-medium px-2.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                          title="Void this advance and reverse its GL entry"
+                        >
+                          Void
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -2543,7 +2580,7 @@ export default function PayrollPage() {
       <main className="pt-32 md:pl-56">
         <div className="max-w-[90%] mx-auto p-4 md:p-6">
           {activeTab === "employees" && <EmployeesTab isAdmin={isAdmin} />}
-          {activeTab === "advances" && <AdvancesTab />}
+          {activeTab === "advances" && <AdvancesTab isAdmin={isAdmin} />}
           {activeTab === "loans" && <LoansTab />}
           {activeTab === "runs" && <RunsTab isAdmin={isAdmin} />}
           {activeTab === "payslips" && <PayslipsTab />}

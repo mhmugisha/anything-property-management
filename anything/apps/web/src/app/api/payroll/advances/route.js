@@ -45,6 +45,8 @@ export async function GET(request) {
          a.description,
          a.recovered_amount,
          a.status,
+         a.is_voided,
+         a.voided_at,
          a.created_at,
          (a.amount - a.recovered_amount) AS outstanding
        FROM employee_advances a
@@ -55,7 +57,7 @@ export async function GET(request) {
     );
 
     const totalOutstanding = (rows || [])
-      .filter((r) => r.status !== "recovered")
+      .filter((r) => r.status !== "recovered" && r.is_voided !== true)
       .reduce((s, r) => s + Number(r.outstanding || 0), 0);
 
     return Response.json({
@@ -69,6 +71,8 @@ export async function GET(request) {
         recovered_amount: Number(r.recovered_amount),
         outstanding: Number(r.outstanding),
         status: r.status,
+        is_voided: r.is_voided === true,
+        voided_at: r.voided_at || null,
         created_at: r.created_at,
       })),
       total_outstanding: totalOutstanding,

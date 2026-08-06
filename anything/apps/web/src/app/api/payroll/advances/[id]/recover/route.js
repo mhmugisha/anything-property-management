@@ -42,6 +42,7 @@ export async function PUT(request, { params }) {
 
     const advanceRows = await sql(
       `SELECT a.id, a.employee_id, a.amount, a.recovered_amount, a.status,
+              a.is_voided,
               e.full_name AS employee_name
        FROM employee_advances a
        JOIN employees e ON e.id = a.employee_id
@@ -52,6 +53,9 @@ export async function PUT(request, { params }) {
     const advance = advanceRows?.[0] || null;
     if (!advance) {
       return Response.json({ error: "Advance not found" }, { status: 404 });
+    }
+    if (advance.is_voided === true) {
+      return Response.json({ error: "Advance is voided" }, { status: 400 });
     }
     if (advance.status === "recovered") {
       return Response.json({ error: "Advance already fully recovered" }, { status: 400 });

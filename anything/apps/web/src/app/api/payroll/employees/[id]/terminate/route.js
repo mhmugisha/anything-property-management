@@ -110,7 +110,10 @@ export async function POST(request, { params }) {
     // Outstanding advances and loans
     const advRows = await sql(
       `SELECT COALESCE(SUM(amount - COALESCE(recovered_amount, 0)), 0)::numeric AS total
-       FROM employee_advances WHERE employee_id = $1 AND status != 'recovered'`,
+       FROM employee_advances
+       WHERE employee_id = $1
+         AND status != 'recovered'
+         AND COALESCE(is_voided, false) = false`,
       [employeeId],
     );
     const outstandingAdvances = Number(advRows?.[0]?.total || 0);

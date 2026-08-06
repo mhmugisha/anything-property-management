@@ -100,7 +100,9 @@ export async function PUT(request, { params }) {
       const advances = await sql(
         `SELECT id, amount, recovered_amount
          FROM employee_advances
-         WHERE employee_id = $1 AND status != 'recovered'
+         WHERE employee_id = $1
+           AND status != 'recovered'
+           AND COALESCE(is_voided, false) = false
          ORDER BY advance_date ASC`,
         [employeeId],
       );

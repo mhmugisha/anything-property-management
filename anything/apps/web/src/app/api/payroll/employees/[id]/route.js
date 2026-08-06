@@ -43,7 +43,9 @@ export async function GET(request, { params }) {
            recovered_amount, status, created_at,
            (amount - recovered_amount) AS outstanding
          FROM employee_advances
-         WHERE employee_id = $1 AND status <> 'recovered'
+         WHERE employee_id = $1
+           AND status <> 'recovered'
+           AND COALESCE(is_voided, false) = false
          ORDER BY advance_date DESC`,
         [employeeId],
       ),

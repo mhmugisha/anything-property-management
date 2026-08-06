@@ -118,6 +118,19 @@ export function useRecoverAdvance() {
   });
 }
 
+export function useVoidAdvance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, reason } = {}) =>
+      postJson(`/api/payroll/advances/${id}/void`, { reason: reason || null }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payroll", "advances"] });
+      qc.invalidateQueries({ queryKey: ["payroll", "employees"] });
+      qc.invalidateQueries({ queryKey: ["accounting"] });
+    },
+  });
+}
+
 // ─── Loans ────────────────────────────────────────────────────────────────────
 
 export function useLoans(filters, enabled = true) {

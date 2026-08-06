@@ -108,7 +108,10 @@ export async function POST(request) {
 
       const advRows = await sql(
         `SELECT COALESCE(SUM(amount - recovered_amount), 0)::numeric AS total
-         FROM employee_advances WHERE employee_id = $1 AND status != 'recovered'`,
+         FROM employee_advances
+         WHERE employee_id = $1
+           AND status != 'recovered'
+           AND COALESCE(is_voided, false) = false`,
         [empId],
       );
       const advanceDeduction = Math.min(Number(advRows?.[0]?.total || 0), grossPay);
