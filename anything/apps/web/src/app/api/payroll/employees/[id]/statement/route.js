@@ -54,6 +54,7 @@ export async function GET(request, { params }) {
        FROM employee_advances
        WHERE employee_id = $1
          AND advance_date::date BETWEEN $2::date AND $3::date
+         AND COALESCE(is_voided, false) = false
        ORDER BY advance_date ASC`,
       [employeeId, fromDate, toDate],
     );
