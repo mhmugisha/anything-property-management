@@ -14,14 +14,6 @@ function parseDate(v) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
 
-function daysInMonth(year, month) {
-  return new Date(year, month, 0).getDate();
-}
-
-function computeNssf(gross) {
-  return Math.round(gross * 0.05);
-}
-
 export async function POST(request, { params }) {
   const perm = await requirePermission(request, "payroll");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
@@ -94,17 +86,35 @@ export async function POST(request, { params }) {
     const year = termDate.getUTCFullYear();
     const month = termDate.getUTCMonth() + 1;
     const dayOfMonth = termDate.getUTCDate();
-    const totalDays = daysInMonth(year, month);
+
+    // Paid-month check: has this employee already been paid via a payroll_run
+    // for the termination month? If so, no second payment on termination.
+    const paidRows = await sql(
+      `SELECT 1
+       FROM payroll_entries pe
+       JOIN payroll_runs r ON r.id = pe.run_id
+       WHERE pe.employee_id = $1
+         AND pe.paid_at IS NOT NULL
+         AND r.month = $2
+         AND r.year = $3
+       LIMIT 1`,
+      [employeeId, month, year],
+    );
+    const monthAlreadyPaid = paidRows.length > 0;
 
     let grossSalary;
-    if (salaryType === "prorated") {
-      grossSalary = Math.round((monthlySalary / totalDays) * dayOfMonth);
+    let path;
+    if (monthAlreadyPaid) {
+      grossSalary = 0;
+      path = "already_paid";
     } else {
-      grossSalary = monthlySalary;
+      const factor = Math.min(dayOfMonth / 30, 1);
+      grossSalary = Math.round(monthlySalary * factor);
+      path = factor >= 1 ? "full" : "prorated";
     }
 
     const paye = 0;
-    const nssf = computeNssf(grossSalary);
+    const nssf = 0;
     const netBeforeAdvances = grossSalary - paye - nssf;
 
     // Outstanding advances and loans
@@ -272,7 +282,7 @@ export async function POST(request, { params }) {
       ipAddress: perm.ipAddress,
     });
 
-    return Response.json({ success: true });
+    return Response.json({ success: true, path });
   } catch (error) {
     console.error("POST /api/payroll/employees/[id]/terminate error:", error.message, "\n", error.stack);
     return Response.json({ error: error.message || "Failed to terminate employee" }, { status: 500 });
