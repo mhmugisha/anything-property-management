@@ -269,7 +269,7 @@ export async function POST(request, { params }) {
          termination_loan_action = $6,
          updated_at = NOW()
        WHERE id = $1`,
-      [employeeId, terminationDate, terminationReason, salaryType, advanceAction, loanAction],
+      [employeeId, terminationDate, terminationReason, path, advanceAction, loanAction],
     );
 
     await writeAuditLog({
