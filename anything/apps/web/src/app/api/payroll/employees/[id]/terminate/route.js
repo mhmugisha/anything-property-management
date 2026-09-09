@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
+import { computeTerminationSettlement } from "@/app/api/utils/payroll/computeTerminationSettlement";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -32,11 +33,6 @@ export async function POST(request, { params }) {
     const terminationDate = parseDate(body?.termination_date);
     if (!terminationDate) {
       return Response.json({ error: "termination_date is required" }, { status: 400 });
-    }
-
-    const salaryType = body?.salary_type;
-    if (!["full", "prorated"].includes(salaryType)) {
-      return Response.json({ error: "salary_type must be 'full' or 'prorated'" }, { status: 400 });
     }
 
     const advanceAction = body?.advance_action;
@@ -73,44 +69,19 @@ export async function POST(request, { params }) {
 
     const empName = employee.full_name;
 
-    // Compute final salary
-    const salaryRows = await sql(
-      `SELECT amount FROM employee_salaries
-       WHERE employee_id = $1 AND effective_date <= $2::date
-       ORDER BY effective_date DESC LIMIT 1`,
-      [employeeId, terminationDate],
-    );
-    const monthlySalary = salaryRows?.length ? Number(salaryRows[0].amount) : 0;
+    // Compute final settlement gross (shared logic — matches preview exactly)
+    const settlement = await computeTerminationSettlement({ employeeId, terminationDate });
+    const grossSalary = settlement.total_gross;
 
-    const termDate = new Date(terminationDate);
-    const year = termDate.getUTCFullYear();
-    const month = termDate.getUTCMonth() + 1;
-    const dayOfMonth = termDate.getUTCDate();
-
-    // Paid-month check: has this employee already been paid via a payroll_run
-    // for the termination month? If so, no second payment on termination.
-    const paidRows = await sql(
-      `SELECT 1
-       FROM payroll_entries pe
-       JOIN payroll_runs r ON r.id = pe.run_id
-       WHERE pe.employee_id = $1
-         AND pe.paid_at IS NOT NULL
-         AND r.month = $2
-         AND r.year = $3
-       LIMIT 1`,
-      [employeeId, month, year],
-    );
-    const monthAlreadyPaid = paidRows.length > 0;
-
-    let grossSalary;
     let path;
-    if (monthAlreadyPaid) {
-      grossSalary = 0;
+    if (settlement.line_items.length === 0) {
       path = "already_paid";
+    } else if (settlement.line_items.length > 1) {
+      path = "multi_month";
+    } else if (settlement.line_items[0].type === "prorated") {
+      path = "prorated";
     } else {
-      const factor = Math.min(dayOfMonth / 30, 1);
-      grossSalary = Math.round(monthlySalary * factor);
-      path = factor >= 1 ? "full" : "prorated";
+      path = "full";
     }
 
     const paye = 0;
@@ -160,8 +131,6 @@ export async function POST(request, { params }) {
 
     // 1. Accrue final salary: Dr 5160 / Cr 2310, 2320, 2300
     if (grossSalary > 0) {
-      // For simplicity with multiple credits we split into separate transactions:
-      // Cr 2310 (PAYE) — only if paye > 0
       if (paye > 0 && acct2310Id) {
         await sql(
           `INSERT INTO transactions
@@ -171,7 +140,6 @@ export async function POST(request, { params }) {
           [paymentDate, `Final salary PAYE - ${empName}`, acct5160Id, acct2310Id, paye, perm.staff.id, employeeId],
         );
       }
-      // Cr 2320 (NSSF)
       if (nssf > 0 && acct2320Id) {
         await sql(
           `INSERT INTO transactions
@@ -181,7 +149,6 @@ export async function POST(request, { params }) {
           [paymentDate, `Final salary NSSF - ${empName}`, acct5160Id, acct2320Id, nssf, perm.staff.id, employeeId],
         );
       }
-      // Cr 2300 (net before advances/loans)
       if (netBeforeAdvances > 0 && acct2300Id) {
         await sql(
           `INSERT INTO transactions
