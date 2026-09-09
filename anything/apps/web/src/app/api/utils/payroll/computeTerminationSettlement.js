@@ -16,12 +16,19 @@ function lastDayOfMonth(year, month) {
 }
 
 // Returns salary in effect as of dateStr (YYYY-MM-DD) from a pre-fetched
-// salary history array sorted by effective_date ASC.
+// salary history array (any order). Considers only rows where:
+//   effective_date <= dateStr AND (end_date IS NULL OR end_date >= dateStr)
+// Among qualifying rows picks the one with the latest effective_date.
 function salaryAsOf(history, dateStr) {
   let amount = 0;
+  let bestEffective = "";
   for (const row of history) {
-    if (row.effective_date <= dateStr) amount = Number(row.amount);
-    else break;
+    if (row.effective_date > dateStr) continue;
+    if (row.end_date !== null && row.end_date < dateStr) continue;
+    if (row.effective_date >= bestEffective) {
+      bestEffective = row.effective_date;
+      amount = Number(row.amount);
+    }
   }
   return amount;
 }
@@ -90,9 +97,12 @@ export async function computeTerminationSettlement({ employeeId, terminationDate
     startMonth = d.getUTCMonth() + 1;
   }
 
-  // Fetch full salary history once; salaryAsOf() does JS-side lookup
+  // Fetch full salary history once; salaryAsOf() does JS-side lookup.
+  // end_date is included so closed/corrupt rows are excluded from lookups.
   const salaryHistory = await sql(
-    `SELECT effective_date::date::text AS effective_date, amount
+    `SELECT effective_date::date::text AS effective_date,
+            end_date::date::text       AS end_date,
+            amount
      FROM employee_salaries
      WHERE employee_id = $1
      ORDER BY effective_date ASC`,

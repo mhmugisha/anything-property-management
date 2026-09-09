@@ -49,6 +49,7 @@ export async function POST(request, { params }) {
         `UPDATE employee_salaries
          SET end_date = $1::date - INTERVAL '1 day'
          WHERE employee_id = $2
+           AND effective_date < $1::date
            AND (end_date IS NULL OR end_date >= $1::date)`,
         [effectiveDate, employeeId],
       ),
