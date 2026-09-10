@@ -11,6 +11,10 @@ function fmt(n) {
   });
 }
 
+function fmtNum(n) {
+  return Number(n || 0).toLocaleString("en-UG", { maximumFractionDigits: 0 });
+}
+
 function fmtDate(d) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-GB", {
@@ -114,12 +118,12 @@ export default function EmployeeStatement({ employeeId }) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-slate-700 text-white text-xs border-b-2 border-slate-700">
+                  <tr className="bg-slate-100 text-slate-700 text-xs border-b-2 border-slate-300">
                     <th className="text-left py-2 px-2 font-semibold rounded-tl-md">Date</th>
                     <th className="text-left py-2 px-2 font-semibold">Description</th>
-                    <th className="text-right py-2 px-2 font-semibold">Debit</th>
-                    <th className="text-right py-2 px-2 font-semibold">Credit</th>
-                    <th className="text-right py-2 px-2 font-semibold rounded-tr-md">Balance</th>
+                    <th className="text-right py-2 px-2 font-semibold">Debit (UGX)</th>
+                    <th className="text-right py-2 px-2 font-semibold">Credit (UGX)</th>
+                    <th className="text-right py-2 px-2 font-semibold rounded-tr-md">Balance (UGX)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -127,9 +131,9 @@ export default function EmployeeStatement({ employeeId }) {
                     <tr key={i} className="border-b border-gray-200">
                       <td className="py-1.5 text-slate-500 whitespace-nowrap">{fmtDate(r.date)}</td>
                       <td className="py-1.5 text-slate-700">{r.description}</td>
-                      <td className="py-1.5 text-right text-amber-700">{r.debit > 0 ? fmt(r.debit) : "—"}</td>
-                      <td className="py-1.5 text-right text-green-700">{r.credit > 0 ? fmt(r.credit) : "—"}</td>
-                      <td className={`py-1.5 text-right font-medium ${r.balance < 0 ? "text-red-600" : "text-slate-800"}`}>{fmt(r.balance)}</td>
+                      <td className="py-1.5 text-right text-amber-700">{r.debit > 0 ? fmtNum(r.debit) : "—"}</td>
+                      <td className="py-1.5 text-right text-green-700">{r.credit > 0 ? fmtNum(r.credit) : "—"}</td>
+                      <td className={`py-1.5 text-right font-medium ${r.balance < 0 ? "text-red-600" : "text-slate-800"}`}>{fmtNum(r.balance)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -140,16 +144,16 @@ export default function EmployeeStatement({ employeeId }) {
           {/* Summary — below the table, neutral colors */}
           <div className="grid grid-cols-3 gap-3 pt-2 border-t-2 border-slate-700">
             <div className="rounded-lg p-3 border border-gray-200 bg-white">
-              <p className="text-xs text-slate-500 font-medium">Total Credited</p>
-              <p className="text-base font-bold text-slate-800 mt-0.5">{fmt(data.total_credited)}</p>
+              <p className="text-xs text-slate-500 font-medium">Total Credited (UGX)</p>
+              <p className="text-base font-bold text-slate-800 mt-0.5">{fmtNum(data.total_credited)}</p>
             </div>
             <div className="rounded-lg p-3 border border-gray-200 bg-white">
-              <p className="text-xs text-slate-500 font-medium">Total Debited</p>
-              <p className="text-base font-bold text-slate-800 mt-0.5">{fmt(data.total_debited)}</p>
+              <p className="text-xs text-slate-500 font-medium">Total Debited (UGX)</p>
+              <p className="text-base font-bold text-slate-800 mt-0.5">{fmtNum(data.total_debited)}</p>
             </div>
             <div className="rounded-lg p-3 border border-gray-200 bg-white">
-              <p className="text-xs text-slate-500 font-medium">Closing Balance</p>
-              <p className={`text-base font-bold mt-0.5 ${data.closing_balance < 0 ? "text-red-600" : "text-slate-800"}`}>{fmt(data.closing_balance)}</p>
+              <p className="text-xs text-slate-500 font-medium">Closing Balance (UGX)</p>
+              <p className={`text-base font-bold mt-0.5 ${data.closing_balance < 0 ? "text-red-600" : "text-slate-800"}`}>{fmtNum(data.closing_balance)}</p>
             </div>
           </div>
         </>
