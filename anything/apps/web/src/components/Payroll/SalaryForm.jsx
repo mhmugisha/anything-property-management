@@ -40,8 +40,7 @@ export default function SalaryForm({ employeeId, onClose, onSuccess }) {
   const [notes, setNotes] = useState("");
   const mutation = useAddEmployeeSalary();
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSave = () => {
     mutation.mutate(
       { id: employeeId, payload: { amount: Number(amount), effective_date: effectiveDate, notes: notes.trim() || null } },
       { onSuccess },
@@ -49,14 +48,14 @@ export default function SalaryForm({ employeeId, onClose, onSuccess }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+    <div className="space-y-3 mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
       <p className="text-xs font-medium text-slate-700">Change Salary</p>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="New Amount (UGX)" required>
-          <Input type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+          <Input type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </FormField>
         <FormField label="Effective Date" required>
-          <Input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} required />
+          <Input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
         </FormField>
       </div>
       <FormField label="Notes">
@@ -68,13 +67,14 @@ export default function SalaryForm({ employeeId, onClose, onSuccess }) {
           Cancel
         </button>
         <button
-          type="submit"
+          type="button"
+          onClick={handleSave}
           disabled={!amount || mutation.isPending}
           className="px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white text-xs font-medium hover:bg-[#08172c] disabled:opacity-50"
         >
           {mutation.isPending ? "Saving…" : "Save Salary"}
         </button>
       </div>
-    </form>
+    </div>
   );
 }
