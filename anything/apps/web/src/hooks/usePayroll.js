@@ -263,6 +263,16 @@ export function usePayslip(runId, employeeId, enabled = true) {
   });
 }
 
+export function useDeleteEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id }) => deleteJson(`/api/payroll/employees/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payroll", "employees"] });
+    },
+  });
+}
+
 export function useTerminationSummary(employeeId, terminationDate, salaryType, enabled = true) {
   return useQuery({
     queryKey: ["payroll", "employees", employeeId, "termination-summary", terminationDate, salaryType],

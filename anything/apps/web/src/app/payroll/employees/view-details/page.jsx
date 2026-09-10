@@ -6,7 +6,7 @@ import { useStaffProfile } from "@/hooks/useStaffProfile";
 import AppHeader from "@/components/Shell/AppHeader";
 import Sidebar from "@/components/Shell/Sidebar";
 import MobileMenu from "@/components/Shell/MobileMenu";
-import { useEmployees } from "@/hooks/usePayroll";
+import { useEmployees, useDeleteEmployee } from "@/hooks/usePayroll";
 import EmployeeStatement from "@/components/Payroll/EmployeeStatement";
 import EditEmployeeForm from "@/components/Payroll/EditEmployeeForm";
 import TerminationModal from "@/components/Payroll/TerminationModal";
@@ -157,8 +157,11 @@ export default function EmployeeViewDetailsPage() {
   );
   const employee = (employeesQuery.data || []).find((e) => e.id === employeeId) || null;
 
+  const deleteMutation = useDeleteEmployee();
+
   const [mode, setMode] = useState("statement");
   const [showTerminateModal, setShowTerminateModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const moreMenuRef = useRef(null);
@@ -341,7 +344,10 @@ export default function EmployeeViewDetailsPage() {
                           )}
                           <button
                             type="button"
-                            onClick={() => setShowMoreMenu(false)}
+                            onClick={() => {
+                              setShowMoreMenu(false);
+                              setShowDeleteConfirm(true);
+                            }}
                             className="w-full text-left px-4 py-2 text-sm text-rose-700 hover:bg-rose-50"
                           >
                             Delete
@@ -380,6 +386,56 @@ export default function EmployeeViewDetailsPage() {
           )}
         </div>
       </main>
+
+      {/* Delete confirm dialog */}
+      {showDeleteConfirm && employee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-base font-semibold text-slate-900 mb-2">Delete Employee</h3>
+            <p className="text-sm text-slate-600 mb-1">
+              Are you sure you want to delete <strong>{employee.full_name}</strong>?
+            </p>
+            <p className="text-xs text-slate-500 mb-4">
+              This cannot be undone. Employees with payroll history cannot be deleted.
+            </p>
+            {deleteMutation.error && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">
+                {deleteMutation.error.message}
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  deleteMutation.reset();
+                }}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  deleteMutation.mutate(
+                    { id: employeeId },
+                    {
+                      onSuccess: () => {
+                        window.location.href = "/payroll";
+                      },
+                    },
+                  );
+                }}
+                className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-700 disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Terminate modal */}
       {showTerminateModal && employee && (

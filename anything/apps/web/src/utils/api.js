@@ -83,7 +83,7 @@ export async function deleteJson(url) {
       const payloadError =
         typeof payload?.error === "string" ? payload.error : null;
       if (payloadError) {
-        message = `${message}: ${payloadError}`;
+        message = payloadError;
       }
     } catch {
       // ignore

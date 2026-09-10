@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -231,5 +231,66 @@ export async function PUT(request, { params }) {
   } catch (error) {
     console.error("PUT /api/payroll/employees/[id] error", error);
     return Response.json({ error: "Failed to update employee" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request, { params }) {
+  const perm = await requirePermission(request, "payroll");
+  if (!perm.ok) return Response.json(perm.body, { status: perm.status });
+  if (perm.staff.role_name !== "Admin") {
+    return Response.json({ error: "Admin only" }, { status: 403 });
+  }
+
+  try {
+    const employeeId = toNumber(params?.id);
+    if (!employeeId) {
+      return Response.json({ error: "Invalid employee id" }, { status: 400 });
+    }
+
+    const empRows = await sql(
+      `SELECT id, full_name FROM employees WHERE id = $1 LIMIT 1`,
+      [employeeId],
+    );
+    if (!empRows?.length) {
+      return Response.json({ error: "Employee not found" }, { status: 404 });
+    }
+    const employee = empRows[0];
+
+    // Block if any financial history exists
+    const historyRows = await sql(
+      `SELECT
+         (SELECT COUNT(*)::int FROM payroll_entries  WHERE employee_id = $1) AS payroll_count,
+         (SELECT COUNT(*)::int FROM employee_advances WHERE employee_id = $1) AS advance_count,
+         (SELECT COUNT(*)::int FROM employee_loans    WHERE employee_id = $1) AS loan_count`,
+      [employeeId],
+    );
+    const h = historyRows?.[0];
+    if (h && (h.payroll_count > 0 || h.advance_count > 0 || h.loan_count > 0)) {
+      return Response.json(
+        { error: "This employee has payroll history and cannot be deleted. Use Terminate instead." },
+        { status: 409 },
+      );
+    }
+
+    // Safe to delete — remove salary setup data then the employee row
+    await sql.transaction((txn) => [
+      txn(`DELETE FROM employee_salaries WHERE employee_id = $1`, [employeeId]),
+      txn(`DELETE FROM employees WHERE id = $1`, [employeeId]),
+    ]);
+
+    await writeAuditLog({
+      staffId: perm.staff.id,
+      action: "delete",
+      entityType: "employee",
+      entityId: employeeId,
+      oldValues: { id: employeeId, full_name: employee.full_name },
+      newValues: null,
+      ipAddress: perm.ipAddress,
+    });
+
+    return Response.json({ success: true, employee_id: employeeId });
+  } catch (error) {
+    console.error("DELETE /api/payroll/employees/[id] error", error);
+    return Response.json({ error: "Failed to delete employee" }, { status: 500 });
   }
 }
