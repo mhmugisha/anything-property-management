@@ -56,11 +56,39 @@ export default function EmployeeStatement({ employeeId }) {
     <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4 no-print-wrapper">
       <style>{`@media print { .no-print { display: none !important; } }`}</style>
 
-      {/* Top bar: title left, export/print right */}
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Staff Statement</p>
+      {/* Title */}
+      <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Staff Statement</p>
+
+      {/* Controls row: date range left, export/print right */}
+      <div className="flex items-end justify-between gap-3 flex-wrap no-print">
+        <div className="flex items-end gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">From</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">To</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <button
+            onClick={handleFetch}
+            className="px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white text-xs font-medium hover:bg-[#08172c]"
+          >
+            Apply
+          </button>
+        </div>
         {data?.rows?.length > 0 && (
-          <div className="flex items-center gap-2 no-print">
+          <div className="flex items-center gap-2">
             <button
               onClick={exportCsv}
               className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50"
@@ -75,34 +103,6 @@ export default function EmployeeStatement({ employeeId }) {
             </button>
           </div>
         )}
-      </div>
-
-      {/* Date range controls */}
-      <div className="flex items-end gap-3 no-print">
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">From</label>
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">To</label>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <button
-          onClick={handleFetch}
-          className="px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white text-xs font-medium hover:bg-[#08172c]"
-        >
-          Apply
-        </button>
       </div>
 
       {stmtQuery.isLoading ? (
