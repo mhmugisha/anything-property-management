@@ -8,8 +8,101 @@ import { useEmployees } from "@/hooks/usePayroll";
 import EmployeeStatement from "@/components/Payroll/EmployeeStatement";
 import EditEmployeeForm from "@/components/Payroll/EditEmployeeForm";
 import TerminationModal from "@/components/Payroll/TerminationModal";
-import { ArrowLeft, User, Eye, Edit2, MoreVertical } from "lucide-react";
+import { formatDate } from "@/utils/formatDate";
+import { ArrowLeft, User, Eye, Edit2, MoreVertical, X } from "lucide-react";
 
+function fmt(n) {
+  return Number(n || 0).toLocaleString("en-UG", {
+    style: "currency",
+    currency: "UGX",
+    maximumFractionDigits: 0,
+  });
+}
+
+function DetailRow({ label, value }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</span>
+      <span className="text-sm text-slate-800 py-1.5 px-3 rounded-lg bg-gray-50 border border-gray-200 min-h-[36px] flex items-center">
+        {value || <span className="text-slate-400">—</span>}
+      </span>
+    </div>
+  );
+}
+
+function ViewDetailsPanel({ employee, onClose }) {
+  const paymentDetails = (() => {
+    if (employee.payment_method === "bank") {
+      const parts = [employee.payment_bank_name, employee.payment_account_number].filter(Boolean);
+      return parts.length ? parts.join(" · ") : "Bank";
+    }
+    if (employee.payment_method === "momo") {
+      const parts = [employee.payment_account_name, employee.payment_phone].filter(Boolean);
+      return parts.length ? parts.join(" · ") : "Mobile Money";
+    }
+    return "Cash";
+  })();
+
+  const paymentMethodLabel =
+    employee.payment_method === "bank" ? "Bank Transfer" :
+    employee.payment_method === "momo" ? "Mobile Money" :
+    "Cash";
+
+  return (
+    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-slate-800">Employee Details</h3>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 rounded-lg hover:bg-gray-100 text-slate-400"
+          aria-label="Close details"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <DetailRow label="Full Name" value={employee.full_name} />
+        <DetailRow label="Position" value={employee.position} />
+        <DetailRow label="Start Date" value={formatDate(employee.start_date)} />
+        <DetailRow
+          label="Employee Type"
+          value={employee.employee_type === "casual" ? "Casual" : "Staff"}
+        />
+        <DetailRow label="Phone" value={employee.phone} />
+        <DetailRow label="Email" value={employee.email} />
+        <DetailRow label="Payment Method" value={paymentMethodLabel} />
+        {employee.payment_method !== "cash" && (
+          <DetailRow label="Payment Details" value={paymentDetails} />
+        )}
+        <DetailRow
+          label="Status"
+          value={
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${
+              employee.status === "terminated" ? "bg-rose-100 text-rose-700" :
+              employee.status === "inactive" ? "bg-slate-100 text-slate-600" :
+              "bg-emerald-100 text-emerald-700"
+            }`}>
+              {employee.status || "active"}
+            </span>
+          }
+        />
+        <DetailRow
+          label="Current Salary"
+          value={employee.current_salary ? fmt(employee.current_salary) + " / month" : null}
+        />
+        {employee.notes && (
+          <div className="md:col-span-2">
+            <DetailRow label="Notes" value={employee.notes} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// mode: "statement" | "edit" | "details"
 export default function EmployeeViewDetailsPage() {
   const [employeeId, setEmployeeId] = useState(null);
 
@@ -32,8 +125,7 @@ export default function EmployeeViewDetailsPage() {
   );
   const employee = (employeesQuery.data || []).find((e) => e.id === employeeId) || null;
 
-  // Action button state
-  const [showEditForm, setShowEditForm] = useState(false);
+  const [mode, setMode] = useState("statement"); // "statement" | "edit" | "details"
   const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const moreMenuRef = useRef(null);
@@ -91,6 +183,8 @@ export default function EmployeeViewDetailsPage() {
 
   const btnClass =
     "inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-slate-700";
+  const btnActiveClass =
+    "inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[#0B1F3A] bg-[#0B1F3A] text-white";
 
   return (
     <div className="min-h-screen bg-slate-200 font-inter">
@@ -123,7 +217,7 @@ export default function EmployeeViewDetailsPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Header card */}
+              {/* Header card — always visible */}
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                 <div className="flex items-start justify-between gap-4">
                   {/* Left — avatar + name */}
@@ -153,11 +247,14 @@ export default function EmployeeViewDetailsPage() {
 
                   {/* Right — action buttons */}
                   <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
-                    {/* View Details — placeholder for Stage 2c */}
+                    {/* View Details */}
                     <button
                       type="button"
-                      onClick={() => {}}
-                      className={btnClass}
+                      onClick={() => {
+                        setMode((m) => m === "details" ? "statement" : "details");
+                        setShowMoreMenu(false);
+                      }}
+                      className={mode === "details" ? btnActiveClass : btnClass}
                     >
                       <Eye className="w-4 h-4" />
                       View Details
@@ -167,10 +264,10 @@ export default function EmployeeViewDetailsPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setShowEditForm((v) => !v);
+                        setMode((m) => m === "edit" ? "statement" : "edit");
                         setShowMoreMenu(false);
                       }}
-                      className={btnClass}
+                      className={mode === "edit" ? btnActiveClass : btnClass}
                     >
                       <Edit2 className="w-4 h-4" />
                       Edit
@@ -202,9 +299,7 @@ export default function EmployeeViewDetailsPage() {
                           )}
                           <button
                             type="button"
-                            onClick={() => {
-                              setShowMoreMenu(false);
-                            }}
+                            onClick={() => setShowMoreMenu(false)}
                             className="w-full text-left px-4 py-2 text-sm text-rose-700 hover:bg-rose-50"
                           >
                             Delete
@@ -214,27 +309,37 @@ export default function EmployeeViewDetailsPage() {
                     </div>
                   </div>
                 </div>
+              </div>
 
-                {/* Edit form — inline below header */}
-                {showEditForm && (
+              {/* Content panel — exactly one visible */}
+              {mode === "edit" && (
+                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                   <EditEmployeeForm
                     employee={employee}
-                    onClose={() => setShowEditForm(false)}
-                    onSuccess={() => setShowEditForm(false)}
+                    onClose={() => setMode("statement")}
+                    onSuccess={() => setMode("statement")}
                   />
-                )}
-              </div>
+                </div>
+              )}
 
-              {/* Statement */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <EmployeeStatement employeeId={employeeId} />
-              </div>
+              {mode === "details" && (
+                <ViewDetailsPanel
+                  employee={employee}
+                  onClose={() => setMode("statement")}
+                />
+              )}
+
+              {mode === "statement" && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                  <EmployeeStatement employeeId={employeeId} />
+                </div>
+              )}
             </div>
           )}
         </div>
       </main>
 
-      {/* Terminate modal — portal-style, rendered outside scroll container */}
+      {/* Terminate modal */}
       {showTerminateModal && employee && (
         <TerminationModal
           employee={employee}
