@@ -65,7 +65,7 @@ export default function EmployeeStatement({ employeeId }) {
             </button>
             <button
               onClick={() => window.print()}
-              className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50"
+              className="px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white text-xs font-medium hover:bg-[#08172c]"
             >
               Print PDF
             </button>
@@ -114,12 +114,12 @@ export default function EmployeeStatement({ employeeId }) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-xs text-slate-500 border-b border-gray-200">
-                    <th className="text-left py-1.5 font-medium">Date</th>
-                    <th className="text-left py-1.5 font-medium">Description</th>
-                    <th className="text-right py-1.5 font-medium text-amber-700">Debit</th>
-                    <th className="text-right py-1.5 font-medium text-green-700">Credit</th>
-                    <th className="text-right py-1.5 font-medium">Balance</th>
+                  <tr className="bg-slate-700 text-white text-xs border-b-2 border-slate-700">
+                    <th className="text-left py-2 px-2 font-semibold rounded-tl-md">Date</th>
+                    <th className="text-left py-2 px-2 font-semibold">Description</th>
+                    <th className="text-right py-2 px-2 font-semibold">Debit</th>
+                    <th className="text-right py-2 px-2 font-semibold">Credit</th>
+                    <th className="text-right py-2 px-2 font-semibold rounded-tr-md">Balance</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -138,7 +138,7 @@ export default function EmployeeStatement({ employeeId }) {
           )}
 
           {/* Summary — below the table, neutral colors */}
-          <div className="grid grid-cols-3 gap-3 pt-2 border-t border-gray-200">
+          <div className="grid grid-cols-3 gap-3 pt-2 border-t-2 border-slate-700">
             <div className="rounded-lg p-3 border border-gray-200 bg-white">
               <p className="text-xs text-slate-500 font-medium">Total Credited</p>
               <p className="text-base font-bold text-slate-800 mt-0.5">{fmt(data.total_credited)}</p>
