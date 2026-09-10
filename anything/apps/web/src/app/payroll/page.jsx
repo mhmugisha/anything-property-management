@@ -491,23 +491,13 @@ function EmployeeRow({ employee, expanded, onToggle, isAdmin }) {
       >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => {
-                e.stopPropagation();
-                window.open(`/payroll/employees/view-details?id=${employee.id}`, "_blank");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.stopPropagation();
-                  window.open(`/payroll/employees/view-details?id=${employee.id}`, "_blank");
-                }
-              }}
-              className="font-medium text-slate-800 hover:underline cursor-pointer"
+            <a
+              href={`/payroll/employees/view-details?id=${employee.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="font-medium text-slate-800 hover:underline"
             >
               {employee.full_name}
-            </span>
+            </a>
             <Badge type={employee.employee_type} />
             {employee.status === "inactive" && <Badge type="inactive" />}
             {employee.status === "terminated" && <Badge type="terminated" />}
@@ -1938,7 +1928,13 @@ export default function PayrollPage() {
   const { data: user, loading: userLoading } = useUser();
   const staffQuery = useStaffProfile(!userLoading && !!user);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("employees");
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (["employees", "advances", "loans", "runs", "payslips"].includes(t)) return t;
+    }
+    return "employees";
+  });
 
   const canView = staffQuery.data?.permissions?.payroll === true;
   const isAdmin = staffQuery.data?.role_name === "Admin";

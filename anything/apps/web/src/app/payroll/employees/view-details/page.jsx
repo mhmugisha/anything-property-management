@@ -4,12 +4,46 @@ import { useState, useEffect, useRef } from "react";
 import useUser from "@/utils/useUser";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
 import AppHeader from "@/components/Shell/AppHeader";
+import Sidebar from "@/components/Shell/Sidebar";
+import MobileMenu from "@/components/Shell/MobileMenu";
 import { useEmployees } from "@/hooks/usePayroll";
 import EmployeeStatement from "@/components/Payroll/EmployeeStatement";
 import EditEmployeeForm from "@/components/Payroll/EditEmployeeForm";
 import TerminationModal from "@/components/Payroll/TerminationModal";
 import { formatDate } from "@/utils/formatDate";
-import { ArrowLeft, User, Eye, Edit2, MoreVertical, X } from "lucide-react";
+import {
+  ArrowLeft, User, Eye, Edit2, MoreVertical, X,
+  Users, TrendingUp, BookOpen, ClipboardList, FileText,
+} from "lucide-react";
+
+const PAYROLL_TABS = [
+  { key: "employees", label: "Employees", icon: Users, href: "/payroll" },
+  { key: "advances",  label: "Advances",  icon: TrendingUp, href: "/payroll?tab=advances" },
+  { key: "loans",     label: "Loans",     icon: BookOpen,   href: "/payroll?tab=loans" },
+  { key: "runs",      label: "Payroll Runs", icon: ClipboardList, href: "/payroll?tab=runs" },
+  { key: "payslips",  label: "Payslips",  icon: FileText,   href: "/payroll?tab=payslips" },
+];
+
+function PayrollDetailSidebar() {
+  return (
+    <div className="space-y-1">
+      {PAYROLL_TABS.map(({ key, label, icon: Icon, href }) => (
+        <a
+          key={key}
+          href={href}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors ${
+            key === "employees"
+              ? "bg-white/15 text-white font-medium"
+              : "text-slate-300 hover:bg-white/10 hover:text-white"
+          }`}
+        >
+          <Icon className="w-5 h-5 shrink-0" />
+          <span className="text-base">{label}</span>
+        </a>
+      ))}
+    </div>
+  );
+}
 
 function fmt(n) {
   return Number(n || 0).toLocaleString("en-UG", {
@@ -125,9 +159,10 @@ export default function EmployeeViewDetailsPage() {
   );
   const employee = (employeesQuery.data || []).find((e) => e.id === employeeId) || null;
 
-  const [mode, setMode] = useState("statement"); // "statement" | "edit" | "details"
+  const [mode, setMode] = useState("statement");
   const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const moreMenuRef = useRef(null);
 
   useEffect(() => {
@@ -188,9 +223,21 @@ export default function EmployeeViewDetailsPage() {
 
   return (
     <div className="min-h-screen bg-slate-200 font-inter">
-      <AppHeader title="Employee Details" active="payroll" />
+      <AppHeader
+        title="Payroll"
+        onMenuToggle={() => setMobileMenuOpen(true)}
+        active="payroll"
+      />
+      <MobileMenu
+        isOpen={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        active="payroll"
+      />
+      <Sidebar active="payroll">
+        <PayrollDetailSidebar />
+      </Sidebar>
 
-      <main className="pt-32">
+      <main className="pt-32 md:pl-56">
         <div className="max-w-[90%] mx-auto p-4 md:p-6">
           {/* Back link */}
           <div className="mb-4">
@@ -199,7 +246,7 @@ export default function EmployeeViewDetailsPage() {
               className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
             >
               <ArrowLeft className="w-4 h-4" />
-              Back to Payroll
+              Back to Employees
             </a>
           </div>
 
@@ -247,7 +294,6 @@ export default function EmployeeViewDetailsPage() {
 
                   {/* Right — action buttons */}
                   <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
-                    {/* View Details */}
                     <button
                       type="button"
                       onClick={() => {
@@ -260,7 +306,6 @@ export default function EmployeeViewDetailsPage() {
                       View Details
                     </button>
 
-                    {/* Edit */}
                     <button
                       type="button"
                       onClick={() => {
@@ -273,7 +318,6 @@ export default function EmployeeViewDetailsPage() {
                       Edit
                     </button>
 
-                    {/* More ⋮ */}
                     <div className="relative" ref={moreMenuRef}>
                       <button
                         type="button"
@@ -311,7 +355,7 @@ export default function EmployeeViewDetailsPage() {
                 </div>
               </div>
 
-              {/* Content panel — exactly one visible */}
+              {/* Content panel — exactly one visible at a time */}
               {mode === "edit" && (
                 <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                   <EditEmployeeForm

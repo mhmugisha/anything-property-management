@@ -49,9 +49,29 @@ export default function EmployeeStatement({ employeeId }) {
   };
 
   return (
-    <div className="mt-3 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4 no-print-wrapper">
+    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4 no-print-wrapper">
       <style>{`@media print { .no-print { display: none !important; } }`}</style>
-      <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Staff Statement</p>
+
+      {/* Top bar: title left, export/print right */}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Staff Statement</p>
+        {data?.rows?.length > 0 && (
+          <div className="flex items-center gap-2 no-print">
+            <button
+              onClick={exportCsv}
+              className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50"
+            >
+              Export CSV
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50"
+            >
+              Print PDF
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Date range controls */}
       <div className="flex items-end gap-3 no-print">
@@ -79,22 +99,6 @@ export default function EmployeeStatement({ employeeId }) {
         >
           Apply
         </button>
-        {data?.rows?.length > 0 && (
-          <>
-            <button
-              onClick={exportCsv}
-              className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50"
-            >
-              Export CSV
-            </button>
-            <button
-              onClick={() => window.print()}
-              className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50"
-            >
-              Print
-            </button>
-          </>
-        )}
       </div>
 
       {stmtQuery.isLoading ? (
@@ -103,22 +107,6 @@ export default function EmployeeStatement({ employeeId }) {
         <p className="text-sm text-red-500">Failed to load statement</p>
       ) : data ? (
         <>
-          {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-green-50 rounded-lg p-3 border border-green-100">
-              <p className="text-xs text-green-700 font-medium">Total Credited</p>
-              <p className="text-base font-bold text-green-900 mt-0.5">{fmt(data.total_credited)}</p>
-            </div>
-            <div className="bg-amber-50 rounded-lg p-3 border border-amber-100">
-              <p className="text-xs text-amber-700 font-medium">Total Debited</p>
-              <p className="text-base font-bold text-amber-900 mt-0.5">{fmt(data.total_debited)}</p>
-            </div>
-            <div className={`rounded-lg p-3 border ${data.closing_balance >= 0 ? "bg-green-50 border-green-100" : "bg-red-50 border-red-100"}`}>
-              <p className={`text-xs font-medium ${data.closing_balance >= 0 ? "text-green-700" : "text-red-700"}`}>Closing Balance</p>
-              <p className={`text-base font-bold mt-0.5 ${data.closing_balance >= 0 ? "text-green-900" : "text-red-700"}`}>{fmt(data.closing_balance)}</p>
-            </div>
-          </div>
-
           {/* Transaction table */}
           {data.rows.length === 0 ? (
             <p className="text-sm text-slate-400">No transactions in this period.</p>
@@ -136,7 +124,7 @@ export default function EmployeeStatement({ employeeId }) {
                 </thead>
                 <tbody>
                   {data.rows.map((r, i) => (
-                    <tr key={i} className="border-b border-gray-50">
+                    <tr key={i} className="border-b border-gray-200">
                       <td className="py-1.5 text-slate-500 whitespace-nowrap">{fmtDate(r.date)}</td>
                       <td className="py-1.5 text-slate-700">{r.description}</td>
                       <td className="py-1.5 text-right text-amber-700">{r.debit > 0 ? fmt(r.debit) : "—"}</td>
@@ -148,6 +136,22 @@ export default function EmployeeStatement({ employeeId }) {
               </table>
             </div>
           )}
+
+          {/* Summary — below the table, neutral colors */}
+          <div className="grid grid-cols-3 gap-3 pt-2 border-t border-gray-200">
+            <div className="rounded-lg p-3 border border-gray-200 bg-white">
+              <p className="text-xs text-slate-500 font-medium">Total Credited</p>
+              <p className="text-base font-bold text-slate-800 mt-0.5">{fmt(data.total_credited)}</p>
+            </div>
+            <div className="rounded-lg p-3 border border-gray-200 bg-white">
+              <p className="text-xs text-slate-500 font-medium">Total Debited</p>
+              <p className="text-base font-bold text-slate-800 mt-0.5">{fmt(data.total_debited)}</p>
+            </div>
+            <div className="rounded-lg p-3 border border-gray-200 bg-white">
+              <p className="text-xs text-slate-500 font-medium">Closing Balance</p>
+              <p className={`text-base font-bold mt-0.5 ${data.closing_balance < 0 ? "text-red-600" : "text-slate-800"}`}>{fmt(data.closing_balance)}</p>
+            </div>
+          </div>
         </>
       ) : null}
     </div>
