@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useUpdateEmployee } from "@/hooks/usePayroll";
+import SalaryForm from "./SalaryForm";
 
 function FormField({ label, required, children }) {
   return (
@@ -92,7 +93,12 @@ function PaymentDetailsFields({ method, form, set }) {
   return null;
 }
 
+function fmtNum(n) {
+  return Number(n || 0).toLocaleString("en-UG", { maximumFractionDigits: 0 });
+}
+
 export default function EditEmployeeForm({ employee, onClose, onSuccess }) {
+  const [showSalaryForm, setShowSalaryForm] = useState(false);
   const [form, setForm] = useState({
     full_name: employee.full_name || "",
     position: employee.position || "",
@@ -184,7 +190,39 @@ export default function EditEmployeeForm({ employee, onClose, onSuccess }) {
             placeholder="Optional notes"
           />
         </FormField>
+
+        {/* Read-only salary — changes go through SalaryForm only */}
+        <div className="md:col-span-2">
+          <FormField label="Current Salary (UGX)">
+            <div className="flex items-center gap-3">
+              <span className="flex-1 text-sm text-slate-800 py-1.5 px-3 rounded-lg bg-gray-50 border border-gray-200 min-h-[36px] flex items-center">
+                {employee.current_salary
+                  ? `${fmtNum(employee.current_salary)} / month`
+                  : <span className="text-slate-400">—</span>}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowSalaryForm((v) => !v)}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50 whitespace-nowrap"
+              >
+                {showSalaryForm ? "Cancel" : "Change Salary"}
+              </button>
+            </div>
+          </FormField>
+        </div>
       </div>
+
+      {showSalaryForm && (
+        <SalaryForm
+          employeeId={employee.id}
+          onClose={() => setShowSalaryForm(false)}
+          onSuccess={() => {
+            setShowSalaryForm(false);
+            onSuccess?.();
+          }}
+        />
+      )}
+
       <ErrorBanner error={mutation.error} />
       <div className="flex gap-2">
         <button type="button" onClick={onClose} className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50">

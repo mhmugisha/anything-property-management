@@ -11,7 +11,6 @@ import {
   useEmployees,
   useEmployeeDetail,
   useCreateEmployee,
-  useAddEmployeeSalary,
   useAdvances,
   useCreateAdvance,
   useVoidAdvance,
@@ -31,6 +30,7 @@ import {
 import EmployeeStatement from "@/components/Payroll/EmployeeStatement";
 import EditEmployeeForm from "@/components/Payroll/EditEmployeeForm";
 import TerminationModal from "@/components/Payroll/TerminationModal";
+import SalaryForm from "@/components/Payroll/SalaryForm";
 import {
   Users,
   TrendingUp,
@@ -410,53 +410,7 @@ function NewEmployeeForm({ onClose, onSuccess }) {
   );
 }
 
-function SalaryForm({ employeeId, onClose, onSuccess }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [amount, setAmount] = useState("");
-  const [effectiveDate, setEffectiveDate] = useState(today);
-  const [notes, setNotes] = useState("");
-  const mutation = useAddEmployeeSalary();
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    mutation.mutate(
-      { id: employeeId, payload: { amount: Number(amount), effective_date: effectiveDate, notes: notes.trim() || null } },
-      { onSuccess },
-    );
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-3 mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
-      <p className="text-xs font-medium text-slate-700">Change Salary</p>
-      <div className="grid grid-cols-2 gap-3">
-        <FormField label="New Amount (UGX)" required>
-          <Input type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} required />
-        </FormField>
-        <FormField label="Effective Date" required>
-          <Input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} required />
-        </FormField>
-      </div>
-      <FormField label="Notes">
-        <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reason for change" />
-      </FormField>
-      <ErrorBanner error={mutation.error} />
-      <div className="flex gap-2">
-        <button type="button" onClick={onClose} className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50">
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={!amount || mutation.isPending}
-          className="px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white text-xs font-medium hover:bg-[#08172c] disabled:opacity-50"
-        >
-          {mutation.isPending ? "Saving…" : "Save Salary"}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-// EditEmployeeForm and TerminationModal extracted to src/components/Payroll/
+// EditEmployeeForm, TerminationModal, SalaryForm extracted to src/components/Payroll/
 
 function EmployeeRow({ employee, expanded, onToggle, isAdmin }) {
   const [showSalaryForm, setShowSalaryForm] = useState(false);
