@@ -203,7 +203,7 @@ export default function EditEmployeeForm({ employee, onClose, onSuccess }) {
               <button
                 type="button"
                 onClick={() => setShowSalaryForm((v) => !v)}
-                className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50 whitespace-nowrap"
+                className="px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white text-xs font-medium hover:bg-[#08172c] whitespace-nowrap"
               >
                 {showSalaryForm ? "Cancel" : "Change Salary"}
               </button>

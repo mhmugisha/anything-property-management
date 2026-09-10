@@ -62,7 +62,7 @@ export default function SalaryForm({ employeeId, onClose, onSuccess }) {
         <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reason for change" />
       </FormField>
       <ErrorBanner error={mutation.error} />
-      <div className="flex gap-2">
+      <div className="flex justify-end gap-2">
         <button type="button" onClick={onClose} className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-slate-600 hover:bg-gray-50">
           Cancel
         </button>
