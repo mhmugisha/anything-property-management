@@ -138,15 +138,12 @@ function ViewDetailsPanel({ employee, onClose }) {
 
 // mode: "statement" | "edit" | "details"
 export default function EmployeeViewDetailsPage() {
-  const [employeeId, setEmployeeId] = useState(null);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const id = params.get("id");
-      if (id) setEmployeeId(Number(id));
-    }
-  }, []);
+  // Read ?id synchronously so the query is never disabled on first render
+  const [employeeId] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const id = new URLSearchParams(window.location.search).get("id");
+    return id ? Number(id) : null;
+  });
 
   const { data: user, loading: userLoading } = useUser();
   const staffQuery = useStaffProfile(!userLoading && !!user);
@@ -156,6 +153,7 @@ export default function EmployeeViewDetailsPage() {
   const employeesQuery = useEmployees(
     { status: "all" },
     !userLoading && !!user && canView && !!employeeId,
+    { placeholderData: (prev) => prev },
   );
   const employee = (employeesQuery.data || []).find((e) => e.id === employeeId) || null;
 
@@ -250,11 +248,11 @@ export default function EmployeeViewDetailsPage() {
             </a>
           </div>
 
-          {employeesQuery.isLoading ? (
+          {(employeesQuery.isLoading || (employeesQuery.isFetching && !employee)) ? (
             <div className="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center">
               <p className="text-slate-500">Loading employee details...</p>
             </div>
-          ) : employeesQuery.error ? (
+          ) : employeesQuery.isError && !employee ? (
             <div className="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center">
               <p className="text-rose-600">Could not load employee details.</p>
             </div>

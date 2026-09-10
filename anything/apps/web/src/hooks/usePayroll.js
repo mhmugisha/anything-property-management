@@ -17,7 +17,7 @@ export function usePayrollAssetAccounts(enabled = true) {
 
 // ─── Employees ────────────────────────────────────────────────────────────────
 
-export function useEmployees(filters, enabled = true) {
+export function useEmployees(filters, enabled = true, options = {}) {
   const safe = filters || {};
   return useQuery({
     queryKey: ["payroll", "employees", safe],
@@ -29,6 +29,7 @@ export function useEmployees(filters, enabled = true) {
       return data.employees || [];
     },
     enabled,
+    ...options,
   });
 }
 
