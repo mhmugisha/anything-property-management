@@ -10,10 +10,16 @@ import {
   ClipboardList,
   List,
   GitCompare,
+  Hash,
 } from "lucide-react";
 
 export default function ReportsSidebar() {
   const reports = [
+    {
+      title: "Counts",
+      href: "/reports?report=counts",
+      icon: Hash,
+    },
     {
       title: "Arrears Aging",
       href: "/reports?report=arrears",

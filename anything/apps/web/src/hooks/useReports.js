@@ -12,6 +12,17 @@ export function useArrearsReport(enabled) {
   });
 }
 
+export function useCountsSummaryReport(enabled) {
+  return useQuery({
+    queryKey: ["reports", "countsSummary"],
+    queryFn: async () => {
+      const data = await fetchJson("/api/reports/counts-summary");
+      return data;
+    },
+    enabled,
+  });
+}
+
 export function useTenantStatement(tenantId, enabled) {
   return useQuery({
     queryKey: ["reports", "tenantStatement", tenantId],

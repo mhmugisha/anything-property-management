@@ -8,9 +8,10 @@ import Sidebar from "@/components/Shell/Sidebar";
 import MobileMenu from "@/components/Shell/MobileMenu";
 import ReportsSidebar from "@/components/Shell/ReportsSidebar";
 import AccessDenied from "@/components/Shell/AccessDenied";
-import { useArrearsReport } from "@/hooks/useReports";
+import { useArrearsReport, useCountsSummaryReport } from "@/hooks/useReports";
 import { useReportsLookups } from "@/hooks/useReportsLookups";
 import { ArrearsReport } from "@/components/Reports/ArrearsReport";
+import { CountsReport } from "@/components/Reports/CountsReport";
 import { TenantStatementReport } from "@/components/Reports/TenantStatementReport";
 import { LandlordMonthlySummary } from "@/components/Reports/LandlordMonthlySummary";
 import { LandlordStatementReport } from "@/components/Reports/LandlordStatementReport";
@@ -40,6 +41,10 @@ export default function ReportsPage() {
 
   const arrearsQuery = useArrearsReport(
     !userLoading && !!user && canViewReports,
+  );
+
+  const countsQuery = useCountsSummaryReport(
+    !userLoading && !!user && canViewReports && reportType === "counts",
   );
 
   const { landlordLookupQuery, propertyLookupQuery } = useReportsLookups(
@@ -80,6 +85,8 @@ export default function ReportsPage() {
 
   const renderReport = () => {
     switch (reportType) {
+      case "counts":
+        return <CountsReport countsQuery={countsQuery} />;
       case "arrears":
         return <ArrearsReport arrearsQuery={arrearsQuery} />;
       case "tenant-statement":
