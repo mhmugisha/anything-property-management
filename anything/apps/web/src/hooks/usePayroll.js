@@ -119,6 +119,19 @@ export function useRecoverAdvance() {
   });
 }
 
+export function useEditAdvance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, payload }) =>
+      putJson(`/api/payroll/advances/${id}`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payroll", "advances"] });
+      qc.invalidateQueries({ queryKey: ["payroll", "employees"] });
+      qc.invalidateQueries({ queryKey: ["accounting"] });
+    },
+  });
+}
+
 export function useVoidAdvance() {
   const qc = useQueryClient();
   return useMutation({

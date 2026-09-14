@@ -13,6 +13,8 @@ import {
   useCreateEmployee,
   useAdvances,
   useCreateAdvance,
+  useEditAdvance,
+  useRecoverAdvance,
   useVoidAdvance,
   useLoans,
   useCreateLoan,
@@ -756,10 +758,232 @@ function NewAdvanceForm({ employees, assetAccounts, onClose, onSuccess }) {
   );
 }
 
+function EditAdvanceModal({ advance, onClose, onSuccess }) {
+  const [form, setForm] = useState({
+    amount: String(advance.amount ?? ""),
+    advance_date: (advance.advance_date || "").slice(0, 10),
+    description: advance.description || "",
+  });
+  const mutation = useEditAdvance();
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const canSubmit =
+    Number(form.amount) > 0 && !!form.advance_date && !mutation.isPending;
+
+  const handleSave = () => {
+    if (!canSubmit) return;
+    mutation.mutate(
+      {
+        id: advance.id,
+        payload: {
+          amount: Number(form.amount),
+          advance_date: form.advance_date,
+          description: form.description.trim() || null,
+        },
+      },
+      { onSuccess },
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <div className="font-semibold text-slate-800">Edit Advance</div>
+            <div className="text-xs text-slate-500 mt-0.5">
+              {advance.employee_name}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-slate-400"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-600">
+            Editing re-posts the GL entry to match the new amount. Only allowed
+            while no repayments have been recorded.
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField label="Amount (UGX)" required>
+              <Input
+                type="number"
+                min="1"
+                value={form.amount}
+                onChange={(e) => set("amount", e.target.value)}
+              />
+            </FormField>
+            <FormField label="Date" required>
+              <Input
+                type="date"
+                value={form.advance_date}
+                onChange={(e) => set("advance_date", e.target.value)}
+              />
+            </FormField>
+            <div className="md:col-span-2">
+              <FormField label="Description">
+                <Input
+                  value={form.description}
+                  onChange={(e) => set("description", e.target.value)}
+                  placeholder="Optional reason"
+                />
+              </FormField>
+            </div>
+          </div>
+          <ErrorBanner error={mutation.error} />
+        </div>
+        <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 bg-gray-50">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-white"
+          >
+            Cancel
+          </button>
+          <PrimaryBtn
+            type="button"
+            onClick={handleSave}
+            disabled={!canSubmit}
+          >
+            {mutation.isPending ? "Saving…" : "Save Changes"}
+          </PrimaryBtn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecoverAdvanceModal({ advance, assetAccounts, onClose, onSuccess }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const outstanding = Number(advance.outstanding ?? 0);
+  const [form, setForm] = useState({
+    amount: String(outstanding || ""),
+    debit_account_id: "",
+    recovery_date: today,
+  });
+  const mutation = useRecoverAdvance();
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const amountNum = Number(form.amount);
+  const amountError =
+    !form.amount
+      ? null
+      : !(amountNum > 0)
+        ? "Amount must be greater than 0"
+        : amountNum > outstanding
+          ? `Amount cannot exceed outstanding (${fmt(outstanding)})`
+          : null;
+
+  const canSubmit =
+    amountNum > 0 &&
+    amountNum <= outstanding &&
+    !!form.debit_account_id &&
+    !!form.recovery_date &&
+    !mutation.isPending;
+
+  const handleSave = () => {
+    if (!canSubmit) return;
+    mutation.mutate(
+      {
+        id: advance.id,
+        payload: {
+          amount: amountNum,
+          debit_account_id: Number(form.debit_account_id),
+          recovery_date: form.recovery_date,
+        },
+      },
+      { onSuccess },
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <div className="font-semibold text-slate-800">Record Repayment</div>
+            <div className="text-xs text-slate-500 mt-0.5">
+              {advance.employee_name} · Outstanding {fmt(outstanding)}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-slate-400"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField label="Amount (UGX)" required>
+              <Input
+                type="number"
+                min="1"
+                max={outstanding}
+                value={form.amount}
+                onChange={(e) => set("amount", e.target.value)}
+              />
+              {amountError && (
+                <p className="mt-1 text-xs text-red-600">{amountError}</p>
+              )}
+            </FormField>
+            <FormField label="Date" required>
+              <Input
+                type="date"
+                value={form.recovery_date}
+                onChange={(e) => set("recovery_date", e.target.value)}
+              />
+            </FormField>
+            <div className="md:col-span-2">
+              <FormField label="Received Into Account" required>
+                <Select
+                  value={form.debit_account_id}
+                  onChange={(e) => set("debit_account_id", e.target.value)}
+                >
+                  <option value="">Select account…</option>
+                  {assetAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.account_code} — {a.account_name}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+          </div>
+          <ErrorBanner error={mutation.error} />
+        </div>
+        <div className="flex gap-2 justify-end px-6 py-4 border-t border-gray-100 bg-gray-50">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-white"
+          >
+            Cancel
+          </button>
+          <PrimaryBtn
+            type="button"
+            onClick={handleSave}
+            disabled={!canSubmit}
+          >
+            {mutation.isPending ? "Saving…" : "Record Repayment"}
+          </PrimaryBtn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdvancesTab({ isAdmin = false }) {
   const [showForm, setShowForm] = useState(false);
   const [filterEmployeeId, setFilterEmployeeId] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [editingAdvance, setEditingAdvance] = useState(null);
+  const [recoveringAdvance, setRecoveringAdvance] = useState(null);
 
   const advQuery = useAdvances({
     employee_id: filterEmployeeId || null,
@@ -850,8 +1074,13 @@ function AdvancesTab({ isAdmin = false }) {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {advances.map((adv) => {
-                const canVoid =
-                  isAdmin && !adv.is_voided && Number(adv.recovered_amount || 0) === 0;
+                const recovered = Number(adv.recovered_amount || 0);
+                const isUntouched = !adv.is_voided && recovered === 0;
+                const isFullyRecovered = adv.status === "recovered";
+                const canEdit = isAdmin && isUntouched;
+                const canVoid = isAdmin && isUntouched;
+                const canRecover =
+                  isAdmin && !adv.is_voided && !isFullyRecovered;
                 return (
                   <tr
                     key={adv.id}
@@ -866,15 +1095,40 @@ function AdvancesTab({ isAdmin = false }) {
                     </td>
                     <td className="px-5 py-3 text-slate-500">{adv.description || "—"}</td>
                     <td className="px-5 py-3 text-right">
-                      {canVoid ? (
-                        <button
-                          onClick={() => handleVoid(adv)}
-                          disabled={voidMutation.isPending}
-                          className="text-xs font-medium px-2.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                          title="Void this advance and reverse its GL entry"
-                        >
-                          Void
-                        </button>
+                      {canEdit || canVoid || canRecover ? (
+                        <div className="inline-flex gap-1.5 justify-end">
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingAdvance(adv)}
+                              className="text-xs font-medium px-2.5 py-1 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              title="Edit amount, date or description"
+                            >
+                              Edit
+                            </button>
+                          )}
+                          {canRecover && (
+                            <button
+                              type="button"
+                              onClick={() => setRecoveringAdvance(adv)}
+                              className="text-xs font-medium px-2.5 py-1 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              title="Record a repayment against this advance"
+                            >
+                              Record Repayment
+                            </button>
+                          )}
+                          {canVoid && (
+                            <button
+                              type="button"
+                              onClick={() => handleVoid(adv)}
+                              disabled={voidMutation.isPending}
+                              className="text-xs font-medium px-2.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                              title="Void this advance and reverse its GL entry"
+                            >
+                              Void
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}
@@ -885,6 +1139,23 @@ function AdvancesTab({ isAdmin = false }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {editingAdvance && (
+        <EditAdvanceModal
+          advance={editingAdvance}
+          onClose={() => setEditingAdvance(null)}
+          onSuccess={() => setEditingAdvance(null)}
+        />
+      )}
+
+      {recoveringAdvance && (
+        <RecoverAdvanceModal
+          advance={recoveringAdvance}
+          assetAccounts={assetAccounts}
+          onClose={() => setRecoveringAdvance(null)}
+          onSuccess={() => setRecoveringAdvance(null)}
+        />
       )}
     </div>
   );
