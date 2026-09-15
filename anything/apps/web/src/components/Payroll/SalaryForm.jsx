@@ -69,7 +69,7 @@ export default function SalaryForm({ employeeId, onClose, onSuccess }) {
         <button
           type="button"
           onClick={handleSave}
-          disabled={!amount || mutation.isPending}
+          disabled={!(Number(amount) > 0) || !effectiveDate || mutation.isPending}
           className="px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white text-xs font-medium hover:bg-[#08172c] disabled:opacity-50"
         >
           {mutation.isPending ? "Saving…" : "Save Salary"}

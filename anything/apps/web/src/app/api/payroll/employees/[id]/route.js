@@ -261,11 +261,13 @@ export async function DELETE(request, { params }) {
       `SELECT
          (SELECT COUNT(*)::int FROM payroll_entries  WHERE employee_id = $1) AS payroll_count,
          (SELECT COUNT(*)::int FROM employee_advances WHERE employee_id = $1) AS advance_count,
-         (SELECT COUNT(*)::int FROM employee_loans    WHERE employee_id = $1) AS loan_count`,
+         (SELECT COUNT(*)::int FROM employee_loans    WHERE employee_id = $1) AS loan_count,
+         (SELECT COUNT(*)::int FROM transactions
+            WHERE source_type = 'termination' AND source_id = $1) AS gl_count`,
       [employeeId],
     );
     const h = historyRows?.[0];
-    if (h && (h.payroll_count > 0 || h.advance_count > 0 || h.loan_count > 0)) {
+    if (h && (h.payroll_count > 0 || h.advance_count > 0 || h.loan_count > 0 || h.gl_count > 0)) {
       return Response.json(
         { error: "This employee has payroll history and cannot be deleted. Use Terminate instead." },
         { status: 409 },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
 import useUser from "@/utils/useUser";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
 import AppHeader from "@/components/Shell/AppHeader";
@@ -9,7 +9,6 @@ import MobileMenu from "@/components/Shell/MobileMenu";
 import AccessDenied from "@/components/Shell/AccessDenied";
 import {
   useEmployees,
-  useEmployeeDetail,
   useCreateEmployee,
   useAdvances,
   useCreateAdvance,
@@ -29,17 +28,12 @@ import {
   usePayslip,
   useDeletePayrollRun,
 } from "@/hooks/usePayroll";
-import EmployeeStatement from "@/components/Payroll/EmployeeStatement";
-import EditEmployeeForm from "@/components/Payroll/EditEmployeeForm";
-import TerminationModal from "@/components/Payroll/TerminationModal";
-import SalaryForm from "@/components/Payroll/SalaryForm";
 import {
   Users,
   TrendingUp,
   BookOpen,
   ClipboardList,
   FileText,
-  ChevronDown,
   ChevronRight,
   Plus,
   X,
@@ -412,16 +406,7 @@ function NewEmployeeForm({ onClose, onSuccess }) {
   );
 }
 
-// EditEmployeeForm, TerminationModal, SalaryForm extracted to src/components/Payroll/
-
-function EmployeeRow({ employee, expanded, onToggle, isAdmin }) {
-  const [showSalaryForm, setShowSalaryForm] = useState(false);
-  const [showEditForm, setShowEditForm] = useState(false);
-  const [showStatement, setShowStatement] = useState(false);
-  const [showTerminateModal, setShowTerminateModal] = useState(false);
-  const detailQuery = useEmployeeDetail(employee.id, expanded);
-  const detail = detailQuery.data || null;
-
+function EmployeeRow({ employee }) {
   const paymentSummary = () => {
     const m = employee.payment_method;
     if (m === "bank") {
@@ -441,15 +426,11 @@ function EmployeeRow({ employee, expanded, onToggle, isAdmin }) {
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 text-left"
-      >
+      <div className="flex items-center gap-4 px-5 py-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <a
               href={`/payroll/employees/view-details?id=${employee.id}`}
-              onClick={(e) => e.stopPropagation()}
               className="font-medium text-slate-800 hover:underline"
             >
               {employee.full_name}
@@ -466,149 +447,13 @@ function EmployeeRow({ employee, expanded, onToggle, isAdmin }) {
             {employee.current_salary ? ` · ${fmt(employee.current_salary)}/mo` : " · No salary set"}
           </div>
         </div>
-        {expanded ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />}
-      </button>
-
-      {expanded && (
-        <div className="border-t border-gray-100 px-5 py-4 space-y-4">
-          {detailQuery.isLoading ? (
-            <p className="text-sm text-slate-400">Loading…</p>
-          ) : (
-            <>
-              {/* Details */}
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                {employee.phone && <div><span className="text-slate-500">Phone: </span>{employee.phone}</div>}
-                {employee.email && <div><span className="text-slate-500">Email: </span>{employee.email}</div>}
-                {employee.start_date && <div><span className="text-slate-500">Start Date: </span>{fmtDate(employee.start_date)}</div>}
-                {employee.payment_method === "bank" && employee.payment_bank_name && (
-                  <div><span className="text-slate-500">Bank: </span>{employee.payment_bank_name}</div>
-                )}
-                {employee.payment_method === "bank" && employee.payment_account_number && (
-                  <div><span className="text-slate-500">Account: </span>{employee.payment_account_number}</div>
-                )}
-                {employee.payment_method === "momo" && employee.payment_account_name && (
-                  <div><span className="text-slate-500">MoMo Name: </span>{employee.payment_account_name}</div>
-                )}
-                {employee.payment_method === "momo" && employee.payment_phone && (
-                  <div><span className="text-slate-500">MoMo Phone: </span>{employee.payment_phone}</div>
-                )}
-                {employee.notes && <div className="col-span-2"><span className="text-slate-500">Notes: </span>{employee.notes}</div>}
-              </div>
-
-              {/* Edit form */}
-              {showEditForm && (
-                <EditEmployeeForm
-                  employee={employee}
-                  onClose={() => setShowEditForm(false)}
-                  onSuccess={() => setShowEditForm(false)}
-                />
-              )}
-
-              {/* Statement */}
-              {showStatement && <EmployeeStatement employeeId={employee.id} />}
-
-              {/* Salary history */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Salary History</p>
-                  <div className="flex items-center gap-3">
-                    {!showEditForm && (
-                      <button
-                        onClick={() => { setShowEditForm(true); setShowSalaryForm(false); setShowStatement(false); }}
-                        className="text-xs text-slate-600 underline hover:text-slate-800"
-                      >
-                        Edit
-                      </button>
-                    )}
-                    {!showSalaryForm && (
-                      <button
-                        onClick={() => { setShowSalaryForm(true); setShowEditForm(false); setShowStatement(false); }}
-                        className="text-xs text-slate-600 underline hover:text-slate-800"
-                      >
-                        Change Salary
-                      </button>
-                    )}
-                    <button
-                      onClick={() => { setShowStatement((v) => !v); setShowEditForm(false); setShowSalaryForm(false); }}
-                      className="text-xs text-slate-600 underline hover:text-slate-800"
-                    >
-                      {showStatement ? "Hide Statement" : "Statement"}
-                    </button>
-                    {isAdmin && employee.status !== "terminated" && (
-                      <button
-                        onClick={() => { setShowTerminateModal(true); setShowEditForm(false); setShowSalaryForm(false); setShowStatement(false); }}
-                        className="text-xs text-red-600 underline hover:text-red-800"
-                      >
-                        Terminate
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {showSalaryForm && (
-                  <SalaryForm
-                    employeeId={employee.id}
-                    onClose={() => setShowSalaryForm(false)}
-                    onSuccess={() => setShowSalaryForm(false)}
-                  />
-                )}
-                {detail?.salary_history?.length > 0 ? (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-xs text-slate-500 border-b border-gray-100">
-                        <th className="text-left py-1 font-medium">Amount</th>
-                        <th className="text-left py-1 font-medium">From</th>
-                        <th className="text-left py-1 font-medium">To</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.salary_history.map((s) => (
-                        <tr key={s.id} className="border-b border-gray-50">
-                          <td className="py-1.5 font-medium">{fmt(s.amount)}</td>
-                          <td className="py-1.5 text-slate-600">{fmtDate(s.effective_date)}</td>
-                          <td className="py-1.5 text-slate-600">{s.end_date ? fmtDate(s.end_date) : <span className="text-green-600">Current</span>}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="text-sm text-slate-400">No salary records</p>
-                )}
-              </div>
-
-              {/* Balances */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-amber-50 rounded-lg p-3 border border-amber-100">
-                  <p className="text-xs text-amber-700 font-medium">Outstanding Advances</p>
-                  <p className="text-lg font-bold text-amber-900 mt-0.5">
-                    {fmt(detail?.total_outstanding_advances || 0)}
-                  </p>
-                </div>
-                <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-                  <p className="text-xs text-slate-600 font-medium">Outstanding Loans</p>
-                  <p className="text-lg font-bold text-slate-800 mt-0.5">
-                    {fmt(detail?.total_outstanding_loans || 0)}
-                  </p>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {showTerminateModal && (
-        <TerminationModal
-          employee={employee}
-          onClose={() => setShowTerminateModal(false)}
-          onSuccess={() => setShowTerminateModal(false)}
-        />
-      )}
+      </div>
     </div>
   );
 }
 
-function EmployeesTab({ isAdmin }) {
+function EmployeesTab() {
   const [showForm, setShowForm] = useState(false);
-  const [expandedId, setExpandedId] = useState(null);
   const [showInactive, setShowInactive] = useState(false);
 
   const empQuery = useEmployees(
@@ -616,11 +461,6 @@ function EmployeesTab({ isAdmin }) {
     true,
   );
   const employees = empQuery.data || [];
-
-  const toggle = useCallback(
-    (id) => setExpandedId((prev) => (prev === id ? null : id)),
-    [],
-  );
 
   return (
     <div className="space-y-4">
@@ -662,9 +502,6 @@ function EmployeesTab({ isAdmin }) {
             <EmployeeRow
               key={emp.id}
               employee={emp}
-              expanded={expandedId === emp.id}
-              onToggle={() => toggle(emp.id)}
-              isAdmin={isAdmin}
             />
           ))}
         </div>
@@ -2210,7 +2047,7 @@ export default function PayrollPage() {
 
       <main className="pt-32 md:pl-56">
         <div className="max-w-[90%] mx-auto p-4 md:p-6">
-          {activeTab === "employees" && <EmployeesTab isAdmin={isAdmin} />}
+          {activeTab === "employees" && <EmployeesTab />}
           {activeTab === "advances" && <AdvancesTab isAdmin={isAdmin} />}
           {activeTab === "loans" && <LoansTab />}
           {activeTab === "runs" && <RunsTab isAdmin={isAdmin} />}
