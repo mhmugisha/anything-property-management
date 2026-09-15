@@ -57,24 +57,24 @@ export function useLandlordPayoutsSummary(filters, enabled) {
 }
 
 export function useManagerArrearsReport(filters, enabled) {
-  const month = filters?.month;
-  const year = filters?.year;
+  const fromDate = (filters?.fromDate || "").trim();
+  const toDate = (filters?.toDate || "").trim();
   const officerId = filters?.officerId || "";
 
   const qs = new URLSearchParams();
-  if (month) qs.set("month", String(month));
-  if (year) qs.set("year", String(year));
+  if (fromDate) qs.set("fromDate", fromDate);
+  if (toDate) qs.set("toDate", toDate);
   if (officerId) qs.set("officerId", String(officerId));
 
   const url = `/api/reports/manager-arrears${qs.toString() ? `?${qs.toString()}` : ""}`;
 
   return useQuery({
-    queryKey: ["reports", "managerArrears", { month, year, officerId }],
+    queryKey: ["reports", "managerArrears", { fromDate, toDate, officerId }],
     queryFn: async () => {
       const data = await fetchJson(url);
       return data;
     },
-    enabled: enabled && !!month && !!year,
+    enabled,
   });
 }
 

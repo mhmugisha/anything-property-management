@@ -4,23 +4,24 @@ import { requirePermission } from "@/app/api/utils/staff";
 /**
  * Manager Arrears Report
  *
- * Arrears rolled up Portfolio Manager -> Property -> Tenant, as of the
- * end of a chosen month.
+ * Unpaid invoices grouped Portfolio Manager -> Property -> Invoice row.
  *
- * Reuses the arrears definition from /api/reports/arrears verbatim:
- *   outstanding = amount - paid_amount   (must be > 0)
- *   included only when:
- *     status <> 'void'
- *     COALESCE(is_deleted,  false) = false
- *     COALESCE(approval_status, 'approved') = 'approved'
- *     lease.status = 'active'
- *     invoice_year*100 + invoice_month < (asOf year*100 + month)
+ * Reuses the arrears definition from /api/reports/arrears and
+ * /api/payments/open-balances verbatim:
+ *   (amount - paid_amount) > 0
+ *   status <> 'void'
+ *   COALESCE(is_deleted, false) = false
+ *   COALESCE(approval_status, 'approved') = 'approved'
+ *   Lease is active
+ *
+ * Returns ONE ROW PER UNPAID INVOICE (not aggregated per lease).
+ *
+ * From/To dates filter on i.invoice_date, matching Open Balances.
  *
  * Query params:
- *   month     1-12 (defaults to current month)
- *   year      >= 2000 (defaults to current year)
- *   officerId numeric portfolio-manager id, or the literal "unassigned",
- *             or omitted = all managers
+ *   fromDate   YYYY-MM-DD (optional)
+ *   toDate     YYYY-MM-DD (optional)
+ *   officerId  numeric portfolio-manager id, "unassigned", or omitted = all
  */
 export async function GET(request) {
   const perm = await requirePermission(request, "reports");
@@ -28,16 +29,8 @@ export async function GET(request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const now = new Date();
-
-    let month = Number(searchParams.get("month"));
-    let year = Number(searchParams.get("year"));
-    if (!Number.isFinite(month) || month < 1 || month > 12) {
-      month = now.getMonth() + 1;
-    }
-    if (!Number.isFinite(year) || year < 2000) {
-      year = now.getFullYear();
-    }
+    const fromDate = (searchParams.get("fromDate") || "").trim() || null;
+    const toDate = (searchParams.get("toDate") || "").trim() || null;
 
     const officerIdRaw = (searchParams.get("officerId") || "").trim();
     const officerId =
@@ -47,104 +40,96 @@ export async function GET(request) {
           ? Number(officerIdRaw)
           : null;
 
-    const asOfYM = year * 100 + month;
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const asOfDate = `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+    const conditions = [
+      "(i.amount - i.paid_amount) > 0",
+      "i.status <> 'void'",
+      "COALESCE(i.is_deleted, false) = false",
+      "COALESCE(i.approval_status, 'approved') = 'approved'",
+      "EXISTS (SELECT 1 FROM leases l WHERE l.id = i.lease_id AND l.status = 'active')",
+    ];
+    const values = [];
 
-    const values = [asOfYM, asOfDate];
-    let officerCondition = "";
+    if (fromDate) {
+      values.push(fromDate);
+      conditions.push(`i.invoice_date >= $${values.length}`);
+    }
+    if (toDate) {
+      values.push(toDate);
+      conditions.push(`i.invoice_date <= $${values.length}`);
+    }
     if (officerId === "unassigned") {
-      officerCondition = "AND p.assigned_officer_id IS NULL";
+      conditions.push("p.assigned_officer_id IS NULL");
     } else if (officerId) {
       values.push(officerId);
-      officerCondition = `AND p.assigned_officer_id = $${values.length}`;
+      conditions.push(`p.assigned_officer_id = $${values.length}`);
     }
 
     const query = `
-      WITH unpaid AS (
-        SELECT
-          i.lease_id,
-          i.tenant_id,
-          i.property_id,
-          i.unit_id,
-          i.due_date,
-          (i.amount - i.paid_amount) AS outstanding
-        FROM invoices i
-        WHERE (i.amount - i.paid_amount) > 0
-          AND i.status <> 'void'
-          AND COALESCE(i.is_deleted, false) = false
-          AND COALESCE(i.approval_status, 'approved') = 'approved'
-          AND i.invoice_year * 100 + i.invoice_month < $1
-          AND EXISTS (
-            SELECT 1 FROM leases l
-            WHERE l.id = i.lease_id
-              AND l.status = 'active'
-          )
-      )
       SELECT
-        u.lease_id,
-        t.id AS tenant_id,
+        i.id AS invoice_id,
+        i.lease_id,
+        i.tenant_id,
+        i.unit_id,
+        i.property_id,
+        i.invoice_date,
+        i.due_date,
+        i.amount,
+        i.paid_amount,
+        (i.amount - i.paid_amount) AS balance,
+        (CURRENT_DATE - i.due_date)::int AS days_overdue,
         t.full_name AS tenant_name,
-        p.id AS property_id,
+        un.unit_number,
         p.property_name,
         p.assigned_officer_id,
-        so.full_name AS officer_name,
-        un.unit_number,
-        COUNT(*)::int AS months_behind,
-        COALESCE(SUM(u.outstanding), 0) AS arrears_amount,
-        ($2::date - MIN(u.due_date))::int AS days_overdue
-      FROM unpaid u
-      LEFT JOIN tenants t ON t.id = u.tenant_id
-      LEFT JOIN properties p ON p.id = u.property_id
+        so.full_name AS officer_name
+      FROM invoices i
+      LEFT JOIN tenants t ON t.id = i.tenant_id
+      LEFT JOIN units un ON un.id = i.unit_id
+      LEFT JOIN properties p ON p.id = i.property_id
       LEFT JOIN staff_users so ON so.id = p.assigned_officer_id
-      LEFT JOIN units un ON un.id = u.unit_id
-      WHERE 1=1 ${officerCondition}
-      GROUP BY
-        u.lease_id, t.id, t.full_name,
-        p.id, p.property_name, p.assigned_officer_id,
-        so.full_name, un.unit_number
+      WHERE ${conditions.join(" AND ")}
       ORDER BY
         so.full_name ASC NULLS LAST,
         p.property_name ASC NULLS LAST,
         (CASE WHEN un.unit_number ~ '^\\d+$' THEN un.unit_number::integer ELSE 999999 END),
-        un.unit_number
-      LIMIT 5000
+        un.unit_number,
+        i.due_date ASC NULLS LAST
+      LIMIT 10000
     `;
 
     const rows = await sql(query, values);
 
     const managerMap = new Map();
-    let grandTotalArrears = 0;
-    let grandTotalTenants = 0;
+    let grandTotalBalance = 0;
+    let totalRent = 0;
+    let recovered = 0;
 
     for (const r of rows) {
       const officerIdVal =
         r.assigned_officer_id === null || r.assigned_officer_id === undefined
           ? null
           : Number(r.assigned_officer_id);
-      const officerKey = officerIdVal === null ? "unassigned" : String(officerIdVal);
+      const officerKey =
+        officerIdVal === null ? "unassigned" : String(officerIdVal);
       const officerName = r.officer_name || "Unassigned";
+
       const propertyIdVal =
         r.property_id === null || r.property_id === undefined
           ? null
           : Number(r.property_id);
       const propertyKey = propertyIdVal === null ? "none" : String(propertyIdVal);
 
-      const days = Number(r.days_overdue || 0);
-      let bucket = "0";
-      if (days >= 90) bucket = "90+";
-      else if (days >= 60) bucket = "60";
-      else if (days >= 30) bucket = "30";
-
-      const arrears = Number(r.arrears_amount || 0);
+      const amount = Number(r.amount || 0);
+      const paidAmount = Number(r.paid_amount || 0);
+      const balance = Number(r.balance || 0);
+      const daysOverdue = Number(r.days_overdue || 0);
 
       let manager = managerMap.get(officerKey);
       if (!manager) {
         manager = {
           officer_id: officerIdVal,
           officer_name: officerName,
-          total_arrears: 0,
-          total_tenants_count: 0,
+          total_balance: 0,
           properties: [],
           _propertyIndex: new Map(),
         };
@@ -156,30 +141,31 @@ export async function GET(request) {
         property = {
           property_id: propertyIdVal,
           property_name: r.property_name || "—",
-          subtotal_arrears: 0,
-          subtotal_tenants_count: 0,
-          tenants: [],
+          subtotal_balance: 0,
+          rows: [],
         };
         manager.properties.push(property);
         manager._propertyIndex.set(propertyKey, property);
       }
 
-      property.tenants.push({
+      property.rows.push({
+        invoice_id: r.invoice_id,
         lease_id: r.lease_id,
         tenant_id: r.tenant_id,
-        tenant_name: r.tenant_name,
-        unit_number: r.unit_number,
-        arrears_amount: arrears,
-        months_behind: Number(r.months_behind || 0),
-        days_overdue: days,
-        bucket,
+        unit_number: r.unit_number || "—",
+        tenant_name: r.tenant_name || "—",
+        due_date: r.due_date,
+        invoice_date: r.invoice_date,
+        amount,
+        paid_amount: paidAmount,
+        days_overdue: daysOverdue,
+        balance,
       });
-      property.subtotal_arrears += arrears;
-      property.subtotal_tenants_count += 1;
-      manager.total_arrears += arrears;
-      manager.total_tenants_count += 1;
-      grandTotalArrears += arrears;
-      grandTotalTenants += 1;
+      property.subtotal_balance += balance;
+      manager.total_balance += balance;
+      grandTotalBalance += balance;
+      totalRent += amount;
+      recovered += amount - balance;
     }
 
     const managers = Array.from(managerMap.values()).map((m) => {
@@ -187,11 +173,19 @@ export async function GET(request) {
       return rest;
     });
 
+    const recoveryRate = totalRent > 0 ? (recovered / totalRent) * 100 : 0;
+
     return Response.json({
-      as_of: { month, year, as_of_date: asOfDate },
+      from: fromDate,
+      to: toDate,
       managers,
-      grand_total_arrears: grandTotalArrears,
-      grand_total_tenants_count: grandTotalTenants,
+      grand_total_balance: grandTotalBalance,
+      summary: {
+        total_rent: totalRent,
+        recovered,
+        balance: grandTotalBalance,
+        recovery_rate: recoveryRate,
+      },
     });
   } catch (error) {
     console.error("GET /api/reports/manager-arrears error", error);

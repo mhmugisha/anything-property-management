@@ -1,44 +1,31 @@
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchJson } from "@/utils/api";
 import { formatCurrencyUGX } from "@/utils/formatCurrencyUGX";
-import { useManagerArrearsReport } from "@/hooks/useReports";
+import DatePopoverInput from "@/components/DatePopoverInput";
 import PrintPreviewButtons from "@/components/PrintPreviewButtons";
+import { useManagerArrearsReport } from "@/hooks/useReports";
 
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
+const numberFormatter = new Intl.NumberFormat("en-US");
+const fmtNum = (n) => numberFormatter.format(Number(n || 0));
 
-function getDefaultMonth() {
-  return new Date().getMonth() + 1;
+function fmtPercent(n) {
+  const v = Number(n || 0);
+  return `${v.toFixed(v >= 100 || v < 10 ? 1 : 2)}%`;
 }
 
-function getDefaultYear() {
-  return new Date().getFullYear();
-}
-
-function buildYearOptions() {
-  const current = new Date().getFullYear();
-  const years = [];
-  for (let y = current + 1; y >= 2020; y--) years.push(y);
-  return years;
+function formatDateDisplay(iso) {
+  if (!iso) return "";
+  const s = String(iso).slice(0, 10);
+  const [y, m, d] = s.split("-");
+  if (!y || !m || !d) return s;
+  return `${d}-${m}-${y}`;
 }
 
 export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
   const printRef = useRef(null);
-  const [selectedMonth, setSelectedMonth] = useState(getDefaultMonth);
-  const [selectedYear, setSelectedYear] = useState(getDefaultYear);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
 
   const officersQuery = useQuery({
@@ -52,34 +39,46 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
   const officers = officersQuery.data || [];
 
   const reportQuery = useManagerArrearsReport(
-    {
-      month: selectedMonth,
-      year: selectedYear,
-      officerId: selectedOfficerId,
-    },
+    { fromDate, toDate, officerId: selectedOfficerId },
     !userLoading && !!user && canViewReports,
   );
 
   const data = reportQuery.data;
   const managers = data?.managers || [];
-  const grandTotal = Number(data?.grand_total_arrears || 0);
-  const grandTenants = Number(data?.grand_total_tenants_count || 0);
-
-  const selectedMonthLabel = MONTH_NAMES[selectedMonth - 1] || "";
-  const reportTitle = `Manager Arrears – ${selectedMonthLabel} ${selectedYear}`;
+  const summary = data?.summary || {
+    total_rent: 0,
+    recovered: 0,
+    balance: 0,
+    recovery_rate: 0,
+  };
+  const grandTotal = Number(data?.grand_total_balance || 0);
 
   const officerLabel = useMemo(() => {
     if (!selectedOfficerId) return "All Managers";
     if (selectedOfficerId === "unassigned") return "Unassigned";
-    const found = officers.find((o) => String(o.id) === String(selectedOfficerId));
+    const found = officers.find(
+      (o) => String(o.id) === String(selectedOfficerId),
+    );
     return found ? found.full_name : "—";
   }, [selectedOfficerId, officers]);
 
-  const yearOptions = useMemo(() => buildYearOptions(), []);
+  const dateRangeLabel = useMemo(() => {
+    if (fromDate && toDate) {
+      return `${formatDateDisplay(fromDate)} to ${formatDateDisplay(toDate)}`;
+    }
+    if (fromDate) return `From ${formatDateDisplay(fromDate)}`;
+    if (toDate) return `Until ${formatDateDisplay(toDate)}`;
+    return "All Dates";
+  }, [fromDate, toDate]);
+
+  const reportTitle = "Manager Arrears";
+  const hasRows = managers.some((m) =>
+    m.properties.some((p) => p.rows.length > 0),
+  );
 
   return (
     <div ref={printRef}>
-      {/* Printable header */}
+      {/* Report header */}
       <div className="report-header bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-4 text-center">
         <h1 className="text-lg font-bold text-slate-900 uppercase tracking-wide">
           {reportTitle}
@@ -89,11 +88,10 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
             <span className="font-medium text-slate-700">Portfolio Manager:</span>{" "}
             {officerLabel}
           </div>
-          {data?.as_of?.as_of_date && (
-            <div className="text-xs text-slate-500">
-              As of end of month ({data.as_of.as_of_date})
-            </div>
-          )}
+          <div>
+            <span className="font-medium text-slate-700">Date Range:</span>{" "}
+            {dateRangeLabel}
+          </div>
         </div>
       </div>
 
@@ -102,43 +100,31 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
         className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-4"
         data-no-print="true"
       >
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Month *
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600">
+              From Date
             </label>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none text-sm"
-            >
-              {MONTH_NAMES.map((name, idx) => (
-                <option key={idx} value={idx + 1}>
-                  {name}
-                </option>
-              ))}
-            </select>
+            <DatePopoverInput
+              value={fromDate}
+              onChange={setFromDate}
+              placeholder="DD-MM-YYYY"
+              className="bg-gray-50"
+            />
           </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Year *
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600">
+              To Date
             </label>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none text-sm"
-            >
-              {yearOptions.map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
+            <DatePopoverInput
+              value={toDate}
+              onChange={setToDate}
+              placeholder="DD-MM-YYYY"
+              className="bg-gray-50"
+            />
           </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600">
               Portfolio Manager
             </label>
             <select
@@ -166,133 +152,127 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
         <PrintPreviewButtons targetRef={printRef} title={reportTitle} />
       </div>
 
-      {/* Grand total summary */}
+      {/* Main table */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <div className="text-xs text-slate-500 font-medium uppercase tracking-wide">
-              Grand Total Arrears
-            </div>
-            <div className="text-2xl font-bold text-slate-900 mt-1">
-              {formatCurrencyUGX(grandTotal)}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs text-slate-500 font-medium uppercase tracking-wide">
-              Tenants in Arrears
-            </div>
-            <div className="text-2xl font-bold text-slate-900 mt-1">
-              {grandTenants}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
         {reportQuery.isLoading ? (
           <p className="text-sm text-slate-500">Loading report…</p>
         ) : reportQuery.error ? (
           <p className="text-sm text-rose-600">
             {reportQuery.error.message || "Could not load report."}
           </p>
-        ) : managers.length === 0 ? (
+        ) : !hasRows ? (
           <p className="text-sm text-slate-500">
-            No arrears found for {selectedMonthLabel} {selectedYear}.
+            No arrears found with the current filters.
           </p>
         ) : (
-          <div className="space-y-6">
-            {managers.map((m) => (
-              <ManagerBlock key={m.officer_id === null ? "unassigned" : m.officer_id} manager={m} />
-            ))}
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500 border-b-2 border-slate-700">
+                  <th className="py-2 px-3">Unit</th>
+                  <th className="py-2 px-3">Tenant</th>
+                  <th className="py-2 px-3 text-right">Days</th>
+                  <th className="py-2 px-3 text-right">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {managers.map((m) => {
+                  const managerKey =
+                    m.officer_id === null ? "unassigned" : m.officer_id;
+                  return (
+                    <Fragment key={managerKey}>
+                      {/* Manager section header */}
+                      <tr className="bg-slate-800 text-white">
+                        <td
+                          colSpan={3}
+                          className="py-2 px-3 font-semibold uppercase tracking-wide text-xs"
+                        >
+                          {m.officer_name}
+                        </td>
+                        <td className="py-2 px-3 text-right font-semibold">
+                          {formatCurrencyUGX(m.total_balance)}
+                        </td>
+                      </tr>
+
+                      {m.properties.map((p) => {
+                        const propertyKey =
+                          p.property_id === null ? "none" : p.property_id;
+                        return (
+                          <Fragment key={`${managerKey}-${propertyKey}`}>
+                            {p.rows.map((r) => (
+                              <tr
+                                key={r.invoice_id}
+                                className="border-b border-slate-100 hover:bg-slate-50"
+                              >
+                                <td className="py-2 px-3 text-slate-800">
+                                  {r.unit_number}
+                                </td>
+                                <td className="py-2 px-3 text-slate-700">
+                                  {r.tenant_name}
+                                </td>
+                                <td className="py-2 px-3 text-right text-slate-700">
+                                  {fmtNum(r.days_overdue)}
+                                </td>
+                                <td className="py-2 px-3 text-right font-medium text-slate-900">
+                                  {formatCurrencyUGX(r.balance)}
+                                </td>
+                              </tr>
+                            ))}
+                            {/* Property subtotal divider */}
+                            <tr className="bg-slate-50 border-t border-slate-300">
+                              <td
+                                colSpan={3}
+                                className="py-2 px-3 font-semibold text-slate-700"
+                              >
+                                {p.property_name} Subtotal
+                              </td>
+                              <td className="py-2 px-3 text-right font-semibold text-slate-900">
+                                {formatCurrencyUGX(p.subtotal_balance)}
+                              </td>
+                            </tr>
+                          </Fragment>
+                        );
+                      })}
+                    </Fragment>
+                  );
+                })}
+
+                {/* Grand total */}
+                <tr className="border-t-2 border-b-2 border-slate-700 bg-slate-50">
+                  <td
+                    colSpan={3}
+                    className="py-3 px-3 font-bold text-slate-900"
+                  >
+                    Total Balance
+                  </td>
+                  <td className="py-3 px-3 text-right font-bold text-slate-900">
+                    {formatCurrencyUGX(grandTotal)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         )}
+      </div>
+
+      {/* Summary boxes */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryBox label="Total Rent" value={formatCurrencyUGX(summary.total_rent)} />
+        <SummaryBox label="Recovered" value={formatCurrencyUGX(summary.recovered)} />
+        <SummaryBox label="Balance" value={formatCurrencyUGX(summary.balance)} />
+        <SummaryBox label="Recovery Rate" value={fmtPercent(summary.recovery_rate)} />
       </div>
     </div>
   );
 }
 
-function ManagerBlock({ manager }) {
+function SummaryBox({ label, value }) {
   return (
-    <section>
-      <div className="flex items-baseline justify-between border-b-2 border-slate-800 pb-2 mb-3">
-        <h3 className="text-base font-bold text-slate-900 uppercase tracking-wide">
-          {manager.officer_name}
-        </h3>
-        <div className="text-sm text-slate-700">
-          <span className="mr-4">
-            {manager.total_tenants_count}{" "}
-            {manager.total_tenants_count === 1 ? "tenant" : "tenants"}
-          </span>
-          <span className="font-bold text-slate-900">
-            {formatCurrencyUGX(manager.total_arrears)}
-          </span>
-        </div>
+    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+      <div className="text-xs text-slate-500 font-medium uppercase tracking-wide">
+        {label}
       </div>
-
-      <div className="space-y-4 pl-2">
-        {manager.properties.map((p) => (
-          <PropertyBlock
-            key={p.property_id === null ? "none" : p.property_id}
-            property={p}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PropertyBlock({ property }) {
-  return (
-    <div>
-      <div className="flex items-baseline justify-between bg-slate-50 rounded-lg px-3 py-2 mb-1">
-        <div className="font-semibold text-slate-800">{property.property_name}</div>
-        <div className="text-sm text-slate-700">
-          <span className="mr-3 text-slate-500">
-            {property.subtotal_tenants_count}{" "}
-            {property.subtotal_tenants_count === 1 ? "tenant" : "tenants"}
-          </span>
-          <span className="font-semibold text-slate-900">
-            {formatCurrencyUGX(property.subtotal_arrears)}
-          </span>
-        </div>
-      </div>
-
-      <div className="overflow-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-slate-500 border-b border-slate-300">
-              <th className="py-1.5 pr-3 font-medium">Tenant</th>
-              <th className="py-1.5 pr-3 font-medium">Unit</th>
-              <th className="py-1.5 pr-3 font-medium text-right">Months</th>
-              <th className="py-1.5 pr-3 font-medium text-right">Days</th>
-              <th className="py-1.5 pr-3 font-medium">Bucket</th>
-              <th className="py-1.5 pr-3 font-medium text-right">Arrears</th>
-            </tr>
-          </thead>
-          <tbody>
-            {property.tenants.map((t) => (
-              <tr
-                key={t.lease_id}
-                className="border-b last:border-b-0 border-slate-100"
-              >
-                <td className="py-1.5 pr-3 text-slate-800">{t.tenant_name}</td>
-                <td className="py-1.5 pr-3 text-slate-700">{t.unit_number}</td>
-                <td className="py-1.5 pr-3 text-right text-slate-700">
-                  {t.months_behind}
-                </td>
-                <td className="py-1.5 pr-3 text-right text-slate-700">
-                  {t.days_overdue}
-                </td>
-                <td className="py-1.5 pr-3 text-slate-700">{t.bucket}</td>
-                <td className="py-1.5 pr-3 text-right font-medium text-slate-900">
-                  {formatCurrencyUGX(t.arrears_amount)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <div className="text-lg font-bold text-slate-900 mt-1">{value}</div>
     </div>
   );
 }
