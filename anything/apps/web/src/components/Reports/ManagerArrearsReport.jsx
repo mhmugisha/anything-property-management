@@ -144,20 +144,17 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div
-        className="flex flex-wrap gap-2 mb-4 justify-end"
-        data-no-print="true"
-      >
-        <PrintPreviewButtons targetRef={printRef} title={reportTitle} />
-      </div>
-
-      {/* Summary boxes */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <SummaryBox label="Total Rent" value={formatCurrencyUGX(summary.total_rent)} />
-        <SummaryBox label="Recovered" value={formatCurrencyUGX(summary.recovered)} />
-        <SummaryBox label="Balance" value={formatCurrencyUGX(summary.balance)} />
-        <SummaryBox label="Recovery Rate" value={fmtPercent(summary.recovery_rate)} />
+      {/* Summary chips + Print/PDF (one row) */}
+      <div className="flex flex-wrap items-center gap-2 justify-between mb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <SummaryBox label="Total Rent" value={formatCurrencyUGX(summary.total_rent)} />
+          <SummaryBox label="Recovered" value={formatCurrencyUGX(summary.recovered)} />
+          <SummaryBox label="Balance" value={formatCurrencyUGX(summary.balance)} />
+          <SummaryBox label="Recovery Rate" value={fmtPercent(summary.recovery_rate)} />
+        </div>
+        <div data-no-print="true">
+          <PrintPreviewButtons targetRef={printRef} title={reportTitle} />
+        </div>
       </div>
 
       {/* Main table */}
@@ -268,11 +265,11 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
 
 function SummaryBox({ label, value }) {
   return (
-    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-      <div className="text-xs text-slate-500 font-medium uppercase tracking-wide">
+    <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-200 shadow-sm">
+      <span className="text-[11px] text-slate-500 font-medium uppercase tracking-wide">
         {label}
-      </div>
-      <div className="text-lg font-bold text-slate-900 mt-1">{value}</div>
+      </span>
+      <span className="text-sm font-semibold text-slate-900">{value}</span>
     </div>
   );
 }
