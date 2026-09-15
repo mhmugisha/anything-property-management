@@ -24,7 +24,7 @@ export function PropertyForm({
   landlordSelectOptions.unshift({ value: "", label: "Select landlord…" });
 
   const officerSelectOptions = [
-    { value: "", label: "— No manager assigned —" },
+    { value: "", label: "— Assign Manager —" },
     ...(officerOptions || []).map((o) => ({
       value: String(o.value),
       label: o.label,
