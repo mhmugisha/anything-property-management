@@ -7,15 +7,16 @@ import { requirePermission } from "@/app/api/utils/staff";
  * One row per Portfolio Manager comparing collection performance over a
  * chosen invoice_date range.
  *
- * Reuses the same unpaid-invoice / per-manager aggregation as
- * /api/reports/manager-arrears so totals tie out exactly:
- *   included when (amount - paid_amount) > 0
- *              AND status <> 'void'
- *              AND COALESCE(is_deleted, false) = false
- *              AND COALESCE(approval_status, 'approved') = 'approved'
- *              AND lease is active
+ * Unlike Manager Arrears (which is scoped to unpaid invoices only), this
+ * report includes ALL invoices billed in the period so recovery_rate is
+ * a true collection rate: paid / billed.
  *
- * From/To dates filter on i.invoice_date, matching Manager Arrears.
+ * Included when:
+ *   status <> 'void'
+ *   AND COALESCE(is_deleted, false) = false
+ *   AND COALESCE(approval_status, 'approved') = 'approved'
+ *   AND lease is active
+ *   AND invoice_date in [fromDate, toDate] (when provided)
  *
  * Query params:
  *   fromDate  YYYY-MM-DD (optional)
@@ -31,7 +32,6 @@ export async function GET(request) {
     const toDate = (searchParams.get("toDate") || "").trim() || null;
 
     const conditions = [
-      "(i.amount - i.paid_amount) > 0",
       "i.status <> 'void'",
       "COALESCE(i.is_deleted, false) = false",
       "COALESCE(i.approval_status, 'approved') = 'approved'",

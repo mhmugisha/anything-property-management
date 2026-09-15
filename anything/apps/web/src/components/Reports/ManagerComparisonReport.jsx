@@ -64,6 +64,9 @@ export function ManagerComparisonReport({ userLoading, user, canViewReports }) {
         <h1 className="text-lg font-bold text-slate-900 uppercase tracking-wide">
           {reportTitle}
         </h1>
+        <p className="mt-1 text-xs text-slate-500">
+          Collection performance — of rent billed in the period, how much has been collected.
+        </p>
         <div className="mt-2 text-sm text-slate-600">
           <span className="font-medium text-slate-700">Date Range:</span>{" "}
           {dateRangeLabel}
