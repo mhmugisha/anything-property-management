@@ -12,6 +12,7 @@ import { useArrearsReport, useCountsSummaryReport } from "@/hooks/useReports";
 import { useReportsLookups } from "@/hooks/useReportsLookups";
 import { ArrearsReport } from "@/components/Reports/ArrearsReport";
 import { ManagerArrearsReport } from "@/components/Reports/ManagerArrearsReport";
+import { ManagerComparisonReport } from "@/components/Reports/ManagerComparisonReport";
 import { CountsReport } from "@/components/Reports/CountsReport";
 import { TenantStatementReport } from "@/components/Reports/TenantStatementReport";
 import { LandlordMonthlySummary } from "@/components/Reports/LandlordMonthlySummary";
@@ -93,6 +94,14 @@ export default function ReportsPage() {
       case "manager-arrears":
         return (
           <ManagerArrearsReport
+            userLoading={userLoading}
+            user={user}
+            canViewReports={canViewReports}
+          />
+        );
+      case "manager-comparison":
+        return (
+          <ManagerComparisonReport
             userLoading={userLoading}
             user={user}
             canViewReports={canViewReports}

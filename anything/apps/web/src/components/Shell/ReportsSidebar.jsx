@@ -12,6 +12,7 @@ import {
   GitCompare,
   Hash,
   UserCog,
+  BarChart3,
 } from "lucide-react";
 
 export default function ReportsSidebar() {
@@ -30,6 +31,11 @@ export default function ReportsSidebar() {
       title: "Manager Arrears",
       href: "/reports?report=manager-arrears",
       icon: UserCog,
+    },
+    {
+      title: "Manager Comparison",
+      href: "/reports?report=manager-comparison",
+      icon: BarChart3,
     },
     {
       title: "Tenant Statement",

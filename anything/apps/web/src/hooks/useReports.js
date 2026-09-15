@@ -78,6 +78,26 @@ export function useManagerArrearsReport(filters, enabled) {
   });
 }
 
+export function useManagerComparisonReport(filters, enabled) {
+  const fromDate = (filters?.fromDate || "").trim();
+  const toDate = (filters?.toDate || "").trim();
+
+  const qs = new URLSearchParams();
+  if (fromDate) qs.set("fromDate", fromDate);
+  if (toDate) qs.set("toDate", toDate);
+
+  const url = `/api/reports/manager-comparison${qs.toString() ? `?${qs.toString()}` : ""}`;
+
+  return useQuery({
+    queryKey: ["reports", "managerComparison", { fromDate, toDate }],
+    queryFn: async () => {
+      const data = await fetchJson(url);
+      return data;
+    },
+    enabled,
+  });
+}
+
 export function usePaymentStatusReport(filters, enabled) {
   const month = filters?.month;
   const year = filters?.year;
