@@ -56,6 +56,28 @@ export function useLandlordPayoutsSummary(filters, enabled) {
   });
 }
 
+export function useManagerArrearsReport(filters, enabled) {
+  const month = filters?.month;
+  const year = filters?.year;
+  const officerId = filters?.officerId || "";
+
+  const qs = new URLSearchParams();
+  if (month) qs.set("month", String(month));
+  if (year) qs.set("year", String(year));
+  if (officerId) qs.set("officerId", String(officerId));
+
+  const url = `/api/reports/manager-arrears${qs.toString() ? `?${qs.toString()}` : ""}`;
+
+  return useQuery({
+    queryKey: ["reports", "managerArrears", { month, year, officerId }],
+    queryFn: async () => {
+      const data = await fetchJson(url);
+      return data;
+    },
+    enabled: enabled && !!month && !!year,
+  });
+}
+
 export function usePaymentStatusReport(filters, enabled) {
   const month = filters?.month;
   const year = filters?.year;

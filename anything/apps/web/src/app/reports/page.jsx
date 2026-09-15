@@ -11,6 +11,7 @@ import AccessDenied from "@/components/Shell/AccessDenied";
 import { useArrearsReport, useCountsSummaryReport } from "@/hooks/useReports";
 import { useReportsLookups } from "@/hooks/useReportsLookups";
 import { ArrearsReport } from "@/components/Reports/ArrearsReport";
+import { ManagerArrearsReport } from "@/components/Reports/ManagerArrearsReport";
 import { CountsReport } from "@/components/Reports/CountsReport";
 import { TenantStatementReport } from "@/components/Reports/TenantStatementReport";
 import { LandlordMonthlySummary } from "@/components/Reports/LandlordMonthlySummary";
@@ -89,6 +90,14 @@ export default function ReportsPage() {
         return <CountsReport countsQuery={countsQuery} />;
       case "arrears":
         return <ArrearsReport arrearsQuery={arrearsQuery} />;
+      case "manager-arrears":
+        return (
+          <ManagerArrearsReport
+            userLoading={userLoading}
+            user={user}
+            canViewReports={canViewReports}
+          />
+        );
       case "tenant-statement":
         return (
           <TenantStatementReport
