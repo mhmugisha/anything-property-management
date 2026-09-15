@@ -152,6 +152,14 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
         <PrintPreviewButtons targetRef={printRef} title={reportTitle} />
       </div>
 
+      {/* Summary boxes */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <SummaryBox label="Total Rent" value={formatCurrencyUGX(summary.total_rent)} />
+        <SummaryBox label="Recovered" value={formatCurrencyUGX(summary.recovered)} />
+        <SummaryBox label="Balance" value={formatCurrencyUGX(summary.balance)} />
+        <SummaryBox label="Recovery Rate" value={fmtPercent(summary.recovery_rate)} />
+      </div>
+
       {/* Main table */}
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-4">
         {reportQuery.isLoading ? (
@@ -253,14 +261,6 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
             </table>
           </div>
         )}
-      </div>
-
-      {/* Summary boxes */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryBox label="Total Rent" value={formatCurrencyUGX(summary.total_rent)} />
-        <SummaryBox label="Recovered" value={formatCurrencyUGX(summary.recovered)} />
-        <SummaryBox label="Balance" value={formatCurrencyUGX(summary.balance)} />
-        <SummaryBox label="Recovery Rate" value={fmtPercent(summary.recovery_rate)} />
       </div>
     </div>
   );
