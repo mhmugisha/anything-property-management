@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { requirePermissionOrManager } from "@/app/api/utils/staff";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -14,7 +14,7 @@ function parseDate(v) {
 }
 
 export async function PUT(request, { params }) {
-  const perm = await requirePermission(request, "tenants");
+  const perm = await requirePermissionOrManager(request, "tenants");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

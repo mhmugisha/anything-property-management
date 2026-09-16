@@ -1,8 +1,8 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { requirePermissionOrManager } from "@/app/api/utils/staff";
 
 export async function GET(request) {
-  const perm = await requirePermission(request, "tenants");
+  const perm = await requirePermissionOrManager(request, "tenants");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

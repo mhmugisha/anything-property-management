@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { requireReportAccess } from "@/app/api/utils/staff";
 import { isManagerScoped } from "@/app/api/utils/managerScope";
 
 /**
@@ -25,7 +25,7 @@ import { isManagerScoped } from "@/app/api/utils/managerScope";
  *   officerId  numeric portfolio-manager id, "unassigned", or omitted = all
  */
 export async function GET(request) {
-  const perm = await requirePermission(request, "reports");
+  const perm = await requireReportAccess(request, "manager-arrears");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

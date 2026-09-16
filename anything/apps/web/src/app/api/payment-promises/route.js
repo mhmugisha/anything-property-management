@@ -1,5 +1,8 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import {
+  requirePermission,
+  requirePermissionOrManager,
+} from "@/app/api/utils/staff";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -64,7 +67,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const perm = await requirePermission(request, "tenants");
+  const perm = await requirePermissionOrManager(request, "tenants");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

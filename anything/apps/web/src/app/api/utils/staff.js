@@ -83,6 +83,108 @@ export async function requirePermission(request, key) {
   return { ok: true, status: 200, body: null, staff, permissions, ipAddress };
 }
 
+function getReportsAllowed(permissions) {
+  if (!permissions || typeof permissions !== "object") return [];
+  const list = permissions.reports_allowed;
+  if (!Array.isArray(list)) return [];
+  return list.map((v) => String(v));
+}
+
+/**
+ * Passes if the caller has the blanket "reports" permission OR the
+ * given reportKey is present in permissions.reports_allowed. Used to
+ * expose a specific report to a role that otherwise lacks reports.
+ */
+export async function requireReportAccess(request, reportKey) {
+  const { session, staff, permissions, ipAddress } =
+    await getStaffContext(request);
+
+  if (!session) {
+    return {
+      ok: false,
+      status: 401,
+      body: { error: "Unauthorized" },
+      staff: null,
+      permissions: null,
+      ipAddress,
+    };
+  }
+
+  if (!staff || staff.is_active === false) {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: "Staff profile not set up" },
+      staff: null,
+      permissions: null,
+      ipAddress,
+    };
+  }
+
+  const hasReports = hasPermission(permissions, "reports");
+  const allowedList = getReportsAllowed(permissions);
+  const key = String(reportKey || "");
+
+  if (!hasReports && !(key && allowedList.includes(key))) {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: "Forbidden" },
+      staff,
+      permissions,
+      ipAddress,
+    };
+  }
+
+  return { ok: true, status: 200, body: null, staff, permissions, ipAddress };
+}
+
+/**
+ * Passes if the caller has the given blanket permission OR is a
+ * Portfolio Manager. Used to expose narrow capabilities (e.g. payment
+ * promises) to managers without granting the full "tenants" permission.
+ */
+export async function requirePermissionOrManager(request, key) {
+  const { session, staff, permissions, ipAddress } =
+    await getStaffContext(request);
+
+  if (!session) {
+    return {
+      ok: false,
+      status: 401,
+      body: { error: "Unauthorized" },
+      staff: null,
+      permissions: null,
+      ipAddress,
+    };
+  }
+
+  if (!staff || staff.is_active === false) {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: "Staff profile not set up" },
+      staff: null,
+      permissions: null,
+      ipAddress,
+    };
+  }
+
+  const isManager = staff.role_name === "Portfolio Manager";
+  if (!hasPermission(permissions, key) && !isManager) {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: "Forbidden" },
+      staff,
+      permissions,
+      ipAddress,
+    };
+  }
+
+  return { ok: true, status: 200, body: null, staff, permissions, ipAddress };
+}
+
 export async function writeAuditLog({
   staffId,
   action,
