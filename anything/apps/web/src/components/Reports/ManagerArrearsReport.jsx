@@ -216,14 +216,21 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
           </p>
         ) : (
           <div className="overflow-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm table-fixed">
+              <colgroup>
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "30%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "40%" }} />
+              </colgroup>
               <thead>
                 <tr className="text-left text-slate-500 border-b-2 border-slate-700">
                   <th className="py-2 px-3">Unit</th>
                   <th className="py-2 px-3">Tenant</th>
                   <th className="py-2 px-3 text-right">Days</th>
                   <th className="py-2 px-3 text-right">Balance</th>
-                  <th className="py-2 px-3">Latest Promise</th>
+                  <th className="py-2 px-3 text-left">Latest Promise</th>
                 </tr>
               </thead>
               <tbody>
@@ -367,7 +374,7 @@ function PromiseCell({ promise, onClick, disabled }) {
       title={promise.comment || ""}
     >
       <div className="text-slate-800 group-hover:text-indigo-700">
-        {truncate(promise.comment, 32)}
+        {truncate(promise.comment, 50)}
       </div>
       <div className="text-slate-500">
         {dateLabel}
