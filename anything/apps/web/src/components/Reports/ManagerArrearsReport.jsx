@@ -1,10 +1,15 @@
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchJson } from "@/utils/api";
 import { formatCurrencyUGX } from "@/utils/formatCurrencyUGX";
 import DatePopoverInput from "@/components/DatePopoverInput";
 import PrintPreviewButtons from "@/components/PrintPreviewButtons";
 import { useManagerArrearsReport } from "@/hooks/useReports";
+import {
+  useLatestPromises,
+  useCreatePromise,
+  useUpdatePromise,
+} from "@/hooks/usePaymentPromises";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 const fmtNum = (n) => numberFormatter.format(Number(n || 0));
@@ -20,6 +25,25 @@ function formatDateDisplay(iso) {
   const [y, m, d] = s.split("-");
   if (!y || !m || !d) return s;
   return `${d}-${m}-${y}`;
+}
+
+function formatShortDate(iso) {
+  if (!iso) return "";
+  const s = String(iso).slice(0, 10);
+  const [y, m, d] = s.split("-");
+  if (!y || !m || !d) return s;
+  const date = new Date(Number(y), Number(m) - 1, Number(d));
+  if (Number.isNaN(date.getTime())) return s;
+  return date.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function truncate(text, max = 32) {
+  const s = String(text || "");
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
 export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
@@ -75,6 +99,27 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
   const hasRows = managers.some((m) =>
     m.properties.some((p) => p.rows.length > 0),
   );
+
+  const tenantIds = useMemo(() => {
+    const set = new Set();
+    for (const m of managers) {
+      for (const p of m.properties) {
+        for (const r of p.rows) {
+          if (r.tenant_id != null) set.add(Number(r.tenant_id));
+        }
+      }
+    }
+    return Array.from(set);
+  }, [managers]);
+
+  const latestPromisesQuery = useLatestPromises(tenantIds, tenantIds.length > 0);
+  const latestByTenant = latestPromisesQuery.data || {};
+
+  const [editor, setEditor] = useState(null);
+  const openEditor = (tenantId, tenantName, existing) => {
+    setEditor({ tenantId: Number(tenantId), tenantName, existing: existing || null });
+  };
+  const closeEditor = () => setEditor(null);
 
   return (
     <div ref={printRef}>
@@ -178,6 +223,7 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
                   <th className="py-2 px-3">Tenant</th>
                   <th className="py-2 px-3 text-right">Days</th>
                   <th className="py-2 px-3 text-right">Balance</th>
+                  <th className="py-2 px-3">Latest Promise</th>
                 </tr>
               </thead>
               <tbody>
@@ -197,6 +243,7 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
                         <td className="py-2 px-3 text-right font-semibold">
                           {formatCurrencyUGX(m.total_balance)}
                         </td>
+                        <td className="py-2 px-3" />
                       </tr>
 
                       {m.properties.map((p) => {
@@ -204,25 +251,44 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
                           p.property_id === null ? "none" : p.property_id;
                         return (
                           <Fragment key={`${managerKey}-${propertyKey}`}>
-                            {p.rows.map((r) => (
-                              <tr
-                                key={r.invoice_id}
-                                className="border-b border-slate-100 hover:bg-slate-50"
-                              >
-                                <td className="py-2 px-3 text-slate-800">
-                                  {r.unit_number}
-                                </td>
-                                <td className="py-2 px-3 text-slate-700">
-                                  {r.tenant_name}
-                                </td>
-                                <td className="py-2 px-3 text-right text-slate-700">
-                                  {fmtNum(r.days_overdue)}
-                                </td>
-                                <td className="py-2 px-3 text-right font-medium text-slate-900">
-                                  {formatCurrencyUGX(r.balance)}
-                                </td>
-                              </tr>
-                            ))}
+                            {p.rows.map((r) => {
+                              const promise =
+                                r.tenant_id != null
+                                  ? latestByTenant[Number(r.tenant_id)]
+                                  : null;
+                              return (
+                                <tr
+                                  key={r.invoice_id}
+                                  className="border-b border-slate-100 hover:bg-slate-50"
+                                >
+                                  <td className="py-2 px-3 text-slate-800">
+                                    {r.unit_number}
+                                  </td>
+                                  <td className="py-2 px-3 text-slate-700">
+                                    {r.tenant_name}
+                                  </td>
+                                  <td className="py-2 px-3 text-right text-slate-700">
+                                    {fmtNum(r.days_overdue)}
+                                  </td>
+                                  <td className="py-2 px-3 text-right font-medium text-slate-900">
+                                    {formatCurrencyUGX(r.balance)}
+                                  </td>
+                                  <td className="py-2 px-3 text-slate-700">
+                                    <PromiseCell
+                                      promise={promise}
+                                      onClick={() =>
+                                        openEditor(
+                                          r.tenant_id,
+                                          r.tenant_name,
+                                          promise,
+                                        )
+                                      }
+                                      disabled={r.tenant_id == null}
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })}
                             {/* Property subtotal divider */}
                             <tr className="bg-slate-50 border-t border-slate-300">
                               <td
@@ -234,6 +300,7 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
                               <td className="py-2 px-3 text-right font-semibold text-slate-900">
                                 {formatCurrencyUGX(p.subtotal_balance)}
                               </td>
+                              <td className="py-2 px-3" />
                             </tr>
                           </Fragment>
                         );
@@ -253,11 +320,202 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
                   <td className="py-3 px-3 text-right font-bold text-slate-900">
                     {formatCurrencyUGX(grandTotal)}
                   </td>
+                  <td className="py-3 px-3" />
                 </tr>
               </tbody>
             </table>
           </div>
         )}
+      </div>
+
+      {editor ? (
+        <PromiseEditor
+          tenantId={editor.tenantId}
+          tenantName={editor.tenantName}
+          existing={editor.existing}
+          onClose={closeEditor}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PromiseCell({ promise, onClick, disabled }) {
+  if (disabled) {
+    return <span className="text-slate-400">—</span>;
+  }
+  if (!promise) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline"
+        data-no-print="true"
+      >
+        + Add promise
+      </button>
+    );
+  }
+  const dateLabel = formatShortDate(promise.promise_date);
+  const amountLabel =
+    promise.amount != null ? formatCurrencyUGX(promise.amount) : "";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-left leading-tight text-xs group"
+      title={promise.comment || ""}
+    >
+      <div className="text-slate-800 group-hover:text-indigo-700">
+        {truncate(promise.comment, 32)}
+      </div>
+      <div className="text-slate-500">
+        {dateLabel}
+        {amountLabel ? ` · ${amountLabel}` : ""}
+      </div>
+    </button>
+  );
+}
+
+function PromiseEditor({ tenantId, tenantName, existing, onClose }) {
+  const isEdit = Boolean(existing?.id);
+  const [comment, setComment] = useState(existing?.comment || "");
+  const [promiseDate, setPromiseDate] = useState(
+    existing?.promise_date ? String(existing.promise_date).slice(0, 10) : "",
+  );
+  const [amount, setAmount] = useState(
+    existing?.amount != null ? String(existing.amount) : "",
+  );
+  const [error, setError] = useState("");
+
+  const createMut = useCreatePromise();
+  const updateMut = useUpdatePromise();
+  const saving = createMut.isPending || updateMut.isPending;
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const handleSave = () => {
+    setError("");
+    const trimmedComment = comment.trim();
+    if (!trimmedComment) {
+      setError("Comment is required.");
+      return;
+    }
+    if (!promiseDate) {
+      setError("Promise date is required.");
+      return;
+    }
+    let amountValue = null;
+    if (amount !== "" && amount !== null && amount !== undefined) {
+      const n = Number(amount);
+      if (!Number.isFinite(n) || n <= 0) {
+        setError("Amount must be a positive number.");
+        return;
+      }
+      amountValue = n;
+    }
+    const payload = {
+      tenant_id: tenantId,
+      promise_date: promiseDate,
+      comment: trimmedComment,
+      amount: amountValue,
+    };
+    const opts = {
+      onSuccess: () => onClose(),
+      onError: (err) => setError(err?.message || "Failed to save promise."),
+    };
+    if (isEdit) {
+      updateMut.mutate({ id: existing.id, payload }, opts);
+    } else {
+      createMut.mutate(payload, opts);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      data-no-print="true"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-md p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3">
+          <h3 className="text-base font-semibold text-slate-900">
+            {isEdit ? "Edit Payment Promise" : "New Payment Promise"}
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">{tenantName}</p>
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600">
+              Comment <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={2}
+              placeholder="Promised to pay by end of week"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600">
+              Promise Date <span className="text-rose-500">*</span>
+            </label>
+            <DatePopoverInput
+              value={promiseDate}
+              onChange={setPromiseDate}
+              placeholder="DD-MM-YYYY"
+              className="bg-gray-50"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600">
+              Amount (optional)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="e.g. 500000"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none text-sm"
+            />
+          </div>
+
+          {error ? (
+            <p className="text-xs text-rose-600">{error}</p>
+          ) : null}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 mt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100"
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="px-3 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60"
+            disabled={saving}
+          >
+            {saving ? "Saving…" : isEdit ? "Update" : "Save"}
+          </button>
+        </div>
       </div>
     </div>
   );
