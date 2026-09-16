@@ -71,6 +71,7 @@ export async function action({ request }) {
 export default function SignInPage({ actionData }) {
   const [showPassword, setShowPassword] = useState(false);
   const [urlError, setUrlError] = useState(null);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -90,7 +91,12 @@ export default function SignInPage({ actionData }) {
     }
   }, []);
 
-  const error = actionData?.error || urlError;
+  const error = dismissed ? null : actionData?.error || urlError;
+
+  const handleFieldInput = () => {
+    if (urlError) setUrlError(null);
+    if (!dismissed) setDismissed(true);
+  };
 
   return (
     <div className="min-h-screen bg-[#E5E7EB] flex items-center justify-center p-4">
@@ -101,7 +107,11 @@ export default function SignInPage({ actionData }) {
           <form
             method="POST"
             action="/account/signin"
-            onSubmit={() => setUrlError(null)}
+            onSubmit={() => {
+              setUrlError(null);
+              setDismissed(false);
+            }}
+            onInput={handleFieldInput}
             className="space-y-4"
           >
             <div><input type="email" name="email" placeholder="Email or Username" className="w-full px-5 py-4 bg-white border-2 border-gray-300 rounded-xl text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-0 focus:border-[#0B1F3A] text-base" required /></div>
