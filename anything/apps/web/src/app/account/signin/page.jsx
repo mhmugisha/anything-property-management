@@ -1,6 +1,23 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import ExelaLogo from "@/components/ExelaLogo";
+
+const CREDENTIAL_ERROR_CODES = new Set([
+  "invalid",
+  "credentials",
+  "credentialssignin",
+  "invalidcredentials",
+  "signin",
+]);
+
+function friendlyErrorFromCode(code) {
+  if (!code) return null;
+  const normalized = String(code).toLowerCase();
+  if (CREDENTIAL_ERROR_CODES.has(normalized)) {
+    return "Invalid email or password.";
+  }
+  return "Something went wrong. Please try again.";
+}
 
 export async function action({ request }) {
   const { webcrypto: crypto } = await import("node:crypto");
@@ -53,7 +70,16 @@ export async function action({ request }) {
 
 export default function SignInPage({ actionData }) {
   const [showPassword, setShowPassword] = useState(false);
-  const error = actionData?.error;
+  const [urlError, setUrlError] = useState(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("error");
+    if (code) setUrlError(friendlyErrorFromCode(code));
+  }, []);
+
+  const error = actionData?.error || urlError;
 
   return (
     <div className="min-h-screen bg-[#E5E7EB] flex items-center justify-center p-4">
