@@ -32,6 +32,20 @@ export function useLatestPromises(tenantIds, enabled = true) {
   });
 }
 
+export function useDuePromises(enabled = true) {
+  return useQuery({
+    queryKey: ["paymentPromises", "due"],
+    queryFn: async () => {
+      const data = await fetchJson("/api/payment-promises/due");
+      return {
+        count: Number(data?.count || 0),
+        promises: data?.promises || [],
+      };
+    },
+    enabled,
+  });
+}
+
 export function useCreatePromise() {
   const qc = useQueryClient();
   return useMutation({

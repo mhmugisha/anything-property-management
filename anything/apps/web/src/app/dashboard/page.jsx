@@ -9,12 +9,14 @@ import {
   PiggyBank,
   Receipt,
   FileText,
+  CalendarClock,
   X,
 } from "lucide-react";
 import useUser from "@/utils/useUser";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
 import { useDashboardStats } from "@/hooks/useDashboardStats";
 import { useDashboardUndepositedFundsLines } from "@/hooks/useDashboardUndepositedFundsLines";
+import { useDuePromises } from "@/hooks/usePaymentPromises";
 import AppHeader from "@/components/Shell/AppHeader";
 import Sidebar from "@/components/Shell/Sidebar";
 import DashboardSidebar from "@/components/Shell/DashboardSidebar";
@@ -40,6 +42,8 @@ export default function Dashboard() {
   const undepositedLinesQuery = useDashboardUndepositedFundsLines(
     statsEnabled && undepositedOpen,
   );
+  const duePromisesQuery = useDuePromises(statsEnabled);
+  const duePromisesCount = Number(duePromisesQuery.data?.count || 0);
 
   const staffProfile = staffProfileQuery.data || null;
   const stats = statsQuery.data || null;
@@ -387,7 +391,7 @@ export default function Dashboard() {
           </div>
 
           {/* Quick links */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
             <QuickLinkTile href="/properties?newUnit=1">
               <div className="flex items-center gap-2">
                 <PlusSquare className="w-4 h-4 text-white" />
@@ -416,6 +420,12 @@ export default function Dashboard() {
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-white" />
                 <span>Statements</span>
+              </div>
+            </QuickLinkTile>
+            <QuickLinkTile href="/promises-due">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="w-4 h-4 text-white" />
+                <span>Promises Due ({duePromisesCount})</span>
               </div>
             </QuickLinkTile>
           </div>

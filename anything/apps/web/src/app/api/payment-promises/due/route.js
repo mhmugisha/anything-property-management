@@ -1,0 +1,89 @@
+import sql from "@/app/api/utils/sql";
+import { requirePermission } from "@/app/api/utils/staff";
+
+/**
+ * Promises Due
+ *
+ * Latest promise per tenant whose promise_date <= CURRENT_DATE
+ * (due today or overdue). Sorted most-overdue first.
+ *
+ * current_balance reuses the arrears/open-balances definition
+ * (see /api/reports/arrears, /api/payments/open-balances,
+ * /api/reports/manager-arrears): Σ (amount - paid_amount) across
+ * a tenant's unpaid, non-void, non-deleted, approved invoices whose
+ * lease is active.
+ */
+export async function GET(request) {
+  const perm = await requirePermission(request, "tenants");
+  if (!perm.ok) return Response.json(perm.body, { status: perm.status });
+
+  try {
+    const rows = await sql(
+      `WITH latest AS (
+         SELECT DISTINCT ON (pp.tenant_id)
+           pp.id,
+           pp.tenant_id,
+           pp.promise_date,
+           pp.amount,
+           pp.comment,
+           pp.recorded_by,
+           pp.created_at,
+           pp.updated_at
+         FROM payment_promises pp
+         ORDER BY pp.tenant_id, pp.created_at DESC, pp.id DESC
+       ),
+       balances AS (
+         SELECT
+           i.tenant_id,
+           SUM(i.amount - i.paid_amount) AS current_balance
+         FROM invoices i
+         WHERE (i.amount - i.paid_amount) > 0
+           AND i.status <> 'void'
+           AND COALESCE(i.is_deleted, false) = false
+           AND COALESCE(i.approval_status, 'approved') = 'approved'
+           AND EXISTS (
+             SELECT 1 FROM leases l
+             WHERE l.id = i.lease_id AND l.status = 'active'
+           )
+         GROUP BY i.tenant_id
+       )
+       SELECT
+         l.id,
+         l.tenant_id,
+         l.promise_date,
+         l.amount,
+         l.comment,
+         l.recorded_by,
+         t.full_name AS tenant_name,
+         su.full_name AS recorded_by_name,
+         COALESCE(b.current_balance, 0) AS current_balance
+       FROM latest l
+       LEFT JOIN tenants t ON t.id = l.tenant_id
+       LEFT JOIN staff_users su ON su.id = l.recorded_by
+       LEFT JOIN balances b ON b.tenant_id = l.tenant_id
+       WHERE l.promise_date <= CURRENT_DATE
+       ORDER BY l.promise_date ASC, l.id ASC`,
+      [],
+    );
+
+    const promises = rows.map((r) => ({
+      id: Number(r.id),
+      tenant_id: Number(r.tenant_id),
+      tenant_name: r.tenant_name || "—",
+      promise_date: r.promise_date,
+      amount:
+        r.amount === null || r.amount === undefined ? null : Number(r.amount),
+      comment: r.comment,
+      recorded_by_name: r.recorded_by_name || null,
+      current_balance: Number(r.current_balance || 0),
+    }));
+
+    return Response.json({ count: promises.length, promises });
+  } catch (error) {
+    console.error("GET /api/payment-promises/due error", error);
+    return Response.json(
+      { error: "Failed to fetch due payment promises" },
+      { status: 500 },
+    );
+  }
+}
