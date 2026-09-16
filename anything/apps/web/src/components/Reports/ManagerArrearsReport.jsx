@@ -219,10 +219,10 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
             <table className="w-full text-sm table-fixed">
               <colgroup>
                 <col style={{ width: "8%" }} />
-                <col style={{ width: "30%" }} />
+                <col style={{ width: "40%" }} />
                 <col style={{ width: "8%" }} />
                 <col style={{ width: "14%" }} />
-                <col style={{ width: "40%" }} />
+                <col style={{ width: "30%" }} />
               </colgroup>
               <thead>
                 <tr className="text-left text-slate-500 border-b-2 border-slate-700">
