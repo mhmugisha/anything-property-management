@@ -77,6 +77,17 @@ export default function SignInPage({ actionData }) {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("error");
     if (code) setUrlError(friendlyErrorFromCode(code));
+
+    // Strip the ?error= (and any other) query params so a retry POSTs
+    // to a clean /account/signin URL. The message stays visible via
+    // component state — only the URL is cleaned.
+    if (window.location.search) {
+      window.history.replaceState(
+        {},
+        "",
+        window.location.pathname + window.location.hash,
+      );
+    }
   }, []);
 
   const error = actionData?.error || urlError;
@@ -87,7 +98,12 @@ export default function SignInPage({ actionData }) {
         <div className="bg-white rounded-3xl px-10 py-8 shadow-lg">
           <div className="flex justify-center mb-5"><ExelaLogo variant="light" height="h-24" /></div>
           <h1 className="text-4xl font-bold text-[#0B1F3A] text-center mb-7">Welcome Back</h1>
-          <form method="POST" className="space-y-4">
+          <form
+            method="POST"
+            action="/account/signin"
+            onSubmit={() => setUrlError(null)}
+            className="space-y-4"
+          >
             <div><input type="email" name="email" placeholder="Email or Username" className="w-full px-5 py-4 bg-white border-2 border-gray-300 rounded-xl text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-0 focus:border-[#0B1F3A] text-base" required /></div>
             <div className="relative">
               <input type={showPassword ? "text" : "password"} name="password" placeholder="Password" className="w-full px-5 py-4 pr-12 bg-white border-2 border-gray-300 rounded-xl text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-0 focus:border-[#0B1F3A] text-base" required />
