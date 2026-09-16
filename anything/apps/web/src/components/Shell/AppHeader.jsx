@@ -38,17 +38,27 @@ export default function AppHeader({ title, onMenuToggle, active }) {
     };
   }, [dropdownOpen]);
 
-  const navItems = [
-    { key: "dashboard", label: "Dashboard", href: "/dashboard" },
-    { key: "landlords", label: "Landlords", href: "/landlords" },
-    { key: "properties", label: "Properties", href: "/properties" },
-    { key: "tenants", label: "Tenants", href: "/tenants" },
-    { key: "payments", label: "Payments", href: "/payments" },
-    { key: "reports", label: "Reports", href: "/reports" },
-    { key: "accounting", label: "Accounting", href: "/accounting" },
-    { key: "payroll", label: "Payroll", href: "/payroll" },
-    { key: "maintenance", label: "Maintenance", href: "/maintenance" },
-  ];
+  const isPortfolioManager = staffProfile?.role_name === "Portfolio Manager";
+
+  const navItems = isPortfolioManager
+    ? [
+        {
+          key: "reports",
+          label: "Manager Arrears",
+          href: "/reports?report=manager-arrears",
+        },
+      ]
+    : [
+        { key: "dashboard", label: "Dashboard", href: "/dashboard" },
+        { key: "landlords", label: "Landlords", href: "/landlords" },
+        { key: "properties", label: "Properties", href: "/properties" },
+        { key: "tenants", label: "Tenants", href: "/tenants" },
+        { key: "payments", label: "Payments", href: "/payments" },
+        { key: "reports", label: "Reports", href: "/reports" },
+        { key: "accounting", label: "Accounting", href: "/accounting" },
+        { key: "payroll", label: "Payroll", href: "/payroll" },
+        { key: "maintenance", label: "Maintenance", href: "/maintenance" },
+      ];
 
   return (
     <header className="fixed top-0 left-0 right-0 z-20 bg-[#0E1D33] border-b border-white/10 h-32">

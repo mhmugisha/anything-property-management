@@ -1,7 +1,21 @@
 import { useState, useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchJson, postJson, putJson, deleteJson } from "@/utils/api";
-import { PERMISSION_DEFS } from "@/components/Settings/constants";
+import {
+  PERMISSION_DEFS,
+  MANAGER_SAFE_REPORT_DEFS,
+} from "@/components/Settings/constants";
+
+function sanitizeReportsAllowed(list) {
+  const allowedKeys = new Set(MANAGER_SAFE_REPORT_DEFS.map((d) => d.key));
+  if (!Array.isArray(list)) return [];
+  const uniq = new Set();
+  for (const v of list) {
+    const s = String(v);
+    if (allowedKeys.has(s)) uniq.add(s);
+  }
+  return Array.from(uniq);
+}
 
 export function useSettingsRoles({ enabled }) {
   const queryClient = useQueryClient();
@@ -21,11 +35,13 @@ export function useSettingsRoles({ enabled }) {
     for (const def of PERMISSION_DEFS) base[def.key] = false;
     return base;
   });
+  const [newRoleReportsAllowed, setNewRoleReportsAllowed] = useState([]);
 
   const [editRoleOpen, setEditRoleOpen] = useState(false);
   const [editRoleId, setEditRoleId] = useState(null);
   const [editRoleName, setEditRoleName] = useState("");
   const [editRolePermissions, setEditRolePermissions] = useState({});
+  const [editRoleReportsAllowed, setEditRoleReportsAllowed] = useState([]);
 
   const createRoleMutation = useMutation({
     mutationFn: async (payload) => {
@@ -37,6 +53,7 @@ export function useSettingsRoles({ enabled }) {
       const base = {};
       for (const def of PERMISSION_DEFS) base[def.key] = false;
       setNewRolePermissions(base);
+      setNewRoleReportsAllowed([]);
     },
   });
 
@@ -79,6 +96,7 @@ export function useSettingsRoles({ enabled }) {
       normalized[def.key] = incoming[def.key] === true;
     }
     setEditRolePermissions(normalized);
+    setEditRoleReportsAllowed(sanitizeReportsAllowed(incoming.reports_allowed));
   }, []);
 
   const openEditRole = useCallback(
@@ -92,13 +110,24 @@ export function useSettingsRoles({ enabled }) {
   const onSaveEditRole = useCallback(() => {
     if (!editRoleId) return;
 
+    const permissionsWithReports = {
+      ...editRolePermissions,
+      reports_allowed: sanitizeReportsAllowed(editRoleReportsAllowed),
+    };
+
     const payload = {
       role_name: editRoleName,
-      permissions: editRolePermissions,
+      permissions: permissionsWithReports,
     };
 
     updateRoleMutation.mutate({ id: editRoleId, payload });
-  }, [editRoleId, editRoleName, editRolePermissions, updateRoleMutation]);
+  }, [
+    editRoleId,
+    editRoleName,
+    editRolePermissions,
+    editRoleReportsAllowed,
+    updateRoleMutation,
+  ]);
 
   const onDeleteRole = useCallback(
     (r) => {
@@ -114,11 +143,20 @@ export function useSettingsRoles({ enabled }) {
   );
 
   const createRole = useCallback(() => {
+    const permissionsWithReports = {
+      ...newRolePermissions,
+      reports_allowed: sanitizeReportsAllowed(newRoleReportsAllowed),
+    };
     createRoleMutation.mutate({
       role_name: newRoleName,
-      permissions: newRolePermissions,
+      permissions: permissionsWithReports,
     });
-  }, [newRoleName, newRolePermissions, createRoleMutation]);
+  }, [
+    newRoleName,
+    newRolePermissions,
+    newRoleReportsAllowed,
+    createRoleMutation,
+  ]);
 
   const createRoleDisabled = useMemo(() => {
     return createRoleMutation.isPending || newRoleName.trim() === "";
@@ -133,6 +171,8 @@ export function useSettingsRoles({ enabled }) {
     setNewRoleName,
     newRolePermissions,
     setNewRolePermissions,
+    newRoleReportsAllowed,
+    setNewRoleReportsAllowed,
     createRole,
     createRoleDisabled,
     createRoleMutation,
@@ -144,6 +184,8 @@ export function useSettingsRoles({ enabled }) {
     setEditRoleName,
     editRolePermissions,
     setEditRolePermissions,
+    editRoleReportsAllowed,
+    setEditRoleReportsAllowed,
     loadRoleIntoEditor,
     openEditRole,
     onSaveEditRole,

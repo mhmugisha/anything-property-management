@@ -1,7 +1,7 @@
 import { Save } from "lucide-react";
 import { Modal } from "./Modal";
 import { Field } from "./Field";
-import { PERMISSION_DEFS } from "./constants";
+import { PERMISSION_DEFS, MANAGER_SAFE_REPORT_DEFS } from "./constants";
 
 export function EditRoleModal({
   open,
@@ -12,11 +12,23 @@ export function EditRoleModal({
   setEditRoleName,
   editRolePermissions,
   setEditRolePermissions,
+  editRoleReportsAllowed,
+  setEditRoleReportsAllowed,
   roleOptions,
   loadRoleIntoEditor,
   onSave,
   updateRoleMutation,
 }) {
+  const currentAllowedSet = new Set(
+    Array.isArray(editRoleReportsAllowed) ? editRoleReportsAllowed : [],
+  );
+
+  const toggleReportAllowed = (key, checked) => {
+    const next = new Set(currentAllowedSet);
+    if (checked) next.add(key);
+    else next.delete(key);
+    setEditRoleReportsAllowed(Array.from(next));
+  };
   const editRoleIdText = editRoleId ? String(editRoleId) : "";
 
   return (
@@ -84,6 +96,38 @@ export function EditRoleModal({
                       };
                       setEditRolePermissions(next);
                     }}
+                    disabled={!editRoleId}
+                  />
+                  <span className="text-sm text-slate-700">{def.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-medium text-slate-600">
+            Reports this role can access
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            Only takes effect when the Reports permission above is off.
+            Reports listed here are safe to expose because their backend
+            routes enforce per-manager scoping.
+          </div>
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {MANAGER_SAFE_REPORT_DEFS.map((def) => {
+              const checked = currentAllowedSet.has(def.key);
+              return (
+                <label
+                  key={def.key}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) =>
+                      toggleReportAllowed(def.key, e.target.checked)
+                    }
                     disabled={!editRoleId}
                   />
                   <span className="text-sm text-slate-700">{def.label}</span>

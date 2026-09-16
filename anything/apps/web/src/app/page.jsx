@@ -2,19 +2,25 @@
 
 import { useEffect } from "react";
 import useUser from "@/utils/useUser";
+import { useStaffProfile } from "@/hooks/useStaffProfile";
 
 export default function HomePage() {
   const { data: user, loading } = useUser();
+  const staffQuery = useStaffProfile(!loading && !!user);
 
   useEffect(() => {
-    if (!loading) {
-      if (user) {
-        window.location.href = "/dashboard";
-      } else {
-        window.location.href = "/account/signin";
-      }
+    if (loading) return;
+    if (!user) {
+      window.location.href = "/account/signin";
+      return;
     }
-  }, [user, loading]);
+    if (staffQuery.isLoading) return;
+    if (staffQuery.data?.role_name === "Portfolio Manager") {
+      window.location.href = "/reports?report=manager-arrears";
+      return;
+    }
+    window.location.href = "/dashboard";
+  }, [user, loading, staffQuery.isLoading, staffQuery.data?.role_name]);
 
   return (
     <div className="min-h-screen bg-slate-200 flex items-center justify-center">

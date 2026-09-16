@@ -38,6 +38,8 @@ export default function MobileMenu({ isOpen, onClose, active }) {
   const { data: user, loading: userLoading } = useUser();
   const staffQuery = useStaffProfile(!userLoading && !!user);
   const isAdmin = staffQuery.data?.role_name === "Admin";
+  const isPortfolioManager =
+    staffQuery.data?.role_name === "Portfolio Manager";
 
   if (!isOpen) return null;
 
@@ -56,69 +58,79 @@ export default function MobileMenu({ isOpen, onClose, active }) {
           </button>
         </div>
         <nav className="px-4 py-3 space-y-2">
-          <MobileLink
-            href="/dashboard"
-            active={active === "dashboard"}
-            icon={<Home className="w-5 h-5" />}
-            label="Dashboard"
-          />
-          <MobileLink
-            href="/landlords"
-            active={active === "landlords"}
-            icon={<User className="w-5 h-5" />}
-            label="Landlords"
-          />
-          <MobileLink
-            href="/properties"
-            active={active === "properties"}
-            icon={<Building className="w-5 h-5" />}
-            label="Properties"
-          />
-          <MobileLink
-            href="/tenants"
-            active={active === "tenants"}
-            icon={<Users className="w-5 h-5" />}
-            label="Tenants"
-          />
-          <MobileLink
-            href="/payments"
-            active={active === "payments"}
-            icon={<DollarSign className="w-5 h-5" />}
-            label="Payments"
-          />
-          <MobileLink
-            href="/reports"
-            active={active === "reports"}
-            icon={<FileText className="w-5 h-5" />}
-            label="Reports"
-          />
-          <MobileLink
-            href="/accounting"
-            active={active === "accounting"}
-            icon={<Calculator className="w-5 h-5" />}
-            label="Accounting"
-          />
-          <MobileLink
-            href="/payroll"
-            active={active === "payroll"}
-            icon={<Briefcase className="w-5 h-5" />}
-            label="Payroll"
-          />
-          <MobileLink
-            href="/maintenance"
-            active={active === "maintenance"}
-            icon={<Wrench className="w-5 h-5" />}
-            label="Maintenance"
-          />
-
-          {isAdmin ? (
+          {isPortfolioManager ? (
             <MobileLink
-              href="/settings"
-              active={active === "settings"}
-              icon={<Settings className="w-5 h-5" />}
-              label="Settings"
+              href="/reports?report=manager-arrears"
+              active={active === "reports"}
+              icon={<FileText className="w-5 h-5" />}
+              label="Manager Arrears"
             />
-          ) : null}
+          ) : (
+            <>
+              <MobileLink
+                href="/dashboard"
+                active={active === "dashboard"}
+                icon={<Home className="w-5 h-5" />}
+                label="Dashboard"
+              />
+              <MobileLink
+                href="/landlords"
+                active={active === "landlords"}
+                icon={<User className="w-5 h-5" />}
+                label="Landlords"
+              />
+              <MobileLink
+                href="/properties"
+                active={active === "properties"}
+                icon={<Building className="w-5 h-5" />}
+                label="Properties"
+              />
+              <MobileLink
+                href="/tenants"
+                active={active === "tenants"}
+                icon={<Users className="w-5 h-5" />}
+                label="Tenants"
+              />
+              <MobileLink
+                href="/payments"
+                active={active === "payments"}
+                icon={<DollarSign className="w-5 h-5" />}
+                label="Payments"
+              />
+              <MobileLink
+                href="/reports"
+                active={active === "reports"}
+                icon={<FileText className="w-5 h-5" />}
+                label="Reports"
+              />
+              <MobileLink
+                href="/accounting"
+                active={active === "accounting"}
+                icon={<Calculator className="w-5 h-5" />}
+                label="Accounting"
+              />
+              <MobileLink
+                href="/payroll"
+                active={active === "payroll"}
+                icon={<Briefcase className="w-5 h-5" />}
+                label="Payroll"
+              />
+              <MobileLink
+                href="/maintenance"
+                active={active === "maintenance"}
+                icon={<Wrench className="w-5 h-5" />}
+                label="Maintenance"
+              />
+              {isAdmin ? (
+                <MobileLink
+                  href="/settings"
+                  active={active === "settings"}
+                  icon={<Settings className="w-5 h-5" />}
+                  label="Settings"
+                />
+              ) : null}
+            </>
+          )}
 
           <a
             href="/account/logout"

@@ -38,8 +38,37 @@ export default function ReportsPage() {
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const canViewReports = staffQuery.data?.permissions?.reports === true;
-  const canManagePayments = staffQuery.data?.permissions?.payments === true;
+  const permissions = staffQuery.data?.permissions || {};
+  const canViewReports = permissions.reports === true;
+  const canManagePayments = permissions.payments === true;
+  const reportsAllowedList = Array.isArray(permissions.reports_allowed)
+    ? permissions.reports_allowed.map(String)
+    : [];
+  const canAccessAnyReport =
+    canViewReports || reportsAllowedList.length > 0;
+  const isReportAllowed = (key) =>
+    canViewReports || (!!key && reportsAllowedList.includes(String(key)));
+
+  // If the requested reportType is not allowed for this user (or no
+  // report is selected and the user has a scoped whitelist), fall back
+  // to the first allowed report. Admins keep the "Select a report"
+  // default when no report is chosen.
+  useEffect(() => {
+    if (reportType && isReportAllowed(reportType)) return;
+    if (!reportType && canViewReports) return;
+    const fallback = reportsAllowedList[0] || "";
+    if (fallback !== reportType) {
+      setReportType(fallback);
+      if (typeof window !== "undefined") {
+        const url = fallback
+          ? `/reports?report=${encodeURIComponent(fallback)}`
+          : `/reports`;
+        window.history.replaceState({}, "", url);
+      }
+    }
+  }, [reportType, canViewReports, reportsAllowedList.join(",")]);
+
+  const effectiveCanView = isReportAllowed(reportType);
 
   const arrearsQuery = useArrearsReport(
     !userLoading && !!user && canViewReports,
@@ -76,7 +105,7 @@ export default function ReportsPage() {
     return null;
   }
 
-  if (!canViewReports) {
+  if (!canAccessAnyReport) {
     return (
       <AccessDenied
         title="Reports"
@@ -96,7 +125,7 @@ export default function ReportsPage() {
           <ManagerArrearsReport
             userLoading={userLoading}
             user={user}
-            canViewReports={canViewReports}
+            canViewReports={effectiveCanView}
           />
         );
       case "manager-comparison":

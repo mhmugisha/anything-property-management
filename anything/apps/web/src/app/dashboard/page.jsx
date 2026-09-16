@@ -75,6 +75,22 @@ export default function Dashboard() {
     }
   }, [userLoading, user, staffProfileQuery.isSuccess, staffProfile]);
 
+  // Portfolio Managers do not have a dashboard — send them straight to
+  // their allowed report. This also catches direct /dashboard navigation.
+  useEffect(() => {
+    if (userLoading) return;
+    if (!user) return;
+    if (!staffProfileQuery.isSuccess) return;
+    if (staffProfile?.role_name === "Portfolio Manager") {
+      window.location.href = "/reports?report=manager-arrears";
+    }
+  }, [
+    userLoading,
+    user,
+    staffProfileQuery.isSuccess,
+    staffProfile?.role_name,
+  ]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-200 flex items-center justify-center">

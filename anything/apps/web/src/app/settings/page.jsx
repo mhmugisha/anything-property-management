@@ -233,6 +233,8 @@ export default function SettingsPage() {
               setNewRoleName={rolesHook.setNewRoleName}
               newRolePermissions={rolesHook.newRolePermissions}
               setNewRolePermissions={rolesHook.setNewRolePermissions}
+              newRoleReportsAllowed={rolesHook.newRoleReportsAllowed}
+              setNewRoleReportsAllowed={rolesHook.setNewRoleReportsAllowed}
               createRoleDisabled={rolesHook.createRoleDisabled}
               onCreateRole={handleCreateRole}
               createRoleMutation={rolesHook.createRoleMutation}
@@ -284,6 +286,8 @@ export default function SettingsPage() {
         setEditRoleName={rolesHook.setEditRoleName}
         editRolePermissions={rolesHook.editRolePermissions}
         setEditRolePermissions={rolesHook.setEditRolePermissions}
+        editRoleReportsAllowed={rolesHook.editRoleReportsAllowed}
+        setEditRoleReportsAllowed={rolesHook.setEditRoleReportsAllowed}
         roleOptions={rolesHook.roleOptions}
         loadRoleIntoEditor={handleLoadRoleIntoEditor}
         onSave={handleSaveEditRole}

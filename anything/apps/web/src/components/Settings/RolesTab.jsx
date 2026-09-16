@@ -1,6 +1,6 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Field } from "./Field";
-import { PERMISSION_DEFS } from "./constants";
+import { PERMISSION_DEFS, MANAGER_SAFE_REPORT_DEFS } from "./constants";
 
 export function RolesTab({
   roles,
@@ -11,6 +11,8 @@ export function RolesTab({
   setNewRoleName,
   newRolePermissions,
   setNewRolePermissions,
+  newRoleReportsAllowed,
+  setNewRoleReportsAllowed,
   createRoleDisabled,
   onCreateRole,
   createRoleMutation,
@@ -18,6 +20,15 @@ export function RolesTab({
   onDeleteRole,
   deleteRoleMutation,
 }) {
+  const newAllowedSet = new Set(
+    Array.isArray(newRoleReportsAllowed) ? newRoleReportsAllowed : [],
+  );
+  const toggleNewReportAllowed = (key, checked) => {
+    const next = new Set(newAllowedSet);
+    if (checked) next.add(key);
+    else next.delete(key);
+    setNewRoleReportsAllowed(Array.from(next));
+  };
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
       <div>
@@ -75,6 +86,35 @@ export function RolesTab({
               );
             })}
           </div>
+
+          <div className="mt-4">
+            <div className="text-xs font-medium text-slate-600">
+              Reports this role can access
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              Only takes effect when the Reports permission above is off.
+            </div>
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {MANAGER_SAFE_REPORT_DEFS.map((def) => {
+                const checked = newAllowedSet.has(def.key);
+                return (
+                  <label
+                    key={def.key}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) =>
+                        toggleNewReportAllowed(def.key, e.target.checked)
+                      }
+                    />
+                    <span className="text-sm text-slate-700">{def.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -112,8 +152,20 @@ export function RolesTab({
                   const enabledLabels = PERMISSION_DEFS.filter(
                     (d) => permObj[d.key] === true,
                   ).map((d) => d.label);
+                  const reportsAllowedRaw = Array.isArray(
+                    permObj.reports_allowed,
+                  )
+                    ? permObj.reports_allowed.map(String)
+                    : [];
+                  const reportsAllowedLabels = MANAGER_SAFE_REPORT_DEFS.filter(
+                    (d) => reportsAllowedRaw.includes(d.key),
+                  ).map((d) => `Report: ${d.label}`);
+                  const allLabels = [
+                    ...enabledLabels,
+                    ...reportsAllowedLabels,
+                  ];
                   const enabledText =
-                    enabledLabels.length > 0 ? enabledLabels.join(", ") : "—";
+                    allLabels.length > 0 ? allLabels.join(", ") : "—";
 
                   const canDelete = r.role_name !== "Admin";
 

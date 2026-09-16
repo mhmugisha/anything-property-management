@@ -11,3 +11,11 @@ export const PERMISSION_DEFS = [
   { key: "payroll", label: "Payroll" },
   { key: "maintenance", label: "Maintenance" },
 ];
+
+// Reports that are safe to expose to a role via reports_allowed even
+// when the blanket "reports" permission is off. A report belongs here
+// only if its backend route enforces manager-scoped access (see
+// utils/managerScope + requireReportAccess).
+export const MANAGER_SAFE_REPORT_DEFS = [
+  { key: "manager-arrears", label: "Manager Arrears" },
+];
