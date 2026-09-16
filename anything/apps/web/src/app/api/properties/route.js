@@ -2,6 +2,7 @@ import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
+import { getManagerScope } from "@/app/api/utils/managerScope";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -43,6 +44,16 @@ export async function GET(request) {
       where.push(
         `(LOWER(property_name) LIKE $${values.length} OR LOWER(address) LIKE $${values.length})`,
       );
+    }
+
+    // Manager scoping: Portfolio Managers only see properties they are
+    // assigned to. Admins/other roles are unaffected (no clause added).
+    // A manager with zero assigned properties gets an empty result set,
+    // NOT the full list.
+    const scope = await getManagerScope(perm);
+    if (scope.scoped) {
+      values.push(scope.staffId);
+      where.push(`assigned_officer_id = $${values.length}`);
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";

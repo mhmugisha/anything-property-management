@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
+import { isManagerScoped } from "@/app/api/utils/managerScope";
 
 /**
  * Manager Arrears Report
@@ -33,12 +34,20 @@ export async function GET(request) {
     const toDate = (searchParams.get("toDate") || "").trim() || null;
 
     const officerIdRaw = (searchParams.get("officerId") || "").trim();
-    const officerId =
+    let officerId =
       officerIdRaw === "unassigned"
         ? "unassigned"
         : officerIdRaw
           ? Number(officerIdRaw)
           : null;
+
+    // Manager scoping: a Portfolio Manager can only ever see their own
+    // portfolio. Any ?officerId= (including "unassigned" or another
+    // manager's id) is overridden with the caller's own staff id.
+    // Admins keep the existing behavior.
+    if (isManagerScoped(perm.staff)) {
+      officerId = Number(perm.staff.id);
+    }
 
     const conditions = [
       "(i.amount - i.paid_amount) > 0",
