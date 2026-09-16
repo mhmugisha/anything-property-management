@@ -54,6 +54,7 @@ export default function ReportsPage() {
   // to the first allowed report. Admins keep the "Select a report"
   // default when no report is chosen.
   useEffect(() => {
+    if (!staffQuery.isSuccess) return;
     if (reportType && isReportAllowed(reportType)) return;
     if (!reportType && canViewReports) return;
     const fallback = reportsAllowedList[0] || "";
@@ -66,7 +67,12 @@ export default function ReportsPage() {
         window.history.replaceState({}, "", url);
       }
     }
-  }, [reportType, canViewReports, reportsAllowedList.join(",")]);
+  }, [
+    reportType,
+    canViewReports,
+    reportsAllowedList.join(","),
+    staffQuery.isSuccess,
+  ]);
 
   const effectiveCanView = isReportAllowed(reportType);
 
