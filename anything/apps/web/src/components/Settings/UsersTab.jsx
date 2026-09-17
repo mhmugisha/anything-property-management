@@ -160,18 +160,28 @@ export function UsersTab({
           <span className="text-rose-700">
             {deleteError.message || "Failed to delete user"}
           </span>
-          {canOfferDeactivate && (
+          <div className="flex items-center gap-2">
+            {canOfferDeactivate && (
+              <button
+                type="button"
+                onClick={() => onDeactivateUser(deleteErrorUserId)}
+                disabled={deactivateUserMutation?.isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c] disabled:opacity-50"
+              >
+                {deactivateUserMutation?.isPending
+                  ? "Deactivating…"
+                  : `Deactivate ${deleteErrorUserName} instead`}
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => onDeactivateUser(deleteErrorUserId)}
+              onClick={() => deleteUserMutation.reset()}
               disabled={deactivateUserMutation?.isPending}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c] disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
             >
-              {deactivateUserMutation?.isPending
-                ? "Deactivating…"
-                : `Deactivate ${deleteErrorUserName} instead`}
+              Cancel
             </button>
-          )}
+          </div>
         </div>
       )}
 

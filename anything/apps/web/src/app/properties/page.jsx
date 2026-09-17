@@ -330,7 +330,7 @@ export default function PropertiesPage() {
 
     if (
       !window.confirm(
-        `Delete ${p.property_name}? If it has units, leases, or invoices tied to it, it will be archived (hidden) instead of permanently deleted.`,
+        `Delete ${p.property_name}? Empty properties are removed permanently. Properties with units, leases, or invoices are archived (hidden) instead.`,
       )
     ) {
       return;
