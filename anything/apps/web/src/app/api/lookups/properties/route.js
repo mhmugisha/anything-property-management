@@ -25,8 +25,7 @@ export async function GET(request) {
         l.full_name AS landlord_name
       FROM properties p
       LEFT JOIN landlords l ON l.id = p.landlord_id
-      WHERE COALESCE(p.is_deleted, false) = false
-      AND (
+      WHERE (
         ${search === "" ? true : false}
          OR LOWER(p.property_name) LIKE LOWER(${like})
          OR LOWER(p.address) LIKE LOWER(${like})

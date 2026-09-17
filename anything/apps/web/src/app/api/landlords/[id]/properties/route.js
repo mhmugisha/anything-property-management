@@ -23,7 +23,6 @@ export async function GET(request, { params }) {
              landlord_id
       FROM properties
       WHERE landlord_id = ${landlordId}
-        AND COALESCE(is_deleted, false) = false
       ORDER BY property_name
       LIMIT 500
     `;

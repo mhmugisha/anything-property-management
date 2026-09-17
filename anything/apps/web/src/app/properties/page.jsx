@@ -10,7 +10,6 @@ import {
   usePropertyDetail,
   useCreateProperty,
   useUpdateProperty,
-  useDeleteProperty,
 } from "@/hooks/useProperties";
 import {
   useUnits,
@@ -98,7 +97,6 @@ export default function PropertiesPage() {
 
   const createPropertyMutation = useCreateProperty();
   const updatePropertyMutation = useUpdateProperty();
-  const deletePropertyMutation = useDeleteProperty();
   const createUnitMutation = useCreateUnit(selectedPropertyId);
   const updateUnitMutation = useUpdateUnit(selectedPropertyId);
   const deleteUnitMutation = useDeleteUnit(selectedPropertyId);
@@ -324,36 +322,6 @@ export default function PropertiesPage() {
     [deleteUnitMutation],
   );
 
-  const onDeleteProperty = useCallback(() => {
-    const p = propertyDetailQuery.data || selectedProperty;
-    if (!p) return;
-
-    if (
-      !window.confirm(
-        `Delete ${p.property_name}? If it has units, leases, or invoices tied to it, it will be archived (hidden) instead of permanently deleted.`,
-      )
-    ) {
-      return;
-    }
-
-    deletePropertyMutation.mutate(p.id, {
-      onSuccess: (data) => {
-        const action = data?.action;
-        if (action === "deleted") {
-          alert(`Property "${p.property_name}" deleted.`);
-        } else if (action === "archived") {
-          alert(
-            `Property "${p.property_name}" archived (it has history, so it was hidden rather than deleted).`,
-          );
-        }
-        setSelectedPropertyId(null);
-      },
-      onError: (error) => {
-        alert(error.message || "Failed to delete property");
-      },
-    });
-  }, [deletePropertyMutation, propertyDetailQuery.data, selectedProperty]);
-
   const onSaveUnit = useCallback(() => {
     if (!selectedPropertyId) return;
 
@@ -521,8 +489,6 @@ export default function PropertiesPage() {
               onCancelProperty={onCancelPropertyEditOrCreate}
               onSaveProperty={onSaveProperty}
               isSavingProperty={isSavingProperty}
-              onDeleteProperty={onDeleteProperty}
-              isDeletingProperty={deletePropertyMutation.isPending}
               propertyError={
                 createPropertyMutation.error || updatePropertyMutation.error
               }

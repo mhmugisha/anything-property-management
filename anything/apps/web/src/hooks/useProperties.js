@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchJson, postJson, putJson, deleteJson } from "@/utils/api";
+import { fetchJson, postJson, putJson } from "@/utils/api";
 
 export function useProperties(search, enabled) {
   return useQuery({
@@ -48,18 +48,6 @@ export function useUpdateProperty() {
       queryClient.invalidateQueries({
         queryKey: ["property", variables.id],
       });
-    },
-  });
-}
-
-export function useDeleteProperty() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id) => deleteJson(`/api/properties/${id}`),
-    onSuccess: (_data, id) => {
-      queryClient.invalidateQueries({ queryKey: ["properties"] });
-      queryClient.invalidateQueries({ queryKey: ["property", id] });
     },
   });
 }
