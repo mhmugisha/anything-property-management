@@ -18,6 +18,7 @@ export async function GET(request) {
         l.full_name AS landlord_full_name
       FROM properties p
       LEFT JOIN landlords l ON l.id = p.landlord_id
+      WHERE COALESCE(p.is_deleted, false) = false
       ORDER BY p.property_name ASC
       LIMIT 500
     `;

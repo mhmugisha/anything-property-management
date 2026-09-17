@@ -36,7 +36,7 @@ export async function GET(request) {
       : 50;
     const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
 
-    const where = [];
+    const where = ["COALESCE(is_deleted, false) = false"];
     const values = [];
 
     if (search.length > 0) {
