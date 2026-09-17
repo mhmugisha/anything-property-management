@@ -81,6 +81,19 @@ export function useSettingsUsers({ enabled, isAdmin }) {
     },
   });
 
+  // Dedicated mutation for the "Deactivate instead" offer that appears
+  // when a delete is blocked by activity history. Keeping it separate
+  // from updateUserMutation lets the UI reflect its own pending state.
+  const deactivateUserMutation = useMutation({
+    mutationFn: async (id) => {
+      return putJson(`/api/staff/users/${id}`, { is_active: false });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff", "users"] });
+      deleteUserMutation.reset();
+    },
+  });
+
   const canCreateUser = useMemo(() => {
     return (
       newUserEmail.trim() !== "" &&
@@ -191,6 +204,14 @@ export function useSettingsUsers({ enabled, isAdmin }) {
     [deleteUserMutation],
   );
 
+  const onDeactivateUser = useCallback(
+    (userId) => {
+      if (!userId) return;
+      deactivateUserMutation.mutate(userId);
+    },
+    [deactivateUserMutation],
+  );
+
   return {
     users: usersQuery.data || [],
     usersLoading: usersQuery.isLoading,
@@ -238,5 +259,7 @@ export function useSettingsUsers({ enabled, isAdmin }) {
     setPasswordMutation,
     onDeleteUser,
     deleteUserMutation,
+    onDeactivateUser,
+    deactivateUserMutation,
   };
 }

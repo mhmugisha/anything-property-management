@@ -220,6 +220,8 @@ export default function SettingsPage() {
               openSetPassword={usersHook.openSetPassword}
               onDeleteUser={usersHook.onDeleteUser}
               deleteUserMutation={usersHook.deleteUserMutation}
+              onDeactivateUser={usersHook.onDeactivateUser}
+              deactivateUserMutation={usersHook.deactivateUserMutation}
             />
           ) : null}
 

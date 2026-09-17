@@ -77,9 +77,10 @@ export async function deleteJson(url) {
     method: "DELETE",
   });
   if (!res.ok) {
+    let payload = null;
     let message = `When fetching ${url}, the response was [${res.status}] ${res.statusText}`;
     try {
-      const payload = await res.json();
+      payload = await res.json();
       const payloadError =
         typeof payload?.error === "string" ? payload.error : null;
       if (payloadError) {
@@ -88,7 +89,10 @@ export async function deleteJson(url) {
     } catch {
       // ignore
     }
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    error.payload = payload;
+    throw error;
   }
   // Some DELETE endpoints might return 204 No Content
   if (res.status === 204) {

@@ -270,8 +270,53 @@ export async function DELETE(request, { params: { id } }) {
       );
     }
 
-    // Delete the staff_users record
-    await sql`DELETE FROM staff_users WHERE id = ${staffIdToDelete}`;
+    // Pre-check for activity history that would block a hard delete.
+    // Known FK references to staff_users.id are payment_promises.recorded_by
+    // (NOT NULL) and lease_review_flags.resolved_by (nullable). If either
+    // exists we can't hard-delete — offer deactivation instead.
+    const historyRows = await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM payment_promises WHERE recorded_by = ${staffIdToDelete}) AS payment_promises,
+        (SELECT COUNT(*)::int FROM lease_review_flags WHERE resolved_by = ${staffIdToDelete}) AS review_flags
+    `;
+    const history = historyRows?.[0] || { payment_promises: 0, review_flags: 0 };
+
+    if (
+      Number(history.payment_promises) > 0 ||
+      Number(history.review_flags) > 0
+    ) {
+      return Response.json(
+        {
+          error:
+            "This staff member has activity history and can't be deleted. Deactivate them instead.",
+          code: "has_history",
+        },
+        { status: 409 },
+      );
+    }
+
+    // Attempt the hard delete. If some other FK we didn't pre-check blocks it,
+    // Postgres raises 23503 (foreign_key_violation) — translate to the same
+    // 409 shape so the UI can still offer Deactivate.
+    try {
+      await sql`DELETE FROM staff_users WHERE id = ${staffIdToDelete}`;
+    } catch (dbError) {
+      if (dbError?.code === "23503") {
+        console.warn(
+          `staff_users delete blocked by unknown FK for id=${staffIdToDelete}`,
+          dbError,
+        );
+        return Response.json(
+          {
+            error:
+              "This staff member has activity history and can't be deleted. Deactivate them instead.",
+            code: "has_history",
+          },
+          { status: 409 },
+        );
+      }
+      throw dbError;
+    }
 
     await writeAuditLog({
       staffId: perm.staff.id,

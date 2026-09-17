@@ -154,22 +154,63 @@ export async function DELETE(request, { params: { id } }) {
 
     const propertyId = existing.property_id;
 
-    // Check if unit has any active leases
-    const activeLeases = await sql`
-      SELECT id FROM leases 
-      WHERE unit_id = ${unitId} AND status = 'active'
-      LIMIT 1
+    // Pre-check for anything referencing this unit. Deleting a unit that has
+    // leases, invoices, or maintenance history would either break ledger
+    // integrity or fail with a Postgres FK error the client can't decode.
+    // We block with a 409 that names what's in the way.
+    const blockerRows = await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM leases WHERE unit_id = ${unitId}) AS leases,
+        (SELECT COUNT(*)::int FROM invoices WHERE unit_id = ${unitId}) AS invoices,
+        (SELECT COUNT(*)::int FROM maintenance_requests WHERE unit_id = ${unitId}) AS maintenance
     `;
+    const blockers = blockerRows?.[0] || {
+      leases: 0,
+      invoices: 0,
+      maintenance: 0,
+    };
+    const parts = [];
+    if (Number(blockers.leases) > 0) parts.push("leases");
+    if (Number(blockers.invoices) > 0) parts.push("invoices");
+    if (Number(blockers.maintenance) > 0) parts.push("maintenance history");
 
-    if (activeLeases.length > 0) {
+    if (parts.length > 0) {
+      const list =
+        parts.length === 1
+          ? parts[0]
+          : parts.length === 2
+            ? `${parts[0]} and ${parts[1]}`
+            : `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
       return Response.json(
-        { error: "Cannot delete unit with active lease" },
-        { status: 400 },
+        {
+          error: `This unit has ${list} tied to it and can't be deleted.`,
+          code: "has_history",
+        },
+        { status: 409 },
       );
     }
 
-    // Delete the unit
-    await sql`DELETE FROM units WHERE id = ${unitId}`;
+    // Genuinely unused — safe to hard-delete. If some other FK we didn't
+    // pre-check blocks it, translate Postgres 23503 into the same 409 shape.
+    try {
+      await sql`DELETE FROM units WHERE id = ${unitId}`;
+    } catch (dbError) {
+      if (dbError?.code === "23503") {
+        console.warn(
+          `units delete blocked by unknown FK for id=${unitId}`,
+          dbError,
+        );
+        return Response.json(
+          {
+            error:
+              "This unit is referenced by other records and can't be deleted.",
+            code: "has_history",
+          },
+          { status: 409 },
+        );
+      }
+      throw dbError;
+    }
 
     // Update property total_units count
     if (propertyId) {

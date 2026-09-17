@@ -34,6 +34,7 @@ export async function GET(request, { params: { id } }) {
              notes, landlord_id, assigned_officer_id, created_by, created_at
       FROM properties
       WHERE id = ${propertyId}
+        AND COALESCE(is_deleted, false) = false
       LIMIT 1
     `;
 
@@ -70,6 +71,7 @@ export async function PUT(request, { params: { id } }) {
              notes, landlord_id, assigned_officer_id
       FROM properties
       WHERE id = ${propertyId}
+        AND COALESCE(is_deleted, false) = false
       LIMIT 1
     `;
     const existing = existingRows?.[0] || null;
@@ -230,5 +232,100 @@ export async function PUT(request, { params: { id } }) {
     }
 
     return Response.json({ error: errorMessage }, { status: 500 });
+  }
+}
+
+export async function DELETE(request, { params: { id } }) {
+  try {
+    const perm = await requirePermission(request, "properties");
+    if (!perm.ok) {
+      return Response.json(perm.body, { status: perm.status });
+    }
+
+    const propertyId = parseInt(id, 10);
+    if (!Number.isFinite(propertyId)) {
+      return Response.json({ error: "Invalid id" }, { status: 400 });
+    }
+
+    const existingRows = await sql`
+      SELECT id, property_name, address, property_type, total_units,
+             management_fee_type, management_fee_percent, management_fee_fixed_amount,
+             notes, landlord_id, assigned_officer_id
+      FROM properties
+      WHERE id = ${propertyId}
+        AND COALESCE(is_deleted, false) = false
+      LIMIT 1
+    `;
+    const existing = existingRows?.[0] || null;
+    if (!existing) {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Emptiness check: no units, no invoices, no ledger transactions tied
+    // to this property. If any history exists we archive instead of hard-delete
+    // so ledger integrity and audit trail stay intact.
+    const historyRows = await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM units WHERE property_id = ${propertyId}) AS unit_count,
+        (SELECT COUNT(*)::int FROM invoices WHERE property_id = ${propertyId}) AS invoice_count,
+        (SELECT COUNT(*)::int FROM transactions WHERE property_id = ${propertyId}) AS transaction_count
+    `;
+    const history = historyRows?.[0] || {
+      unit_count: 0,
+      invoice_count: 0,
+      transaction_count: 0,
+    };
+    const isEmpty =
+      Number(history.unit_count) === 0 &&
+      Number(history.invoice_count) === 0 &&
+      Number(history.transaction_count) === 0;
+
+    if (isEmpty) {
+      await sql`DELETE FROM properties WHERE id = ${propertyId}`;
+
+      await writeAuditLog({
+        staffId: perm.staff.id,
+        action: "properties.delete",
+        entityType: "properties",
+        entityId: propertyId,
+        oldValues: existing,
+        newValues: null,
+        ipAddress: perm.ipAddress,
+      });
+
+      return Response.json({ action: "deleted" });
+    }
+
+    const archivedRows = await sql`
+      UPDATE properties
+      SET is_deleted = true
+      WHERE id = ${propertyId}
+      RETURNING id
+    `;
+
+    if (!archivedRows || archivedRows.length === 0) {
+      return Response.json(
+        { error: "Failed to archive property" },
+        { status: 500 },
+      );
+    }
+
+    await writeAuditLog({
+      staffId: perm.staff.id,
+      action: "properties.archive",
+      entityType: "properties",
+      entityId: propertyId,
+      oldValues: existing,
+      newValues: { ...existing, is_deleted: true },
+      ipAddress: perm.ipAddress,
+    });
+
+    return Response.json({ action: "archived" });
+  } catch (error) {
+    console.error("DELETE /api/properties/[id] error", error);
+    return Response.json(
+      { error: "Failed to delete property" },
+      { status: 500 },
+    );
   }
 }

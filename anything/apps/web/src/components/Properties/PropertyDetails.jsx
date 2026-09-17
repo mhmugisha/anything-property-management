@@ -1,4 +1,4 @@
-import { Pencil, Save, Loader2, X, FileText } from "lucide-react";
+import { Pencil, Save, Loader2, X, FileText, Trash2 } from "lucide-react";
 import { PropertyForm } from "./PropertyForm";
 import { UnitsList } from "./UnitsList";
 
@@ -12,6 +12,8 @@ export function PropertyDetails({
   onCancelProperty,
   onSaveProperty,
   isSavingProperty,
+  onDeleteProperty,
+  isDeletingProperty,
   propertyError,
   landlordOptions,
   officerOptions,
@@ -103,6 +105,7 @@ export function PropertyDetails({
           {property && !isEditingProperty && !isCreatingProperty && (
             <>
               <button
+                type="button"
                 onClick={onEditProperty}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-slate-700"
               >
@@ -117,6 +120,22 @@ export function PropertyDetails({
                 <FileText className="w-4 h-4" />
                 Rent Roll
               </a>
+
+              {onDeleteProperty && (
+                <button
+                  type="button"
+                  onClick={onDeleteProperty}
+                  disabled={isDeletingProperty}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 disabled:opacity-50"
+                >
+                  {isDeletingProperty ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  Delete
+                </button>
+              )}
             </>
           )}
 

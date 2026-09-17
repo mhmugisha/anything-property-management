@@ -34,7 +34,24 @@ export function UsersTab({
   openSetPassword,
   onDeleteUser,
   deleteUserMutation,
+  onDeactivateUser,
+  deactivateUserMutation,
 }) {
+  const deleteError = deleteUserMutation?.isError
+    ? deleteUserMutation.error
+    : null;
+  const deleteErrorUserId = deleteError ? deleteUserMutation.variables : null;
+  const deleteErrorUserName =
+    deleteErrorUserId != null
+      ? users.find((u) => u.id === deleteErrorUserId)?.full_name ||
+        users.find((u) => u.id === deleteErrorUserId)?.email ||
+        "this user"
+      : null;
+  const canOfferDeactivate =
+    deleteError?.status === 409 &&
+    deleteError?.payload?.code === "has_history" &&
+    !!deleteErrorUserId &&
+    typeof onDeactivateUser === "function";
   const [showPassword, setShowPassword] = useState(false);
 
   // No longer filtering out Admin role - admins can create other admins
@@ -137,6 +154,26 @@ export function UsersTab({
           </span>
         )}
       </div>
+
+      {deleteError && (
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm">
+          <span className="text-rose-700">
+            {deleteError.message || "Failed to delete user"}
+          </span>
+          {canOfferDeactivate && (
+            <button
+              type="button"
+              onClick={() => onDeactivateUser(deleteErrorUserId)}
+              disabled={deactivateUserMutation?.isPending}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c] disabled:opacity-50"
+            >
+              {deactivateUserMutation?.isPending
+                ? "Deactivating…"
+                : `Deactivate ${deleteErrorUserName} instead`}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="mt-6">
         {usersLoading ? (
