@@ -55,10 +55,22 @@ export async function GET(request) {
          l.comment,
          l.recorded_by,
          t.full_name AS tenant_name,
+         t.phone AS tenant_phone,
+         p.property_name,
+         u.unit_number,
          su.full_name AS recorded_by_name,
          COALESCE(b.current_balance, 0) AS current_balance
        FROM latest l
        LEFT JOIN tenants t ON t.id = l.tenant_id
+       LEFT JOIN LATERAL (
+         SELECT al.unit_id
+         FROM leases al
+         WHERE al.tenant_id = l.tenant_id AND al.status = 'active'
+         ORDER BY al.start_date DESC
+         LIMIT 1
+       ) al ON true
+       LEFT JOIN units u ON u.id = al.unit_id
+       LEFT JOIN properties p ON p.id = u.property_id
        LEFT JOIN staff_users su ON su.id = l.recorded_by
        LEFT JOIN balances b ON b.tenant_id = l.tenant_id
        WHERE l.promise_date <= CURRENT_DATE
@@ -70,6 +82,9 @@ export async function GET(request) {
       id: Number(r.id),
       tenant_id: Number(r.tenant_id),
       tenant_name: r.tenant_name || "—",
+      tenant_phone: r.tenant_phone || null,
+      property_name: r.property_name || null,
+      unit_number: r.unit_number || null,
       promise_date: r.promise_date,
       amount:
         r.amount === null || r.amount === undefined ? null : Number(r.amount),

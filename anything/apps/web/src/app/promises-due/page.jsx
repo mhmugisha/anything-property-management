@@ -148,15 +148,17 @@ export default function PromisesDuePage() {
               <div className="overflow-auto">
                 <table className="w-full text-sm table-fixed">
                   <colgroup>
-                    <col style={{ width: "24%" }} />
-                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "18%" }} />
                     <col style={{ width: "14%" }} />
-                    <col style={{ width: "30%" }} />
-                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "22%" }} />
+                    <col style={{ width: "14%" }} />
                   </colgroup>
                   <thead>
                     <tr className="text-left text-slate-500 border-b-2 border-slate-700">
                       <th className="py-2 px-3">Tenant</th>
+                      <th className="py-2 px-3">Property / Unit</th>
                       <th className="py-2 px-3">Promise Date</th>
                       <th className="py-2 px-3 text-right">Amount</th>
                       <th className="py-2 px-3">Comment</th>
@@ -181,8 +183,17 @@ export default function PromisesDuePage() {
                           key={r.id}
                           className="border-b border-slate-100 hover:bg-slate-50"
                         >
-                          <td className="py-2 px-3 text-slate-800 font-medium">
-                            {r.tenant_name}
+                          <td className="py-2 px-3 text-slate-800 font-medium align-top">
+                            <div>{r.tenant_name}</div>
+                            <div className="text-xs text-slate-500 font-normal mt-0.5">
+                              {r.tenant_phone || "—"}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 text-slate-700 align-top">
+                            <div>{r.property_name || "—"}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">
+                              {r.unit_number ? `Unit ${r.unit_number}` : "—"}
+                            </div>
                           </td>
                           <td className="py-2 px-3 text-slate-700">
                             <div>{formatShortDate(r.promise_date)}</div>
