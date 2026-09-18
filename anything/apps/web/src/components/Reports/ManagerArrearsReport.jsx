@@ -276,9 +276,8 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
                                   ? latestByTenant[Number(r.tenant_id)]
                                   : null;
                               const critical = Number(r.days_overdue || 0) > 30;
-                              const rowClass = critical
-                                ? "border-b border-slate-100 bg-rose-50 hover:bg-rose-100"
-                                : "border-b border-slate-100 hover:bg-slate-50";
+                              const rowClass =
+                                "border-b border-slate-100 hover:bg-slate-50";
                               const primaryText = critical
                                 ? "text-rose-700"
                                 : "text-slate-800";

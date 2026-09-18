@@ -183,9 +183,8 @@ export default function PromisesDuePage() {
                         : "text-amber-700 bg-amber-50 border-amber-200";
                       const invoiceCritical =
                         Number(r.max_days_overdue || 0) > 30;
-                      const rowClass = invoiceCritical
-                        ? "border-b border-slate-100 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                        : "border-b border-slate-100 hover:bg-slate-50";
+                      const rowClass =
+                        "border-b border-slate-100 hover:bg-slate-50";
                       const primaryText = invoiceCritical
                         ? "text-rose-700"
                         : "text-slate-800";
