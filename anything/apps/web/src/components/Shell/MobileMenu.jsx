@@ -58,14 +58,7 @@ export default function MobileMenu({ isOpen, onClose, active }) {
           </button>
         </div>
         <nav className="px-4 py-3 space-y-2">
-          {isPortfolioManager ? (
-            <MobileLink
-              href="/reports?report=manager-arrears"
-              active={active === "reports"}
-              icon={<FileText className="w-5 h-5" />}
-              label="Manager Arrears"
-            />
-          ) : (
+          {isPortfolioManager ? null : (
             <>
               <MobileLink
                 href="/dashboard"

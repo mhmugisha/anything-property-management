@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { CalendarClock } from "lucide-react";
 import { fetchJson } from "@/utils/api";
 import { formatCurrencyUGX } from "@/utils/formatCurrencyUGX";
 import DatePopoverInput from "@/components/DatePopoverInput";
@@ -9,6 +10,7 @@ import {
   useLatestPromises,
   useCreatePromise,
   useUpdatePromise,
+  useDuePromises,
 } from "@/hooks/usePaymentPromises";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
@@ -115,6 +117,9 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
   const latestPromisesQuery = useLatestPromises(tenantIds, tenantIds.length > 0);
   const latestByTenant = latestPromisesQuery.data || {};
 
+  const duePromisesQuery = useDuePromises(!userLoading && !!user && canViewReports);
+  const duePromisesCount = Number(duePromisesQuery.data?.count || 0);
+
   const [editor, setEditor] = useState(null);
   const openEditor = (tenantId, tenantName, existing) => {
     setEditor({ tenantId: Number(tenantId), tenantName, existing: existing || null });
@@ -197,7 +202,14 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
           <SummaryBox label="Balance" value={formatCurrencyUGX(summary.balance)} />
           <SummaryBox label="Recovery Rate" value={fmtPercent(summary.recovery_rate)} />
         </div>
-        <div data-no-print="true">
+        <div data-no-print="true" className="flex items-center gap-2">
+          <a
+            href="/promises-due"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c]"
+          >
+            <CalendarClock className="w-4 h-4" />
+            Promises Due ({duePromisesCount})
+          </a>
           <PrintPreviewButtons targetRef={printRef} title={reportTitle} />
         </div>
       </div>

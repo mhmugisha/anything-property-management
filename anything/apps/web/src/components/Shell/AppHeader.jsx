@@ -41,13 +41,7 @@ export default function AppHeader({ title, onMenuToggle, active }) {
   const isPortfolioManager = staffProfile?.role_name === "Portfolio Manager";
 
   const navItems = isPortfolioManager
-    ? [
-        {
-          key: "reports",
-          label: "Manager Arrears",
-          href: "/reports?report=manager-arrears",
-        },
-      ]
+    ? []
     : [
         { key: "dashboard", label: "Dashboard", href: "/dashboard" },
         { key: "landlords", label: "Landlords", href: "/landlords" },
