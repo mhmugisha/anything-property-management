@@ -2,7 +2,10 @@ import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
 import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
-import { getInvoiceLiveApplied } from "@/app/api/utils/payments/liveAllocations";
+import {
+  getInvoiceLiveApplied,
+  getInvoiceLiveAppliedPayments,
+} from "@/app/api/utils/payments/liveAllocations";
 
 function toNumber(val) {
   const n = Number(val);
@@ -100,11 +103,13 @@ export async function POST(request) {
     if (wouldSetStatusVoid) {
       const liveApplied = await getInvoiceLiveApplied(invoiceId);
       if (liveApplied > 0) {
+        const appliedPayments = await getInvoiceLiveAppliedPayments(invoiceId);
         return Response.json(
           {
             error:
               "This invoice has a payment applied to it and can't be voided. Un-apply or reverse the payment first, then void.",
             live_applied: liveApplied,
+            applied_payments: appliedPayments,
           },
           { status: 409 },
         );
@@ -222,11 +227,13 @@ export async function POST(request) {
       const proposedAmount =
         paidAmount > 0 ? paidAmount : originalInvoiceAmount - amount;
       if (proposedAmount + 0.01 < floor) {
+        const appliedPayments = await getInvoiceLiveAppliedPayments(invoiceId);
         return Response.json(
           {
             error: `Cannot reduce invoice below live payments applied (${floor.toLocaleString()} ${currency}). Un-apply or reverse the payment first.`,
             live_applied: liveApplied,
             paid_amount: paidAmount,
+            applied_payments: appliedPayments,
           },
           { status: 409 },
         );

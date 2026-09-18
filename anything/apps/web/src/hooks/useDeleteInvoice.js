@@ -3,10 +3,14 @@ import { useState, useEffect } from "react";
 export function useDeleteInvoice() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState(null);
+  const [appliedPayments, setAppliedPayments] = useState([]);
 
   useEffect(() => {
     if (error) {
-      const timer = setTimeout(() => setError(null), 4000);
+      const timer = setTimeout(() => {
+        setError(null);
+        setAppliedPayments([]);
+      }, 8000);
       return () => clearTimeout(timer);
     }
   }, [error]);
@@ -28,6 +32,7 @@ export function useDeleteInvoice() {
 
     setIsDeleting(true);
     setError(null);
+    setAppliedPayments([]);
 
     try {
       const res = await fetch(`/api/invoices/${invoiceId}`, {
@@ -38,7 +43,14 @@ export function useDeleteInvoice() {
 
       if (!res.ok) {
         setError(data.error || "Failed to delete invoice");
-        return { ok: false, error: data.error };
+        setAppliedPayments(
+          Array.isArray(data.applied_payments) ? data.applied_payments : [],
+        );
+        return {
+          ok: false,
+          error: data.error,
+          appliedPayments: data.applied_payments || [],
+        };
       }
 
       setIsDeleting(false);
@@ -55,5 +67,6 @@ export function useDeleteInvoice() {
     deleteInvoice,
     isDeleting,
     error,
+    appliedPayments,
   };
 }

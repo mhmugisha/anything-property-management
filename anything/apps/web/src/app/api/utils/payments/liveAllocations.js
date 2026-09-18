@@ -25,3 +25,37 @@ export async function getInvoiceLiveApplied(invoiceId) {
 export async function hasLivePaymentApplied(invoiceId) {
   return (await getInvoiceLiveApplied(invoiceId)) > 0;
 }
+
+// Returns the list of currently-applied payments for an invoice — used to
+// tell the user WHICH payments are blocking a void/delete, so they can
+// reverse the right one.
+export async function getInvoiceLiveAppliedPayments(invoiceId) {
+  const id = Number(invoiceId);
+  if (!Number.isFinite(id) || id <= 0) return [];
+
+  const rows = await sql(
+    `SELECT
+       p.id AS payment_id,
+       pia.id AS allocation_id,
+       p.payment_date,
+       pia.amount_applied,
+       p.payment_method,
+       p.reference_number
+     FROM payment_invoice_allocations pia
+     JOIN payments p ON p.id = pia.payment_id
+     WHERE pia.invoice_id = $1
+       AND p.is_reversed = false
+       AND COALESCE(p.approval_status, 'approved') = 'approved'
+     ORDER BY p.payment_date ASC, p.id ASC`,
+    [id],
+  );
+
+  return (rows || []).map((r) => ({
+    payment_id: Number(r.payment_id),
+    allocation_id: Number(r.allocation_id),
+    payment_date: r.payment_date,
+    amount_applied: Number(r.amount_applied || 0),
+    payment_method: r.payment_method || null,
+    reference_number: r.reference_number || null,
+  }));
+}

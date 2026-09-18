@@ -1,7 +1,10 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
-import { getInvoiceLiveApplied } from "@/app/api/utils/payments/liveAllocations";
+import {
+  getInvoiceLiveApplied,
+  getInvoiceLiveAppliedPayments,
+} from "@/app/api/utils/payments/liveAllocations";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -53,12 +56,14 @@ export async function DELETE(request, { params }) {
     const paidAmount = Number(invoice.paid_amount || 0);
     const liveApplied = await getInvoiceLiveApplied(invoiceId);
     if (paidAmount > 0 || liveApplied > 0) {
+      const appliedPayments = await getInvoiceLiveAppliedPayments(invoiceId);
       return Response.json(
         {
           error:
             "This invoice has a payment applied to it and can't be deleted. Un-apply or reverse the payment first.",
           paid_amount: paidAmount,
           live_applied: liveApplied,
+          applied_payments: appliedPayments,
         },
         { status: 409 },
       );

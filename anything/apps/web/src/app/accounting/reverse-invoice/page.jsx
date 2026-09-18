@@ -12,6 +12,21 @@ import { ReverseInvoiceForm } from "@/components/Accounting/ReverseInvoiceForm";
 import { useAccountingLookups } from "@/hooks/useAccountingLookups";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { fetchJson } from "@/utils/api";
+import { formatCurrencyUGX } from "@/utils/formatCurrencyUGX";
+
+function formatShortDate(iso) {
+  if (!iso) return "—";
+  const s = String(iso).slice(0, 10);
+  const [y, m, d] = s.split("-");
+  if (!y || !m || !d) return s;
+  const date = new Date(Number(y), Number(m) - 1, Number(d));
+  if (Number.isNaN(date.getTime())) return s;
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
 
 function todayYmd() {
   return new Date().toISOString().slice(0, 10);
@@ -64,7 +79,11 @@ export default function ReverseInvoicePage() {
       });
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.error || "Failed to reverse invoice");
+        const thrown = new Error(err.error || "Failed to reverse invoice");
+        thrown.appliedPayments = Array.isArray(err.applied_payments)
+          ? err.applied_payments
+          : [];
+        throw thrown;
       }
       return response.json();
     },
@@ -103,12 +122,17 @@ export default function ReverseInvoicePage() {
     }
   }, [successMessage]);
 
-  // Auto-dismiss error message after 3 seconds
+  // Auto-dismiss error message. Give the user longer to read when the
+  // response includes a list of applied payments they need to act on.
   useEffect(() => {
     if (reverseInvoiceMutation.error) {
-      const timer = setTimeout(() => {
-        reverseInvoiceMutation.reset();
-      }, 3000);
+      const hasList =
+        Array.isArray(reverseInvoiceMutation.error.appliedPayments) &&
+        reverseInvoiceMutation.error.appliedPayments.length > 0;
+      const timer = setTimeout(
+        () => reverseInvoiceMutation.reset(),
+        hasList ? 12000 : 3000,
+      );
       return () => clearTimeout(timer);
     }
   }, [reverseInvoiceMutation.error, reverseInvoiceMutation]);
@@ -239,8 +263,32 @@ export default function ReverseInvoicePage() {
 
           {reverseInvoiceMutation.error ? (
             <div className="mt-4 rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
-              {reverseInvoiceMutation.error?.message ||
-                "Could not reverse invoice."}
+              <div>
+                {reverseInvoiceMutation.error?.message ||
+                  "Could not reverse invoice."}
+              </div>
+              {Array.isArray(reverseInvoiceMutation.error.appliedPayments) &&
+              reverseInvoiceMutation.error.appliedPayments.length > 0 ? (
+                <div className="mt-2">
+                  <div className="font-medium">Applied payments:</div>
+                  <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                    {reverseInvoiceMutation.error.appliedPayments.map((p) => {
+                      const parts = [
+                        formatShortDate(p.payment_date),
+                        formatCurrencyUGX(p.amount_applied),
+                      ];
+                      if (p.payment_method) parts.push(p.payment_method);
+                      if (p.reference_number)
+                        parts.push(`ref ${p.reference_number}`);
+                      return (
+                        <li key={p.allocation_id || p.payment_id}>
+                          {parts.join(" · ")}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
