@@ -164,14 +164,25 @@ export async function POST(request, { params: { id } }) {
         // Preserve the paid portion and write off only the outstanding balance
         // by setting amount = paid_amount, so the invoice shows fully paid with
         // zero outstanding (rather than deleting it entirely).
+        // Edit floor: use GREATEST(paid_amount, live_applied) so the write
+        // never lands below the true allocated amount even if paid_amount
+        // has drifted low.
         txn(
-          `UPDATE invoices
-           SET amount = paid_amount, status = 'paid'
-           WHERE lease_id = $1
-             AND paid_amount > 0
-             AND status <> 'paid'
-             AND id = ANY($2::int[])
-             AND NOT id = ANY($3::int[])`,
+          `UPDATE invoices i
+           SET amount = GREATEST(i.paid_amount, COALESCE((
+                 SELECT SUM(pia.amount_applied)
+                 FROM payment_invoice_allocations pia
+                 JOIN payments p ON p.id = pia.payment_id
+                 WHERE pia.invoice_id = i.id
+                   AND p.is_reversed = false
+                   AND COALESCE(p.approval_status, 'approved') = 'approved'
+               ), 0)),
+               status = 'paid'
+           WHERE i.lease_id = $1
+             AND i.paid_amount > 0
+             AND i.status <> 'paid'
+             AND i.id = ANY($2::int[])
+             AND NOT i.id = ANY($3::int[])`,
           [leaseId, explicitVoidIds, explicitKeepIds],
         ),
 

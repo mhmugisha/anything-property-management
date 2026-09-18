@@ -197,19 +197,30 @@ export async function PUT(request, { params: { id } }) {
     // Apply the new rent to current-month and future rent invoices that are
     // not fully paid (Option 2 scope). paid_amount is left untouched, so a
     // partially paid invoice keeps a balance of (new rent - paid).
-    // Edge case: if the new rent is below paid_amount, the invoice is skipped
-    // (paid_amount < new amount guard) to avoid a negative balance — review later.
+    // Edit floor: skip any invoice whose live_applied (sum of allocations
+    // against non-reversed, approved payments) exceeds the new rent. This
+    // preserves the existing "skip, don't error" semantics of the bulk
+    // path, and uses live_applied rather than paid_amount so drift in
+    // paid_amount can't cause a legitimate reduction to be skipped.
     if (Number(monthlyRent) !== Number(oldLease.monthly_rent)) {
       await sql(
-        `UPDATE invoices
+        `UPDATE invoices i
          SET amount = $1
-         WHERE lease_id = $2
-           AND COALESCE(is_deleted, false) = false
-           AND status <> 'void'
-           AND status <> 'paid'
-           AND (invoice_year * 100 + invoice_month) >= $3
-           AND paid_amount < $1
-           AND description LIKE 'Rent for:%'`,
+         WHERE i.lease_id = $2
+           AND COALESCE(i.is_deleted, false) = false
+           AND i.status <> 'void'
+           AND i.status <> 'paid'
+           AND (i.invoice_year * 100 + i.invoice_month) >= $3
+           AND i.description LIKE 'Rent for:%'
+           AND $1 >= COALESCE((
+             SELECT SUM(pia.amount_applied)
+             FROM payment_invoice_allocations pia
+             JOIN payments p ON p.id = pia.payment_id
+             WHERE pia.invoice_id = i.id
+               AND p.is_reversed = false
+               AND COALESCE(p.approval_status, 'approved') = 'approved'
+           ), 0)
+           AND $1 >= i.paid_amount`,
         [monthlyRent, leaseId, currentYear * 100 + currentMonth],
       );
     }

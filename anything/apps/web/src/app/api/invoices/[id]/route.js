@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
+import { getInvoiceLiveApplied } from "@/app/api/utils/payments/liveAllocations";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -43,34 +44,23 @@ export async function DELETE(request, { params }) {
       });
     }
 
-    // SAFETY CHECK: Block deletion if invoice has any payments applied
+    // Block deletion if the invoice has any live payment applied. Uses the
+    // live_applied form (sum of allocations against non-reversed, approved
+    // payments) so it matches the void guard and can't be fooled by an
+    // orphan allocation row against a reversed payment. Also keeps the
+    // paid_amount check as a belt-and-braces measure against drift where
+    // paid_amount overstates.
     const paidAmount = Number(invoice.paid_amount || 0);
-    if (paidAmount > 0) {
+    const liveApplied = await getInvoiceLiveApplied(invoiceId);
+    if (paidAmount > 0 || liveApplied > 0) {
       return Response.json(
         {
           error:
-            "Cannot delete invoice with payments applied. Please reverse the payments first.",
-          paidAmount,
+            "This invoice has a payment applied to it and can't be deleted. Un-apply or reverse the payment first.",
+          paid_amount: paidAmount,
+          live_applied: liveApplied,
         },
-        { status: 400 },
-      );
-    }
-
-    // Double-check payment allocations (extra safety)
-    const allocRows = await sql`
-      SELECT COUNT(*) as count
-      FROM payment_invoice_allocations
-      WHERE invoice_id = ${invoiceId}
-    `;
-
-    const allocCount = Number(allocRows?.[0]?.count || 0);
-    if (allocCount > 0) {
-      return Response.json(
-        {
-          error:
-            "Cannot delete invoice with payment allocations. Please remove allocations first.",
-        },
-        { status: 400 },
+        { status: 409 },
       );
     }
 

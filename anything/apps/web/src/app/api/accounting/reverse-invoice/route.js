@@ -2,6 +2,7 @@ import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
 import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
+import { getInvoiceLiveApplied } from "@/app/api/utils/payments/liveAllocations";
 
 function toNumber(val) {
   const n = Number(val);
@@ -87,6 +88,27 @@ export async function POST(request) {
         },
         { status: 400 },
       );
+    }
+
+    // Void guard: if this reversal would set status='void' AND there is any
+    // live payment allocation attached, reject. Uses live_applied (sum of
+    // non-reversed, approved payment allocations) as the ledger truth so it
+    // catches the drift case where invoices.paid_amount reads 0 but real
+    // money is still attached via allocations.
+    const wouldSetStatusVoid =
+      unpaidBalance - amount <= 0.01 && paidAmount === 0;
+    if (wouldSetStatusVoid) {
+      const liveApplied = await getInvoiceLiveApplied(invoiceId);
+      if (liveApplied > 0) {
+        return Response.json(
+          {
+            error:
+              "This invoice has a payment applied to it and can't be voided. Un-apply or reverse the payment first, then void.",
+            live_applied: liveApplied,
+          },
+          { status: 409 },
+        );
+      }
     }
 
     // Reverse the rent accrual half of the original invoice entry.
@@ -191,8 +213,25 @@ export async function POST(request) {
         WHERE id = ${invoiceId}
       `;
     } else {
-      const newInvoiceAmount =
+      // Edit floor: the invoice amount must never drop below the amount of
+      // live payments allocated to it. Use live_applied (allocations against
+      // non-reversed, approved payments) rather than paid_amount alone,
+      // because paid_amount can drift and understate reality.
+      const liveApplied = await getInvoiceLiveApplied(invoiceId);
+      const floor = Math.max(paidAmount, liveApplied);
+      const proposedAmount =
         paidAmount > 0 ? paidAmount : originalInvoiceAmount - amount;
+      if (proposedAmount + 0.01 < floor) {
+        return Response.json(
+          {
+            error: `Cannot reduce invoice below live payments applied (${floor.toLocaleString()} ${currency}). Un-apply or reverse the payment first.`,
+            live_applied: liveApplied,
+            paid_amount: paidAmount,
+          },
+          { status: 409 },
+        );
+      }
+      const newInvoiceAmount = Math.max(proposedAmount, floor);
       await sql`
         UPDATE invoices
         SET amount = ${newInvoiceAmount}, status = 'paid'
