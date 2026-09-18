@@ -45,9 +45,12 @@ export default function PromisesDuePage() {
 
   const staffQuery = useStaffProfile(!userLoading && !!user);
   const canManageTenants = staffQuery.data?.permissions?.tenants === true;
+  const isPortfolioManager =
+    staffQuery.data?.role_name === "Portfolio Manager";
+  const canViewPromisesDue = canManageTenants || isPortfolioManager;
 
   const dueQuery = useDuePromises(
-    !userLoading && !!user && canManageTenants,
+    !userLoading && !!user && canViewPromisesDue,
   );
   const rows = dueQuery.data?.promises || [];
   const count = Number(dueQuery.data?.count || 0);
@@ -74,7 +77,7 @@ export default function PromisesDuePage() {
     return null;
   }
 
-  if (!canManageTenants) {
+  if (!canViewPromisesDue) {
     return (
       <AccessDenied
         title="Promises Due"
