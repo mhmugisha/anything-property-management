@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermissionOrManager } from "@/app/api/utils/staff";
+import { getManagerScope } from "@/app/api/utils/managerScope";
 
 /**
  * Promises Due
@@ -18,6 +19,20 @@ export async function GET(request) {
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
+    const scope = await getManagerScope(perm);
+
+    // Portfolio Manager with no assigned properties sees nothing.
+    if (scope.scoped && scope.propertyIds.length === 0) {
+      return Response.json({ count: 0, promises: [] });
+    }
+
+    const params = [];
+    let scopeFilter = "";
+    if (scope.scoped) {
+      params.push(scope.propertyIds);
+      scopeFilter = ` AND p.id = ANY($${params.length}::int[])`;
+    }
+
     const rows = await sql(
       `WITH latest AS (
          SELECT DISTINCT ON (pp.tenant_id)
@@ -73,9 +88,9 @@ export async function GET(request) {
        LEFT JOIN properties p ON p.id = u.property_id
        LEFT JOIN staff_users su ON su.id = l.recorded_by
        LEFT JOIN balances b ON b.tenant_id = l.tenant_id
-       WHERE l.promise_date <= CURRENT_DATE
+       WHERE l.promise_date <= CURRENT_DATE${scopeFilter}
        ORDER BY l.promise_date ASC, l.id ASC`,
-      [],
+      params,
     );
 
     const promises = rows.map((r) => ({
