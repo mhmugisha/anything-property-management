@@ -53,13 +53,13 @@ export function useDeleteInvoice() {
         };
       }
 
-      setIsDeleting(false);
       return { ok: true, data };
     } catch (err) {
       const errorMessage = err.message || "Failed to delete invoice";
       setError(errorMessage);
-      setIsDeleting(false);
       return { ok: false, error: errorMessage };
+    } finally {
+      setIsDeleting(false);
     }
   };
 
