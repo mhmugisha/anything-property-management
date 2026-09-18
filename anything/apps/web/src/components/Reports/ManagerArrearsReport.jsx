@@ -275,24 +275,34 @@ export function ManagerArrearsReport({ userLoading, user, canViewReports }) {
                                 r.tenant_id != null
                                   ? latestByTenant[Number(r.tenant_id)]
                                   : null;
+                              const critical = Number(r.days_overdue || 0) > 30;
+                              const rowClass = critical
+                                ? "border-b border-slate-100 bg-rose-50 hover:bg-rose-100"
+                                : "border-b border-slate-100 hover:bg-slate-50";
+                              const primaryText = critical
+                                ? "text-rose-700"
+                                : "text-slate-800";
+                              const secondaryText = critical
+                                ? "text-rose-600"
+                                : "text-slate-700";
+                              const amountText = critical
+                                ? "text-rose-700"
+                                : "text-slate-900";
                               return (
-                                <tr
-                                  key={r.invoice_id}
-                                  className="border-b border-slate-100 hover:bg-slate-50"
-                                >
-                                  <td className="py-2 px-3 text-slate-800">
+                                <tr key={r.invoice_id} className={rowClass}>
+                                  <td className={`py-2 px-3 ${primaryText}`}>
                                     {r.unit_number}
                                   </td>
-                                  <td className="py-2 px-3 text-slate-700">
+                                  <td className={`py-2 px-3 ${secondaryText}`}>
                                     {r.tenant_name}
                                   </td>
-                                  <td className="py-2 px-3 text-right text-slate-700">
+                                  <td className={`py-2 px-3 text-right ${secondaryText}`}>
                                     {fmtNum(r.days_overdue)}
                                   </td>
-                                  <td className="py-2 px-3 text-right font-medium text-slate-900">
+                                  <td className={`py-2 px-3 text-right font-medium ${amountText}`}>
                                     {formatCurrencyUGX(r.balance)}
                                   </td>
-                                  <td className="py-2 px-3 text-slate-700">
+                                  <td className={`py-2 px-3 ${secondaryText}`}>
                                     <PromiseCell
                                       promise={promise}
                                       onClick={() =>

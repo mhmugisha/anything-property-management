@@ -50,7 +50,8 @@ export async function GET(request) {
        balances AS (
          SELECT
            i.tenant_id,
-           SUM(i.amount - i.paid_amount) AS current_balance
+           SUM(i.amount - i.paid_amount) AS current_balance,
+           MAX((CURRENT_DATE - i.due_date))::int AS max_days_overdue
          FROM invoices i
          WHERE (i.amount - i.paid_amount) > 0
            AND i.status <> 'void'
@@ -74,7 +75,8 @@ export async function GET(request) {
          p.property_name,
          u.unit_number,
          su.full_name AS recorded_by_name,
-         COALESCE(b.current_balance, 0) AS current_balance
+         COALESCE(b.current_balance, 0) AS current_balance,
+         COALESCE(b.max_days_overdue, 0) AS max_days_overdue
        FROM latest l
        LEFT JOIN tenants t ON t.id = l.tenant_id
        LEFT JOIN LATERAL (
@@ -106,6 +108,7 @@ export async function GET(request) {
       comment: r.comment,
       recorded_by_name: r.recorded_by_name || null,
       current_balance: Number(r.current_balance || 0),
+      max_days_overdue: Number(r.max_days_overdue || 0),
     }));
 
     return Response.json({ count: promises.length, promises });

@@ -181,24 +181,38 @@ export default function PromisesDuePage() {
                       const badgeClass = isOverdue
                         ? "text-rose-700 bg-rose-50 border-rose-200"
                         : "text-amber-700 bg-amber-50 border-amber-200";
+                      const invoiceCritical =
+                        Number(r.max_days_overdue || 0) > 30;
+                      const rowClass = invoiceCritical
+                        ? "border-b border-slate-100 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                        : "border-b border-slate-100 hover:bg-slate-50";
+                      const primaryText = invoiceCritical
+                        ? "text-rose-700"
+                        : "text-slate-800";
+                      const secondaryText = invoiceCritical
+                        ? "text-rose-600"
+                        : "text-slate-700";
+                      const mutedText = invoiceCritical
+                        ? "text-rose-500"
+                        : "text-slate-500";
+                      const amountText = invoiceCritical
+                        ? "text-rose-700"
+                        : "text-slate-900";
                       return (
-                        <tr
-                          key={r.id}
-                          className="border-b border-slate-100 hover:bg-slate-50"
-                        >
-                          <td className="py-2 px-3 text-slate-800 font-medium align-top">
+                        <tr key={r.id} className={rowClass}>
+                          <td className={`py-2 px-3 font-medium align-top ${primaryText}`}>
                             <div>{r.tenant_name}</div>
-                            <div className="text-xs text-slate-500 font-normal mt-0.5">
+                            <div className={`text-xs font-normal mt-0.5 ${mutedText}`}>
                               {r.tenant_phone || "—"}
                             </div>
                           </td>
-                          <td className="py-2 px-3 text-slate-700 align-top">
+                          <td className={`py-2 px-3 align-top ${secondaryText}`}>
                             <div>{r.property_name || "—"}</div>
-                            <div className="text-xs text-slate-500 mt-0.5">
+                            <div className={`text-xs mt-0.5 ${mutedText}`}>
                               {r.unit_number ? `Unit ${r.unit_number}` : "—"}
                             </div>
                           </td>
-                          <td className="py-2 px-3 text-slate-700">
+                          <td className={`py-2 px-3 ${secondaryText}`}>
                             <div>{formatShortDate(r.promise_date)}</div>
                             {badgeText ? (
                               <span
@@ -208,13 +222,13 @@ export default function PromisesDuePage() {
                               </span>
                             ) : null}
                           </td>
-                          <td className="py-2 px-3 text-right text-slate-900 font-medium">
+                          <td className={`py-2 px-3 text-right font-medium ${amountText}`}>
                             {r.amount != null ? formatCurrencyUGX(r.amount) : "—"}
                           </td>
-                          <td className="py-2 px-3 text-slate-700">
+                          <td className={`py-2 px-3 ${secondaryText}`}>
                             {r.comment || "—"}
                           </td>
-                          <td className="py-2 px-3 text-right text-slate-900 font-medium">
+                          <td className={`py-2 px-3 text-right font-medium ${amountText}`}>
                             {formatCurrencyUGX(r.current_balance)}
                           </td>
                         </tr>
