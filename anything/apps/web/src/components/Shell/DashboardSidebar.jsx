@@ -1,4 +1,15 @@
+import useUser from "@/utils/useUser";
+import { useStaffProfile } from "@/hooks/useStaffProfile";
+
 export default function DashboardSidebar() {
+  const { data: user, loading: userLoading } = useUser();
+  const staffQuery = useStaffProfile(!userLoading && !!user);
+  const isPortfolioManager =
+    staffQuery.data?.role_name === "Portfolio Manager";
+
+  const linkClass =
+    "flex items-center px-4 py-2.5 rounded-lg text-slate-200 hover:bg-white/10 transition-colors text-sm font-medium";
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -10,37 +21,29 @@ export default function DashboardSidebar() {
 
       {/* Menu items */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden py-2">
-        <a
-          href="/dashboard/due-to-landlords"
-          className="flex items-center px-4 py-2.5 rounded-lg text-slate-200 hover:bg-white/10 transition-colors text-sm font-medium"
-        >
-          Due to Landlords
-        </a>
-        <a
-          href="/payments/open-balances"
-          className="flex items-center px-4 py-2.5 rounded-lg text-slate-200 hover:bg-white/10 transition-colors text-sm font-medium"
-        >
-          Open Balances
-        </a>
-        <a
-          href="/accounting/chart-of-accounts"
-          className="flex items-center px-4 py-2.5 rounded-lg text-slate-200 hover:bg-white/10 transition-colors text-sm font-medium"
-        >
-          Chart of Accounts
-        </a>
-        <a
-          href="/reports?report=payment-status"
-          className="flex items-center px-4 py-2.5 rounded-lg text-slate-200 hover:bg-white/10 transition-colors text-sm font-medium"
-        >
-          Payment Status
-        </a>
-        <a
-          href="/reports?report=all-landlords-balances"
-          className="flex items-center px-4 py-2.5 rounded-lg text-slate-200 hover:bg-white/10 transition-colors text-sm font-medium"
-        >
-          All Landlords Balances
-        </a>
-
+        {isPortfolioManager ? (
+          <a href="/reports?report=manager-arrears" className={linkClass}>
+            Manager Arrears
+          </a>
+        ) : (
+          <>
+            <a href="/dashboard/due-to-landlords" className={linkClass}>
+              Due to Landlords
+            </a>
+            <a href="/payments/open-balances" className={linkClass}>
+              Open Balances
+            </a>
+            <a href="/accounting/chart-of-accounts" className={linkClass}>
+              Chart of Accounts
+            </a>
+            <a href="/reports?report=payment-status" className={linkClass}>
+              Payment Status
+            </a>
+            <a href="/reports?report=all-landlords-balances" className={linkClass}>
+              All Landlords Balances
+            </a>
+          </>
+        )}
       </div>
     </div>
   );
