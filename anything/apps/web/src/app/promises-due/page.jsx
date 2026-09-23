@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, CalendarClock } from "lucide-react";
 import useUser from "@/utils/useUser";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
-import { useDuePromises } from "@/hooks/usePaymentPromises";
+import { useDeletePromise, useDuePromises } from "@/hooks/usePaymentPromises";
 import AppHeader from "@/components/Shell/AppHeader";
 import Sidebar from "@/components/Shell/Sidebar";
 import MobileMenu from "@/components/Shell/MobileMenu";
@@ -54,6 +54,28 @@ export default function PromisesDuePage() {
   );
   const rows = dueQuery.data?.promises || [];
   const count = Number(dueQuery.data?.count || 0);
+
+  const deletePromise = useDeletePromise();
+  const [resolvingId, setResolvingId] = useState(null);
+  const [resolveError, setResolveError] = useState(null);
+
+  const handleResolve = async (id) => {
+    if (!id) return;
+    const ok = window.confirm(
+      "Mark this promise resolved? It will be removed from the list.",
+    );
+    if (!ok) return;
+    setResolveError(null);
+    setResolvingId(id);
+    try {
+      await deletePromise.mutateAsync(id);
+      await dueQuery.refetch();
+    } catch (err) {
+      setResolveError(err?.message || "Failed to resolve promise.");
+    } finally {
+      setResolvingId(null);
+    }
+  };
 
   if (userLoading || (user && staffQuery.isLoading)) {
     return (
@@ -151,12 +173,13 @@ export default function PromisesDuePage() {
               <div className="overflow-auto">
                 <table className="w-full text-sm table-fixed">
                   <colgroup>
-                    <col style={{ width: "20%" }} />
                     <col style={{ width: "18%" }} />
-                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "11%" }} />
+                    <col style={{ width: "20%" }} />
                     <col style={{ width: "12%" }} />
-                    <col style={{ width: "22%" }} />
-                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "10%" }} />
                   </colgroup>
                   <thead>
                     <tr className="text-left text-slate-500 border-b-2 border-slate-700">
@@ -166,6 +189,7 @@ export default function PromisesDuePage() {
                       <th className="py-2 px-3 text-right">Amount</th>
                       <th className="py-2 px-3">Comment</th>
                       <th className="py-2 px-3 text-right">Current Balance</th>
+                      <th className="py-2 px-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -230,11 +254,24 @@ export default function PromisesDuePage() {
                           <td className={`py-2 px-3 text-right font-medium ${amountText}`}>
                             {formatCurrencyUGX(r.current_balance)}
                           </td>
+                          <td className="py-2 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleResolve(r.id)}
+                              disabled={resolvingId === r.id}
+                              className="inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {resolvingId === r.id ? "Resolving…" : "Resolved"}
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+                {resolveError ? (
+                  <p className="mt-3 text-sm text-rose-600">{resolveError}</p>
+                ) : null}
               </div>
             )}
           </div>

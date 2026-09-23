@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchJson, postJson, putJson } from "@/utils/api";
+import { deleteJson, fetchJson, postJson, putJson } from "@/utils/api";
 
 export function usePromisesForTenant(tenantId, enabled = true) {
   return useQuery({
@@ -67,6 +67,16 @@ export function useUpdatePromise() {
   return useMutation({
     mutationFn: async ({ id, payload }) =>
       putJson(`/api/payment-promises/${id}`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["paymentPromises"] });
+    },
+  });
+}
+
+export function useDeletePromise() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id) => deleteJson(`/api/payment-promises/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["paymentPromises"] });
     },

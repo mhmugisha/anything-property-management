@@ -112,3 +112,32 @@ export async function PUT(request, { params }) {
     );
   }
 }
+
+export async function DELETE(request, { params }) {
+  const perm = await requirePermissionOrManager(request, "tenants");
+  if (!perm.ok) return Response.json(perm.body, { status: perm.status });
+
+  try {
+    const id = toNumber(params?.id);
+    if (!id) {
+      return Response.json({ error: "Invalid promise id" }, { status: 400 });
+    }
+
+    const rows = await sql(
+      `DELETE FROM payment_promises WHERE id = $1 RETURNING id`,
+      [id],
+    );
+
+    if (!rows.length) {
+      return Response.json({ error: "Promise not found" }, { status: 404 });
+    }
+
+    return Response.json({ ok: true, id: Number(rows[0].id) });
+  } catch (error) {
+    console.error("DELETE /api/payment-promises/[id] error", error);
+    return Response.json(
+      { error: "Failed to delete payment promise" },
+      { status: 500 },
+    );
+  }
+}
