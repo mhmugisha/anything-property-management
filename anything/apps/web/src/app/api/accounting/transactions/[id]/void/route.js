@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { getAccountIdByCode } from "@/app/api/utils/accounting";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -24,6 +25,24 @@ export async function POST(request, { params: { id } }) {
     );
     const tx = rows?.[0] || null;
     if (!tx) return Response.json({ error: "Transaction not found" }, { status: 404 });
+
+    // Block voiding of an already-allocated Holding entry — it would orphan
+    // the Dr-Holding side of the allocation payment.
+    const holdingAccountId = await getAccountIdByCode("2500");
+    if (
+      holdingAccountId &&
+      Number(tx.credit_account_id) === Number(holdingAccountId) &&
+      tx.allocated_by_transaction_id !== null &&
+      tx.allocated_by_transaction_id !== undefined
+    ) {
+      return Response.json(
+        {
+          error:
+            "This Holding entry has been allocated; reject the allocation first.",
+        },
+        { status: 409 },
+      );
+    }
 
     const body = await request.json().catch(() => ({}));
     const confirm = body?.confirm === true;

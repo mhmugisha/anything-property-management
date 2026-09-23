@@ -9,7 +9,7 @@ import Sidebar from "@/components/Shell/Sidebar";
 import MobileMenu from "@/components/Shell/MobileMenu";
 import AccountingSidebar from "@/components/Shell/AccountingSidebar";
 import AccessDenied from "@/components/Shell/AccessDenied";
-import { fetchJson, postJson } from "@/utils/api";
+import { deleteJson, fetchJson, postJson, putJson } from "@/utils/api";
 import DatePopoverInput from "@/components/DatePopoverInput";
 import { formatDate } from "@/utils/formatters";
 import { formatCurrencyUGX } from "@/utils/formatCurrency";
@@ -26,7 +26,10 @@ export default function AllocatePaymentPage() {
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeEntry, setActiveEntry] = useState(null);
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const [successMessage, setSuccessMessage] = useState("");
+  const [rowError, setRowError] = useState("");
 
   const queryClient = useQueryClient();
 
@@ -66,6 +69,44 @@ export default function AllocatePaymentPage() {
       closeModal();
     },
   });
+
+  const invalidateAfterMutation = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["accounting", "holdingUnallocated"],
+    });
+    queryClient.invalidateQueries({ queryKey: ["accounting", "journal"] });
+  };
+
+  const editMutation = useMutation({
+    mutationFn: async ({ id, payload }) =>
+      putJson(`/api/accounting/holding/${id}`, payload),
+    onSuccess: () => {
+      invalidateAfterMutation();
+      setEditingEntry(null);
+      setSuccessMessage("Holding entry updated.");
+      setTimeout(() => setSuccessMessage(""), 4000);
+    },
+  });
+
+  const handleDelete = async (entry) => {
+    if (!entry?.id) return;
+    const ok = window.confirm(
+      "Delete this Holding entry? This reverses it from the ledger.",
+    );
+    if (!ok) return;
+    setRowError("");
+    setDeletingId(entry.id);
+    try {
+      await deleteJson(`/api/accounting/holding/${entry.id}`);
+      invalidateAfterMutation();
+      setSuccessMessage("Holding entry deleted.");
+      setTimeout(() => setSuccessMessage(""), 4000);
+    } catch (err) {
+      setRowError(err?.message || "Could not delete holding entry.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const isLoading = userLoading || staffQuery.isLoading;
 
@@ -184,17 +225,41 @@ export default function AllocatePaymentPage() {
                           {e.created_by_name || "—"}
                         </td>
                         <td className="py-2 pr-3 text-right">
-                          <button
-                            onClick={() => setActiveEntry(e)}
-                            className="px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-xs"
-                          >
-                            Allocate
-                          </button>
+                          <div className="inline-flex gap-1.5 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setActiveEntry(e)}
+                              className="px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-xs"
+                            >
+                              Allocate
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRowError("");
+                                setEditingEntry(e);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(e)}
+                              disabled={deletingId === e.id}
+                              className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {deletingId === e.id ? "Deleting…" : "Delete"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                {rowError ? (
+                  <p className="mt-3 text-sm text-rose-600">{rowError}</p>
+                ) : null}
               </div>
             )}
           </div>
@@ -210,6 +275,21 @@ export default function AllocatePaymentPage() {
           onSubmit={(payload) => allocateMutation.mutate(payload)}
           isSaving={allocateMutation.isPending}
           error={allocateMutation.error}
+        />
+      ) : null}
+
+      {editingEntry ? (
+        <EditHoldingModal
+          entry={editingEntry}
+          onCancel={() => {
+            editMutation.reset();
+            setEditingEntry(null);
+          }}
+          onSubmit={(payload) =>
+            editMutation.mutate({ id: editingEntry.id, payload })
+          }
+          isSaving={editMutation.isPending}
+          error={editMutation.error}
         />
       ) : null}
     </div>
@@ -484,6 +564,114 @@ function Field({ label, children }) {
     <div className="space-y-1">
       <div className="text-xs font-medium text-slate-600">{label}</div>
       {children}
+    </div>
+  );
+}
+
+function EditHoldingModal({ entry, onCancel, onSubmit, isSaving, error }) {
+  const [amount, setAmount] = useState(
+    entry?.amount != null ? String(entry.amount) : "",
+  );
+  const [transactionDate, setTransactionDate] = useState(
+    typeof entry?.transaction_date === "string"
+      ? entry.transaction_date.slice(0, 10)
+      : todayYmd(),
+  );
+  const [referenceNumber, setReferenceNumber] = useState(
+    entry?.reference_number || "",
+  );
+  const [description, setDescription] = useState(entry?.description || "");
+
+  const parsedAmount = Number(amount);
+  const canSubmit =
+    Number.isFinite(parsedAmount) &&
+    parsedAmount > 0 &&
+    /^\d{4}-\d{2}-\d{2}$/.test(transactionDate);
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    onSubmit({
+      amount: parsedAmount,
+      transaction_date: transactionDate,
+      reference_number: referenceNumber.trim() || null,
+      description: description.trim() || null,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl shadow-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <h2 className="text-xl font-semibold text-slate-800 mb-1">
+            Edit Holding entry
+          </h2>
+          <p className="text-sm text-slate-500 mb-4">
+            Fix a Holding entry parked in error. Only allowed while the entry
+            is still unallocated.
+          </p>
+
+          <div className="space-y-3">
+            <Field label="Amount (UGX)">
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+              />
+            </Field>
+            <Field label="Date">
+              <DatePopoverInput
+                value={transactionDate}
+                onChange={setTransactionDate}
+                placeholder="DD-MM-YYYY"
+                className="bg-white"
+              />
+            </Field>
+            <Field label="Reference number">
+              <input
+                value={referenceNumber}
+                onChange={(e) => setReferenceNumber(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+                placeholder="e.g. RCT-001"
+              />
+            </Field>
+            <Field label="Description">
+              <input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+              />
+            </Field>
+          </div>
+
+          {error ? (
+            <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+              {error?.message || "Could not update holding entry."}
+            </div>
+          ) : null}
+
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={isSaving}
+              className="px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!canSubmit || isSaving}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              {isSaving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   ensureCanCreditAccount,
   getAssetAccountBalance,
   getAccountById,
+  getAccountIdByCode,
   getDueToLandlordsBalance,
 } from "@/app/api/utils/accounting";
 
@@ -130,6 +131,24 @@ export async function PUT(request, { params: { id } }) {
             "This entry is system-generated. Edit it from the original record (payment/payout/deduction).",
         },
         { status: 400 },
+      );
+    }
+
+    // Block edits of an already-allocated Holding entry — editing it here
+    // would orphan the Dr-Holding side of the allocation payment.
+    const holdingAccountId = await getAccountIdByCode("2500");
+    if (
+      holdingAccountId &&
+      Number(oldTx.credit_account_id) === Number(holdingAccountId) &&
+      oldTx.allocated_by_transaction_id !== null &&
+      oldTx.allocated_by_transaction_id !== undefined
+    ) {
+      return Response.json(
+        {
+          error:
+            "This Holding entry has been allocated; reject the allocation first.",
+        },
+        { status: 409 },
       );
     }
 
@@ -302,6 +321,23 @@ export async function DELETE(request, { params: { id } }) {
             "This entry is system-generated. Delete it from the original record (payment/payout/deduction).",
         },
         { status: 400 },
+      );
+    }
+
+    // Block deletion of an already-allocated Holding entry.
+    const holdingAccountId = await getAccountIdByCode("2500");
+    if (
+      holdingAccountId &&
+      Number(oldTx.credit_account_id) === Number(holdingAccountId) &&
+      oldTx.allocated_by_transaction_id !== null &&
+      oldTx.allocated_by_transaction_id !== undefined
+    ) {
+      return Response.json(
+        {
+          error:
+            "This Holding entry has been allocated; reject the allocation first.",
+        },
+        { status: 409 },
       );
     }
 
