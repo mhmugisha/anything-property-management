@@ -876,17 +876,29 @@ function AdvancesTab({ isAdmin = false }) {
       )}
 
       {/* Filters */}
-      <div className="flex gap-3">
-        <Select value={filterEmployeeId} onChange={(e) => setFilterEmployeeId(e.target.value)} className="max-w-xs">
-          <option value="">All employees</option>
-          {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
-        </Select>
-        <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="max-w-[160px]">
-          <option value="">All statuses</option>
-          <option value="outstanding">Outstanding</option>
-          <option value="partial">Partial</option>
-          <option value="recovered">Recovered</option>
-        </Select>
+      <div className="flex flex-wrap gap-3">
+        <div className="w-64">
+          <select
+            value={filterEmployeeId}
+            onChange={(e) => setFilterEmployeeId(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+          >
+            <option value="">All employees</option>
+            {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
+          </select>
+        </div>
+        <div className="w-52">
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
+          >
+            <option value="">All statuses</option>
+            <option value="outstanding">Outstanding</option>
+            <option value="partial">Partial</option>
+            <option value="recovered">Recovered</option>
+          </select>
+        </div>
       </div>
 
       {advQuery.isLoading ? (
