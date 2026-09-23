@@ -30,9 +30,12 @@ export async function GET(request) {
       where.push(`a.employee_id = $${values.length + 1}`);
       values.push(employeeId);
     }
-    if (status) {
+    if (status === "voided") {
+      where.push(`a.is_voided = true`);
+    } else if (status) {
       where.push(`a.status = $${values.length + 1}`);
       values.push(status);
+      where.push(`COALESCE(a.is_voided, false) = false`);
     }
 
     const rows = await sql(

@@ -897,6 +897,7 @@ function AdvancesTab({ isAdmin = false }) {
             <option value="outstanding">Outstanding</option>
             <option value="partial">Partial</option>
             <option value="recovered">Recovered</option>
+            <option value="voided">Voided</option>
           </select>
         </div>
       </div>
