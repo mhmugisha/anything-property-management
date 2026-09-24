@@ -476,6 +476,7 @@ export function Layout({ children }: { children: ReactNode }) {
       'accounting/tenant-deduction': 'Tenant Deduction',
       'accounting/landlord-expense-deduction': 'Landlord Deduction',
       'accounting/new-entry-company': 'New Journal Entry',
+      'accounting/receive-to-holding': 'Receive to Holding',
       'accounting/reports': 'Accounting Reports',
       'payments/pay-invoice': 'Pay Invoice',
       'payments/payment-on-account': 'Pay on Account',

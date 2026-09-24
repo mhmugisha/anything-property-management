@@ -11,6 +11,7 @@ import {
   ArrowRightLeft,
   RefreshCw,
   HandCoins,
+  Wallet,
 } from "lucide-react";
 
 export default function AccountingSidebar({ isAdmin = false }) {
@@ -73,6 +74,11 @@ export default function AccountingSidebar({ isAdmin = false }) {
       title: "Deposit Funds",
       href: "/accounting/deposit-funds",
       icon: PiggyBank,
+    },
+    {
+      title: "Receive to Holding",
+      href: "/accounting/receive-to-holding",
+      icon: Wallet,
     },
     {
       title: "Allocate Payment",
