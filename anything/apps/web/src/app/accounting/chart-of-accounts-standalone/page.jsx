@@ -24,6 +24,7 @@ export default function ChartOfAccountsPage() {
   const [accountCode, setAccountCode] = useState("");
   const [accountName, setAccountName] = useState("");
   const [accountType, setAccountType] = useState("");
+  const [accountIsCashBank, setAccountIsCashBank] = useState(false);
 
   const accountRegistry = useAccountRegistry(
     !userLoading && !!user && canUseAccounting,
@@ -37,9 +38,11 @@ export default function ChartOfAccountsPage() {
     accountCode,
     accountName,
     accountType,
+    accountIsCashBank,
     setAccountCode,
     setAccountName,
     setAccountType,
+    setAccountIsCashBank,
     createAccountMutation,
   });
 
@@ -102,9 +105,11 @@ export default function ChartOfAccountsPage() {
             accountCode={accountCode}
             accountName={accountName}
             accountType={accountType}
+            isCashBank={accountIsCashBank}
             onCodeChange={setAccountCode}
             onNameChange={setAccountName}
             onTypeChange={setAccountType}
+            onIsCashBankChange={setAccountIsCashBank}
             onCreateAccount={handlers.onCreateAccount}
             createAccountMutation={createAccountMutation}
             accountsQuery={accountsQuery}

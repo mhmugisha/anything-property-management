@@ -5,9 +5,11 @@ export function AccountForm({
   accountCode,
   accountName,
   accountType,
+  isCashBank,
   onCodeChange,
   onNameChange,
   onTypeChange,
+  onIsCashBankChange,
   onSubmit,
   isPending,
   error,
@@ -49,6 +51,20 @@ export function AccountForm({
         </Field>
       </div>
 
+      <div className="mt-3">
+        <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isCashBank === true}
+            onChange={(e) =>
+              onIsCashBankChange && onIsCashBankChange(e.target.checked)
+            }
+            className="w-4 h-4 rounded border-gray-300"
+          />
+          <span>Bank / Cash account</span>
+        </label>
+      </div>
+
       {error ? (
         <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
           Could not create account.
@@ -56,6 +72,7 @@ export function AccountForm({
       ) : null}
 
       <button
+        type="button"
         onClick={onSubmit}
         disabled={isPending || !canSubmit}
         className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"

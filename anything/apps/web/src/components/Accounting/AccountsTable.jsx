@@ -37,7 +37,16 @@ export function AccountsTable({ accounts, isLoading, error }) {
                     {a.account_code}
                   </a>
                 </td>
-                <td className="py-2 pr-3">{a.account_name}</td>
+                <td className="py-2 pr-3">
+                  <span className="inline-flex items-center gap-2">
+                    <span>{a.account_name}</span>
+                    {a.is_cash_bank === true ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Bank
+                      </span>
+                    ) : null}
+                  </span>
+                </td>
                 <td className="py-2 pr-3">{a.account_type}</td>
                 <td className="py-2 pr-3">{a.is_active ? "yes" : "no"}</td>
                 <td className="py-2 pr-3">

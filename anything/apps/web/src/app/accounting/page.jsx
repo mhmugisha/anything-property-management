@@ -193,9 +193,11 @@ export default function AccountingPage() {
     accountCode: state.accountCode,
     accountName: state.accountName,
     accountType: state.accountType,
+    accountIsCashBank: state.accountIsCashBank,
     setAccountCode: state.setAccountCode,
     setAccountName: state.setAccountName,
     setAccountType: state.setAccountType,
+    setAccountIsCashBank: state.setAccountIsCashBank,
     createAccountMutation,
     txDate: state.txDate,
     txDescription: state.txDescription,
@@ -336,9 +338,11 @@ export default function AccountingPage() {
               accountCode={state.accountCode}
               accountName={state.accountName}
               accountType={state.accountType}
+              isCashBank={state.accountIsCashBank}
               onCodeChange={state.setAccountCode}
               onNameChange={state.setAccountName}
               onTypeChange={state.setAccountType}
+              onIsCashBankChange={state.setAccountIsCashBank}
               onCreateAccount={handlers.onCreateAccount}
               createAccountMutation={createAccountMutation}
               accountsQuery={accountsQuery}

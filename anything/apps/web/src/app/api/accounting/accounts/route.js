@@ -15,7 +15,7 @@ export async function GET(request) {
 
   try {
     const accounts = await sql`
-      SELECT id, account_code, account_name, account_type, parent_account_id, is_active, created_at
+      SELECT id, account_code, account_name, account_type, is_cash_bank, parent_account_id, is_active, created_at
       FROM chart_of_accounts
       ORDER BY account_code
     `;
@@ -44,6 +44,7 @@ export async function POST(request) {
       ? Number(body.parent_account_id)
       : null;
     const isActive = body?.is_active === false ? false : true;
+    const isCashBank = body?.is_cash_bank === true;
 
     if (!accountCode || !accountName || !accountType) {
       return Response.json(
@@ -64,12 +65,12 @@ export async function POST(request) {
 
     const rows = await sql`
       INSERT INTO chart_of_accounts (
-        account_code, account_name, account_type, parent_account_id, is_active
+        account_code, account_name, account_type, is_cash_bank, parent_account_id, is_active
       )
       VALUES (
-        ${accountCode}, ${accountName}, ${accountType}, ${parentAccountId}, ${isActive}
+        ${accountCode}, ${accountName}, ${accountType}, ${isCashBank}, ${parentAccountId}, ${isActive}
       )
-      RETURNING id, account_code, account_name, account_type, parent_account_id, is_active, created_at
+      RETURNING id, account_code, account_name, account_type, is_cash_bank, parent_account_id, is_active, created_at
     `;
 
     const account = rows?.[0] || null;

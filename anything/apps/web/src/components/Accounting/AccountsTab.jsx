@@ -5,9 +5,11 @@ export function AccountsTab({
   accountCode,
   accountName,
   accountType,
+  isCashBank,
   onCodeChange,
   onNameChange,
   onTypeChange,
+  onIsCashBankChange,
   onCreateAccount,
   createAccountMutation,
   accountsQuery,
@@ -60,9 +62,11 @@ export function AccountsTab({
         accountCode={accountCode}
         accountName={accountName}
         accountType={accountType}
+        isCashBank={isCashBank}
         onCodeChange={onCodeChange}
         onNameChange={onNameChange}
         onTypeChange={onTypeChange}
+        onIsCashBankChange={onIsCashBankChange}
         onSubmit={onCreateAccount}
         isPending={createAccountMutation.isPending}
         error={createAccountMutation.error}

@@ -4,9 +4,11 @@ export function useAccountingHandlers({
   accountCode,
   accountName,
   accountType,
+  accountIsCashBank,
   setAccountCode,
   setAccountName,
   setAccountType,
+  setAccountIsCashBank,
   createAccountMutation,
   txDate,
   txDescription,
@@ -45,6 +47,7 @@ export function useAccountingHandlers({
       account_code: accountCode,
       account_name: accountName,
       account_type: accountType,
+      is_cash_bank: accountIsCashBank === true,
       is_active: true,
     };
 
@@ -53,16 +56,19 @@ export function useAccountingHandlers({
         setAccountCode("");
         setAccountName("");
         setAccountType("Asset");
+        if (setAccountIsCashBank) setAccountIsCashBank(false);
       },
     });
   }, [
     accountCode,
     accountName,
     accountType,
+    accountIsCashBank,
     createAccountMutation,
     setAccountCode,
     setAccountName,
     setAccountType,
+    setAccountIsCashBank,
   ]);
 
   const onCreateJournal = useCallback(() => {

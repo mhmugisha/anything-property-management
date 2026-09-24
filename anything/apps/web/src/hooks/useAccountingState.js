@@ -37,6 +37,7 @@ export function useAccountingState() {
   const [accountCode, setAccountCode] = useState("");
   const [accountName, setAccountName] = useState("");
   const [accountType, setAccountType] = useState("Asset");
+  const [accountIsCashBank, setAccountIsCashBank] = useState(false);
 
   // Standard journal entry state
   const [txDate, setTxDate] = useState(defaultTo);
@@ -73,9 +74,11 @@ export function useAccountingState() {
     accountCode,
     accountName,
     accountType,
+    accountIsCashBank,
     setAccountCode,
     setAccountName,
     setAccountType,
+    setAccountIsCashBank,
     txDate,
     txDescription,
     txRef,

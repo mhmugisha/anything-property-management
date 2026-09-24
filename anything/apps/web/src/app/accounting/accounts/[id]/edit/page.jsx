@@ -28,6 +28,7 @@ export default function EditAccountPage({ params }) {
   const [accountName, setAccountName] = useState("");
   const [accountType, setAccountType] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [isCashBank, setIsCashBank] = useState(false);
 
   const canUseAccounting = staffQuery.data?.permissions?.accounting === true;
 
@@ -46,6 +47,7 @@ export default function EditAccountPage({ params }) {
       setAccountName(accountQuery.data.account_name || "");
       setAccountType(accountQuery.data.account_type || "");
       setIsActive(accountQuery.data.is_active !== false);
+      setIsCashBank(accountQuery.data.is_cash_bank === true);
     }
   }, [accountQuery.data]);
 
@@ -72,6 +74,7 @@ export default function EditAccountPage({ params }) {
       account_name: accountName,
       account_type: accountType,
       is_active: isActive,
+      is_cash_bank: isCashBank,
     });
   };
 
@@ -194,6 +197,18 @@ export default function EditAccountPage({ params }) {
                     <option value="inactive">Inactive</option>
                   </select>
                 </Field>
+              </div>
+
+              <div className="mt-3">
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isCashBank}
+                    onChange={(e) => setIsCashBank(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <span>Bank / Cash account</span>
+                </label>
               </div>
 
               {errorText ? (

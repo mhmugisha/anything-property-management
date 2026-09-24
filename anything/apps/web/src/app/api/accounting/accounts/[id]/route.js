@@ -21,7 +21,7 @@ export async function GET(request, { params: { id } }) {
     }
 
     const rows = await sql`
-      SELECT id, account_code, account_name, account_type, parent_account_id, is_active, created_at
+      SELECT id, account_code, account_name, account_type, is_cash_bank, parent_account_id, is_active, created_at
       FROM chart_of_accounts
       WHERE id = ${accountId}
       LIMIT 1
@@ -81,6 +81,9 @@ export async function PUT(request, { params: { id } }) {
     const isActive =
       body?.is_active !== undefined ? Boolean(body.is_active) : undefined;
 
+    const isCashBank =
+      body?.is_cash_bank !== undefined ? Boolean(body.is_cash_bank) : undefined;
+
     if (accountType !== undefined && !ALLOWED_TYPES.has(accountType)) {
       return Response.json(
         {
@@ -103,6 +106,8 @@ export async function PUT(request, { params: { id } }) {
           ? parentAccountId
           : existing.parent_account_id,
       is_active: isActive !== undefined ? isActive : existing.is_active,
+      is_cash_bank:
+        isCashBank !== undefined ? isCashBank : existing.is_cash_bank === true,
     };
 
     const rows = await sql`
@@ -111,9 +116,10 @@ export async function PUT(request, { params: { id } }) {
           account_name = ${next.account_name},
           account_type = ${next.account_type},
           parent_account_id = ${next.parent_account_id},
-          is_active = ${next.is_active}
+          is_active = ${next.is_active},
+          is_cash_bank = ${next.is_cash_bank}
       WHERE id = ${accountId}
-      RETURNING id, account_code, account_name, account_type, parent_account_id, is_active, created_at
+      RETURNING id, account_code, account_name, account_type, is_cash_bank, parent_account_id, is_active, created_at
     `;
 
     const account = rows?.[0] || null;
