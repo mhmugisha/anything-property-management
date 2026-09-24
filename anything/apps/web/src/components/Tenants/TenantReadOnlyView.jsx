@@ -346,7 +346,11 @@ export function TenantReadOnlyView({ selectedTenant }) {
         --zebra: #f7f8fb;
       }
       @page { size: A4; margin: 0.5in; }
-      * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
       html, body { margin: 0; padding: 0; }
       body {
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
