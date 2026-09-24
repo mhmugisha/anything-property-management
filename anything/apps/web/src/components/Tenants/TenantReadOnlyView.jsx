@@ -92,10 +92,14 @@ export function TenantReadOnlyView({ selectedTenant }) {
   const unitNumber = leases[0]?.unit_number || null;
   const propertyName = leases[0]?.property_name || null;
 
-  // Merge invoices, payments, deductions into flat rows filtered by from/to, sorted ascending
+  // Merge invoices, payments, deductions into flat rows filtered by from/to,
+  // sorted by (date, id) so same-day rows have a stable, reproducible order
+  // and the running balance is identical on every render.
   const mergedRows = useMemo(() => {
+    const kindOrder = { invoice: 0, payment: 1, deduction: 2 };
     const all = [
       ...invoices.map((i) => ({
+        id: Number(i.id) || 0,
         date: i.invoice_date ? String(i.invoice_date).slice(0, 10) : "",
         reference_number: "",
         description: i.description || `Invoice #${i.id}`,
@@ -104,6 +108,7 @@ export function TenantReadOnlyView({ selectedTenant }) {
         kind: "invoice",
       })),
       ...payments.map((p) => ({
+        id: Number(p.id) || 0,
         date: p.payment_date ? String(p.payment_date).slice(0, 10) : "",
         reference_number: p.reference_number || "",
         description: (() => {
@@ -118,6 +123,7 @@ export function TenantReadOnlyView({ selectedTenant }) {
         kind: "payment",
       })),
       ...deductions.map((d) => ({
+        id: Number(d.id) || 0,
         date: d.deduction_date ? String(d.deduction_date).slice(0, 10) : "",
         reference_number: "",
         description: d.description || "Deduction",
@@ -131,7 +137,13 @@ export function TenantReadOnlyView({ selectedTenant }) {
       return true;
     });
 
-    all.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    all.sort((a, b) => {
+      const d = (a.date || "").localeCompare(b.date || "");
+      if (d !== 0) return d;
+      const k = (kindOrder[a.kind] ?? 99) - (kindOrder[b.kind] ?? 99);
+      if (k !== 0) return k;
+      return (a.id || 0) - (b.id || 0);
+    });
     return all;
   }, [invoices, payments, deductions, from, to]);
 
@@ -221,23 +233,101 @@ export function TenantReadOnlyView({ selectedTenant }) {
     (autoPrint) => {
       if (typeof window === "undefined") return;
 
-      const node = printRef?.current;
-      if (!node) return;
-
-      const clone = node.cloneNode(true);
-      // Remove no-print elements (filters, buttons)
-      const noPrintNodes = clone.querySelectorAll('[data-no-print="true"]');
-      for (const el of noPrintNodes) el.remove();
-
       const escapeHtml = (str) =>
-        String(str)
+        String(str ?? "")
           .replace(/&/g, "&amp;")
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;")
           .replace(/'/g, "&#039;");
 
-      const title = `Tenant Statement - ${titlePrefix}${tenantDisplay}`;
+      const dash = "&mdash;";
+      const money = (n) => escapeHtml(formatCurrencyUGX(Number(n) || 0));
+
+      const tenantFull = `${titlePrefix}${tenantName}`.trim();
+      const title = `Tenant Statement - ${tenantFull}`;
+      const todayYmd = new Date().toISOString().slice(0, 10);
+
+      // Reconciliation: openingBalance + totalDebits - totalCredits === closingBalance,
+      // which equals the last row's running balance and the Outstanding Balance below.
+      const totalCharges = totalDebits;
+      const totalPayments = totalCredits;
+      const outstandingBalance = closingBalance;
+
+      const openingRowHtml = from
+        ? `<tr class="opening">
+            <td>${escapeHtml(formatDate(from))}</td>
+            <td>Opening Balance</td>
+            <td class="center">${dash}</td>
+            <td class="right">${dash}</td>
+            <td class="right">${dash}</td>
+            <td class="right bal">${money(openingBalance)}</td>
+          </tr>`
+        : "";
+
+      const bodyRowsHtml = rows
+        .map((r) => {
+          const debitCell = r.debit ? money(r.debit) : dash;
+          const creditCell = r.credit ? money(r.credit) : dash;
+          const refCell = r.reference_number
+            ? escapeHtml(r.reference_number)
+            : dash;
+          return `<tr>
+            <td>${escapeHtml(formatDate(r.date))}</td>
+            <td>${escapeHtml(r.description || "")}</td>
+            <td class="center">${refCell}</td>
+            <td class="right">${debitCell}</td>
+            <td class="right">${creditCell}</td>
+            <td class="right bal">${money(r.balance)}</td>
+          </tr>`;
+        })
+        .join("");
+
+      const totalRowHtml = `
+        <tr class="total-row">
+          <td colspan="3" class="right">TOTAL</td>
+          <td class="right">${money(totalDebits)}</td>
+          <td class="right">${money(totalCredits)}</td>
+          <td class="right">${money(closingBalance)}</td>
+        </tr>`;
+
+      const detailsCells = [
+        { label: "Property", value: propertyName || dash, isHtml: propertyName ? false : true },
+        { label: "Unit", value: unitNumber || dash, isHtml: unitNumber ? false : true },
+        {
+          label: "Statement Period",
+          value:
+            from && to ? `${formatDate(from)} – ${formatDate(to)}` : dash,
+          isHtml: from && to ? false : true,
+        },
+        { label: "Statement Date", value: formatDate(todayYmd), isHtml: false },
+      ]
+        .map(
+          (c) => `
+        <div class="details-cell">
+          <div class="details-label">${escapeHtml(c.label)}</div>
+          <div class="details-value">${c.isHtml ? c.value : escapeHtml(c.value)}</div>
+        </div>`,
+        )
+        .join("");
+
+      const summaryCells = `
+        <div class="summary-cell">
+          <div class="summary-label">Opening Balance</div>
+          <div class="summary-value">${money(openingBalance)}</div>
+        </div>
+        <div class="summary-cell">
+          <div class="summary-label">Total Charges</div>
+          <div class="summary-value">${money(totalCharges)}</div>
+        </div>
+        <div class="summary-cell">
+          <div class="summary-label">Total Payments</div>
+          <div class="summary-value">${money(totalPayments)}</div>
+        </div>
+        <div class="summary-cell outstanding">
+          <div class="summary-label">Outstanding Balance</div>
+          <div class="summary-value">${money(outstandingBalance)}</div>
+        </div>`;
 
       const html = `<!doctype html>
 <html>
@@ -245,57 +335,240 @@ export function TenantReadOnlyView({ selectedTenant }) {
     <meta charset="utf-8" />
     <title>${escapeHtml(title)}</title>
     <style>
-      @page { size: portrait; margin: 0.5in; }
-      body { 
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; 
-        margin: 20px; 
-        color: #0f172a; 
-        font-size: 11px; 
+      :root {
+        --navy: #1a2b4a;
+        --navy-dark: #0f1d36;
+        --gold: #c9a227;
+        --gold-soft: #f2e6bf;
+        --ink: #0f172a;
+        --muted: #64748b;
+        --line: #d9dee7;
+        --zebra: #f7f8fb;
       }
-      h1, h2, h3 { margin: 0 0 8px 0; }
-      h1 { font-size: 18px; font-weight: 700; }
-      h2 { font-size: 14px; font-weight: 600; }
-      table { 
-        width: 100%; 
-        border-collapse: collapse; 
-        page-break-inside: auto; 
-        margin-top: 12px;
-      }
-      thead { display: table-header-group; }
-      tr { page-break-inside: avoid; page-break-after: auto; }
-      th, td { 
-        padding: 8px 10px; 
-        border-bottom: 1px solid #d1d5db; 
-        vertical-align: top; 
-      }
-      th { 
-        text-align: left; 
-        color: #475569; 
-        font-weight: 600; 
-        background: #f1f5f9; 
-        border-bottom: 2px solid #1e293b;
-      }
-      .text-right { text-align: right; }
-      .font-medium { font-weight: 500; }
-      .font-bold { font-weight: 700; }
-      .statement-header {
-        margin-bottom: 16px;
-        padding-bottom: 12px;
-        border-bottom: 2px solid #e5e7eb;
-      }
-      .statement-meta {
+      @page { size: A4; margin: 0.5in; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+          Roboto, Helvetica, Arial, sans-serif;
+        color: var(--ink);
         font-size: 11px;
-        color: #64748b;
+        line-height: 1.4;
+      }
+
+      /* Header */
+      .header {
+        text-align: center;
+        padding: 4px 0 14px 0;
+        border-bottom: 3px solid var(--gold);
+        margin-bottom: 14px;
+      }
+      .header .brand-accent {
+        display: inline-block;
+        width: 64px;
+        height: 3px;
+        background: var(--gold);
+        margin-bottom: 10px;
+      }
+      .header .title {
+        color: var(--navy);
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 4px;
+        margin: 0;
+      }
+      .header .tenant {
+        color: var(--navy);
+        font-size: 13px;
+        font-weight: 600;
+        margin-top: 6px;
+        letter-spacing: 0.5px;
+      }
+
+      /* Details strip */
+      .details {
+        display: table;
+        width: 100%;
+        table-layout: fixed;
+        background: #f4f6fb;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        margin-bottom: 16px;
+      }
+      .details-cell {
+        display: table-cell;
+        padding: 10px 12px;
+        border-right: 1px solid var(--line);
+        vertical-align: top;
+      }
+      .details-cell:last-child { border-right: none; }
+      .details-label {
+        text-transform: uppercase;
+        font-size: 9px;
+        letter-spacing: 1px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .details-value {
+        color: var(--navy);
+        font-weight: 600;
+        font-size: 11.5px;
+      }
+
+      /* Section header bars */
+      .section-bar {
+        background: var(--navy);
+        color: #fff;
+        padding: 7px 12px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        border-radius: 3px 3px 0 0;
         margin-top: 4px;
       }
+
+      /* Transaction table */
+      table.txn {
+        width: 100%;
+        border-collapse: collapse;
+        page-break-inside: auto;
+        border: 1px solid var(--line);
+        border-top: none;
+        margin-bottom: 16px;
+      }
+      table.txn thead { display: table-header-group; }
+      table.txn tfoot { display: table-row-group; }
+      table.txn tr { page-break-inside: avoid; page-break-after: auto; }
+      table.txn th, table.txn td {
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      table.txn thead th {
+        background: #eef1f7;
+        color: var(--navy);
+        text-align: left;
+        font-weight: 700;
+        font-size: 10px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        border-bottom: 2px solid var(--navy);
+      }
+      table.txn th.right, table.txn td.right { text-align: right; }
+      table.txn th.center, table.txn td.center { text-align: center; }
+      table.txn tbody tr:nth-child(even) { background: var(--zebra); }
+      table.txn tbody tr.opening {
+        background: #eef2fa;
+        color: var(--navy);
+        font-style: italic;
+      }
+      table.txn td.bal { font-weight: 600; color: var(--navy); }
+      table.txn tfoot tr.total-row td {
+        background: var(--navy);
+        color: #fff;
+        font-weight: 700;
+        font-size: 11px;
+        letter-spacing: 1px;
+        border-bottom: none;
+      }
+
+      /* Account summary */
+      .summary {
+        display: table;
+        width: 100%;
+        table-layout: fixed;
+        border: 1px solid var(--line);
+        border-top: none;
+        margin-bottom: 16px;
+      }
+      .summary-cell {
+        display: table-cell;
+        padding: 12px 14px;
+        border-right: 1px solid var(--line);
+        vertical-align: top;
+      }
+      .summary-cell:last-child { border-right: none; }
+      .summary-label {
+        text-transform: uppercase;
+        font-size: 9px;
+        letter-spacing: 1px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .summary-value {
+        color: var(--navy);
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .summary-cell.outstanding {
+        background: var(--gold);
+      }
+      .summary-cell.outstanding .summary-label {
+        color: var(--navy-dark);
+      }
+      .summary-cell.outstanding .summary-value {
+        color: var(--navy-dark);
+      }
+
+      /* Footer */
+      .footer-note {
+        background: var(--navy);
+        color: #fff;
+        text-align: center;
+        padding: 9px 12px;
+        font-size: 10px;
+        letter-spacing: 2px;
+        font-weight: 600;
+        border-radius: 3px;
+        page-break-inside: avoid;
+      }
+
       @media print {
-        body { margin: 0; }
         a { color: inherit; text-decoration: none; }
       }
     </style>
   </head>
   <body>
-    ${clone.innerHTML}
+    <div class="header">
+      <div class="brand-accent"></div>
+      <div class="title">TENANT STATEMENT</div>
+      <div class="tenant">${escapeHtml(tenantFull || "")}</div>
+    </div>
+
+    <div class="details">
+      ${detailsCells}
+    </div>
+
+    <div class="section-bar">Transaction History</div>
+    <table class="txn">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th class="center">Reference</th>
+          <th class="right">Debit (UGX)</th>
+          <th class="right">Credit (UGX)</th>
+          <th class="right">Balance (UGX)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${openingRowHtml}
+        ${bodyRowsHtml}
+      </tbody>
+      <tfoot>
+        ${totalRowHtml}
+      </tfoot>
+    </table>
+
+    <div class="section-bar">Account Summary</div>
+    <div class="summary">
+      ${summaryCells}
+    </div>
+
+    <div class="footer-note">
+      PLEASE ENSURE THAT ALL OUTSTANDING BALANCES ARE CLEARED BY THE DUE DATE.
+    </div>
   </body>
 </html>`;
 
@@ -316,7 +589,19 @@ export function TenantReadOnlyView({ selectedTenant }) {
         }, 300);
       }
     },
-    [titlePrefix, tenantDisplay],
+    [
+      titlePrefix,
+      tenantName,
+      propertyName,
+      unitNumber,
+      from,
+      to,
+      openingBalance,
+      rows,
+      totalDebits,
+      totalCredits,
+      closingBalance,
+    ],
   );
 
   return (
