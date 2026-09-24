@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Save } from "lucide-react";
 import useUser from "@/utils/useUser";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
 import AppHeader from "@/components/Shell/AppHeader";
@@ -184,143 +185,162 @@ export default function ReceiveToHoldingPage() {
       </Sidebar>
 
       <main className="pt-32 md:pl-[270px]">
-        <div className="max-w-[90%] mx-auto p-4 md:p-6 space-y-3">
-          <div>
+        <div className="p-4 md:p-6 max-w-[90%] mx-auto">
+          <div className="mb-6 text-center">
             <h1 className="text-2xl font-semibold text-slate-800">
               Receive to Holding
             </h1>
-            <p className="text-slate-500">
+            <p className="text-slate-500 mt-2">
               Park money that has arrived (bank or cash) but isn't yet matched
               to a tenant. Debits the chosen bank/cash account and credits
               Holding (2500). Clear it later from Allocate Payment.
             </p>
           </div>
 
-          {successMessage ? (
-            <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700 font-medium">
-              {successMessage}
-            </div>
-          ) : null}
+          <div className="max-w-[960px] mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <div className="bg-gray-50 rounded-xl p-5">
+              <h3 className="text-lg font-semibold text-slate-800 mb-6 text-center">
+                New Holding Receipt
+              </h3>
 
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 max-w-[720px]">
-            {accountsError ? (
-              <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
-                Could not load accounts.
+              {accountsError ? (
+                <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+                  Could not load accounts.
+                </div>
+              ) : null}
+
+              {missingHolding ? (
+                <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+                  Holding account (2500) not found in the Chart of Accounts.
+                </div>
+              ) : null}
+
+              {noBankAccounts && !missingHolding ? (
+                <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                  No bank/cash accounts tagged yet — tag one in{" "}
+                  <a
+                    href="/accounting/chart-of-accounts"
+                    className="underline font-medium"
+                  >
+                    Chart of Accounts
+                  </a>
+                  .
+                </div>
+              ) : null}
+
+              <div className="space-y-3">
+                {/* Row 1: Date | Amount */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Field label="Date">
+                    <DatePopoverInput
+                      value={transactionDate}
+                      onChange={setTransactionDate}
+                      placeholder="DD-MM-YYYY"
+                      className="bg-white"
+                    />
+                  </Field>
+                  <Field label="Amount (UGX)">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="e.g. 500000"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+                    />
+                  </Field>
+                </div>
+
+                {/* Row 2: Reference | Description */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Field label="Reference number (bank / MoMo)">
+                    <input
+                      value={referenceNumber}
+                      onChange={(e) => setReferenceNumber(e.target.value)}
+                      placeholder="e.g. FT2504110000123"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+                    />
+                  </Field>
+                  <Field label="Description (optional)">
+                    <input
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="e.g. Cash drop from Ntinda site"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+                    />
+                  </Field>
+                </div>
+
+                {/* Row 3: Debit (received into) | Credit (locked) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Field label="Debit (received into)">
+                    <select
+                      value={debitAccountId}
+                      onChange={(e) => setDebitAccountId(e.target.value)}
+                      disabled={bankOptions.length === 0}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none disabled:opacity-60"
+                    >
+                      {bankOptions.length === 0 ? (
+                        <option value="">No bank/cash accounts</option>
+                      ) : null}
+                      {bankOptions.map((o) => (
+                        <option key={o.id} value={String(o.id)}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Credit (locked)">
+                    <input
+                      value={
+                        holdingAccount
+                          ? `${holdingAccount.account_code} • ${holdingAccount.account_name}`
+                          : `${HOLDING_CODE} • Holding`
+                      }
+                      readOnly
+                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 outline-none text-slate-700"
+                    />
+                  </Field>
+                </div>
               </div>
-            ) : null}
 
-            {missingHolding ? (
-              <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
-                Holding account (2500) not found in the Chart of Accounts.
-              </div>
-            ) : null}
+              {successMessage ? (
+                <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700">
+                  {successMessage}
+                </div>
+              ) : null}
 
-            {noBankAccounts && !missingHolding ? (
-              <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
-                No bank/cash accounts tagged yet — tag one in{" "}
-                <a
-                  href="/accounting/chart-of-accounts"
-                  className="underline font-medium"
+              {createMutation.error ? (
+                <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+                  {createMutation.error?.message ||
+                    "Could not park entry to Holding."}
+                </div>
+              ) : null}
+
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={onSubmit}
+                  disabled={!canSubmit || createMutation.isPending}
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
                 >
-                  Chart of Accounts
+                  <Save className="w-4 h-4" />
+                  {createMutation.isPending ? "Saving…" : "Park to Holding"}
+                </button>
+              </div>
+
+              <div className="mt-4 text-xs text-slate-500 text-center">
+                Debit is any account tagged as Bank / Cash. Credit is locked to
+                Holding (2500). Clear entries later from{" "}
+                <a
+                  href="/accounting/allocate-payment"
+                  className="underline hover:text-slate-700"
+                >
+                  Allocate Payment
                 </a>
                 .
               </div>
-            ) : null}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Field label="Date">
-                <DatePopoverInput
-                  value={transactionDate}
-                  onChange={setTransactionDate}
-                  placeholder="DD-MM-YYYY"
-                  className="bg-gray-50"
-                />
-              </Field>
-
-              <Field label="Amount (UGX)">
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="e.g. 500000"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
-                />
-              </Field>
-
-              <Field label="Debit (received into)">
-                <select
-                  value={debitAccountId}
-                  onChange={(e) => setDebitAccountId(e.target.value)}
-                  disabled={bankOptions.length === 0}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none disabled:opacity-60"
-                >
-                  {bankOptions.length === 0 ? (
-                    <option value="">No bank/cash accounts</option>
-                  ) : null}
-                  {bankOptions.map((o) => (
-                    <option key={o.id} value={String(o.id)}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Credit (locked)">
-                <input
-                  value={
-                    holdingAccount
-                      ? `${holdingAccount.account_code} • ${holdingAccount.account_name}`
-                      : `${HOLDING_CODE} • Holding`
-                  }
-                  readOnly
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 outline-none text-slate-700"
-                />
-              </Field>
-
-              <Field label="Reference number (bank / MoMo)">
-                <input
-                  value={referenceNumber}
-                  onChange={(e) => setReferenceNumber(e.target.value)}
-                  placeholder="e.g. FT2504110000123"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
-                />
-              </Field>
-
-              <Field label="Description (optional)">
-                <input
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="e.g. Cash drop from Ntinda site"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 outline-none"
-                />
-              </Field>
-            </div>
-
-            {createMutation.error ? (
-              <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
-                {createMutation.error?.message ||
-                  "Could not park entry to Holding."}
-              </div>
-            ) : null}
-
-            <div className="mt-4 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onSubmit}
-                disabled={!canSubmit || createMutation.isPending}
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
-              >
-                {createMutation.isPending ? "Saving…" : "Park to Holding"}
-              </button>
-              <a
-                href="/accounting/allocate-payment"
-                className="text-sm text-slate-500 hover:text-slate-700"
-              >
-                Go to Allocate Payment →
-              </a>
             </div>
           </div>
         </div>
