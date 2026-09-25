@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAddEmployeeSalary } from "@/hooks/usePayroll";
+import { MoneyInput } from "@/components/MoneyInput";
 
 function FormField({ label, required, children }) {
   return (
@@ -52,7 +53,7 @@ export default function SalaryForm({ employeeId, onClose, onSuccess }) {
       <p className="text-xs font-medium text-slate-700">Change Salary</p>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="New Amount (UGX)" required>
-          <Input type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <MoneyInput value={amount} onChange={(val) => setAmount(val)} />
         </FormField>
         <FormField label="Effective Date" required>
           <Input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
