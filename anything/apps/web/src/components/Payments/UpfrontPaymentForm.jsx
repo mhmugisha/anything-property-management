@@ -1,6 +1,7 @@
 import { Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import DatePopoverInput from "@/components/DatePopoverInput";
+import { MoneyInput } from "@/components/MoneyInput";
 import { Field } from "./Field";
 
 export function UpfrontPaymentForm({
@@ -133,11 +134,9 @@ export function UpfrontPaymentForm({
         {/* Row 3 */}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Amount Paid (UGX)">
-            <input
-              type="number"
+            <MoneyInput
               value={form.amount}
-              onChange={(e) => form.setAmount(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+              onChange={(val) => form.setAmount(val)}
               placeholder="e.g. 500000"
             />
           </Field>
