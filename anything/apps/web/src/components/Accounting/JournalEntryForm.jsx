@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Save } from "lucide-react";
 import { Field } from "./Field";
 import DatePopoverInput from "@/components/DatePopoverInput";
+import { MoneyInput } from "@/components/MoneyInput";
 
 export function JournalEntryForm({
   date,
@@ -63,11 +64,9 @@ export function JournalEntryForm({
         {/* Row 2: Amount | Reference */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field label="Amount (UGX)">
-            <input
-              type="number"
+            <MoneyInput
               value={amount}
-              onChange={(e) => onAmountChange(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+              onChange={(val) => onAmountChange(val)}
             />
           </Field>
           <Field label="Reference (Optional)">
