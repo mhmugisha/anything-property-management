@@ -536,7 +536,7 @@ function NewAdvanceForm({ employees, assetAccounts, onClose, onSuccess }) {
     );
   };
 
-  const canSubmit = form.employee_id && form.amount && form.payment_account_id;
+  const canSubmit = form.employee_id && Number(form.amount) > 0 && form.payment_account_id;
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -1120,7 +1120,7 @@ function NewLoanForm({ employees, assetAccounts, onClose, onSuccess }) {
     );
   };
 
-  const canSubmit = form.employee_id && form.amount && form.monthly_instalment && form.payment_account_id;
+  const canSubmit = form.employee_id && Number(form.amount) > 0 && Number(form.monthly_instalment) > 0 && form.payment_account_id;
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
