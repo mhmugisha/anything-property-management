@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { Field } from "./Field";
 import DatePopoverInput from "@/components/DatePopoverInput";
+import { MoneyInput } from "@/components/MoneyInput";
 import { Search, X } from "lucide-react";
 import {
   formatNumberWithCommas,
@@ -292,13 +293,11 @@ export function LeaseForm({
       </Field>
 
       <Field label="Security Deposit (Optional)">
-        <input
-          type="number"
+        <MoneyInput
           value={leaseForm.deposit_amount}
-          onChange={(e) =>
-            onChange({ ...leaseForm, deposit_amount: e.target.value })
+          onChange={(val) =>
+            onChange({ ...leaseForm, deposit_amount: val })
           }
-          className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
         />
       </Field>
     </div>
