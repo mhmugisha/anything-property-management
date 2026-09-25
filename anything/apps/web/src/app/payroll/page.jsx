@@ -7,6 +7,7 @@ import AppHeader from "@/components/Shell/AppHeader";
 import Sidebar from "@/components/Shell/Sidebar";
 import MobileMenu from "@/components/Shell/MobileMenu";
 import AccessDenied from "@/components/Shell/AccessDenied";
+import { MoneyInput } from "@/components/MoneyInput";
 import {
   useEmployees,
   useCreateEmployee,
@@ -361,13 +362,10 @@ function NewEmployeeForm({ onClose, onSuccess }) {
           <PaymentDetailsFields method={form.payment_method} form={form} set={set} />
 
           <FormField label="Starting Salary (UGX)" required>
-            <Input
-              type="number"
-              min="1"
+            <MoneyInput
               value={form.initial_salary}
-              onChange={(e) => set("initial_salary", e.target.value)}
+              onChange={(val) => set("initial_salary", val)}
               placeholder="Monthly salary"
-              required
             />
           </FormField>
 
@@ -560,7 +558,7 @@ function NewAdvanceForm({ employees, assetAccounts, onClose, onSuccess }) {
           </FormField>
 
           <FormField label="Amount (UGX)" required>
-            <Input type="number" min="1" value={form.amount} onChange={(e) => set("amount", e.target.value)} required />
+            <MoneyInput value={form.amount} onChange={(val) => set("amount", val)} />
           </FormField>
 
           <FormField label="Date" required>
@@ -647,11 +645,9 @@ function EditAdvanceModal({ advance, onClose, onSuccess }) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField label="Amount (UGX)" required>
-              <Input
-                type="number"
-                min="1"
+              <MoneyInput
                 value={form.amount}
-                onChange={(e) => set("amount", e.target.value)}
+                onChange={(val) => set("amount", val)}
               />
             </FormField>
             <FormField label="Date" required>
@@ -758,12 +754,9 @@ function RecoverAdvanceModal({ advance, assetAccounts, onClose, onSuccess }) {
         <div className="px-6 py-5 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField label="Amount (UGX)" required>
-              <Input
-                type="number"
-                min="1"
-                max={outstanding}
+              <MoneyInput
                 value={form.amount}
-                onChange={(e) => set("amount", e.target.value)}
+                onChange={(val) => set("amount", val)}
               />
               {amountError && (
                 <p className="mt-1 text-xs text-red-600">{amountError}</p>
@@ -1149,11 +1142,11 @@ function NewLoanForm({ employees, assetAccounts, onClose, onSuccess }) {
           </FormField>
 
           <FormField label="Loan Amount (UGX)" required>
-            <Input type="number" min="1" value={form.amount} onChange={(e) => set("amount", e.target.value)} required />
+            <MoneyInput value={form.amount} onChange={(val) => set("amount", val)} />
           </FormField>
 
           <FormField label="Monthly Instalment (UGX)" required>
-            <Input type="number" min="1" value={form.monthly_instalment} onChange={(e) => set("monthly_instalment", e.target.value)} required />
+            <MoneyInput value={form.monthly_instalment} onChange={(val) => set("monthly_instalment", val)} />
           </FormField>
 
           <FormField label="Issue Date" required>
