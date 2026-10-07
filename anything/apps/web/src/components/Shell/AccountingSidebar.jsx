@@ -12,6 +12,7 @@ import {
   RefreshCw,
   HandCoins,
   Wallet,
+  Target,
 } from "lucide-react";
 
 export default function AccountingSidebar({ isAdmin = false }) {
@@ -84,6 +85,11 @@ export default function AccountingSidebar({ isAdmin = false }) {
       title: "Allocate Payment",
       href: "/accounting/allocate-payment",
       icon: HandCoins,
+    },
+    {
+      title: "Operating Budget",
+      href: "/accounting/budget",
+      icon: Target,
     },
   ];
 

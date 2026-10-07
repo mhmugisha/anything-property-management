@@ -48,6 +48,33 @@ export async function getAccountCode(accountId) {
   return rows?.[0]?.account_code ? String(rows[0].account_code) : null;
 }
 
+/**
+ * Sum of debits booked to an Expense account in a given calendar month.
+ *
+ * Deliberately wider than the P&L: counts both approved and pending entries,
+ * so budget guards (Phase 3) see committed spend even before admin approval.
+ * Still excludes soft-deleted rows (the standard reversal mechanism).
+ *
+ * @param {number|string} accountId
+ * @param {string|Date} periodMonth - any date in the target month; truncated to month
+ * @returns {Promise<number>}
+ */
+export async function getExpenseCommitted(accountId, periodMonth) {
+  const id = toNumber(accountId);
+  if (!id || !periodMonth) return 0;
+
+  const rows = await sql`
+    SELECT COALESCE(SUM(amount), 0) AS total
+    FROM transactions
+    WHERE debit_account_id = ${id}
+      AND COALESCE(is_deleted, false) = false
+      AND COALESCE(approval_status, 'approved') IN ('approved', 'pending')
+      AND date_trunc('month', transaction_date) = date_trunc('month', ${periodMonth}::date)
+  `;
+
+  return Number(rows?.[0]?.total || 0);
+}
+
 export async function getAssetAccountBalance(accountId) {
   const id = toNumber(accountId);
   if (!id) return 0;

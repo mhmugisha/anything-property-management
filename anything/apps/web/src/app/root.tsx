@@ -478,6 +478,7 @@ export function Layout({ children }: { children: ReactNode }) {
       'accounting/new-entry-company': 'New Journal Entry',
       'accounting/receive-to-holding': 'Receive to Holding',
       'accounting/reports': 'Accounting Reports',
+      'accounting/budget': 'Operating Budget',
       'payments/pay-invoice': 'Pay Invoice',
       'payments/payment-on-account': 'Pay on Account',
       'payments/open-balances': 'Open Balances',
