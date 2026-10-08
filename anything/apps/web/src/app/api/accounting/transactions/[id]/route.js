@@ -7,7 +7,6 @@ import {
   getAssetAccountBalance,
   getAccountById,
   getAccountIdByCode,
-  getDueToLandlordsBalance,
 } from "@/app/api/utils/accounting";
 
 function toNumber(value) {
@@ -211,52 +210,6 @@ export async function PUT(request, { params: { id } }) {
     });
     if (!lockGuard.ok) {
       return Response.json(lockGuard.body, { status: lockGuard.status });
-    }
-
-    // NEW: prevent overpaying landlords via manual transaction edits.
-    // We only enforce this when the updated transaction reduces account 2100 by crediting an Asset account.
-    const rentPayableRows = await sql(
-      "SELECT id FROM chart_of_accounts WHERE account_code = $1 LIMIT 1",
-      ["2100"],
-    );
-    const rentPayableId = rentPayableRows?.[0]?.id
-      ? Number(rentPayableRows[0].id)
-      : null;
-
-    if (
-      rentPayableId &&
-      (creditOk.account?.account_type || "").trim() === "Asset"
-    ) {
-      const newEffect =
-        (Number(creditAccountId) === rentPayableId ? Number(amount) : 0) -
-        (Number(debitAccountId) === rentPayableId ? Number(amount) : 0);
-
-      const oldEffect =
-        (Number(oldTx.credit_account_id) === rentPayableId
-          ? Number(oldTx.amount || 0)
-          : 0) -
-        (Number(oldTx.debit_account_id) === rentPayableId
-          ? Number(oldTx.amount || 0)
-          : 0);
-
-      // Only enforce when the updated entry *reduces* due (i.e. debits 2100).
-      const reducesDueNow = Number(debitAccountId) === rentPayableId;
-      if (reducesDueNow) {
-        const dueCurrent = await getDueToLandlordsBalance();
-        const dueExcludingThis = Number(dueCurrent || 0) - oldEffect;
-
-        // If newEffect is a reduction, its magnitude is amount (since debit=2100).
-        const reductionAmt = Math.abs(newEffect);
-
-        if (reductionAmt > Number(dueExcludingThis || 0)) {
-          return Response.json(
-            {
-              error: `Overpayment blocked. Due to landlords is ${Number(dueExcludingThis || 0)} UGX.`,
-            },
-            { status: 400 },
-          );
-        }
-      }
     }
 
     const guard = await ensureCanCreditForUpdate({

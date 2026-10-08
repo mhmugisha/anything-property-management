@@ -333,6 +333,24 @@ export async function ensureCanCreditAccount({ creditAccountId, amount } = {}) {
   return { ok: true, account, available };
 }
 
+function managementFeeSettings(prop) {
+  return {
+    feeType: String(prop?.management_fee_type || "percent").toLowerCase(),
+    feePercent: Number(prop?.management_fee_percent || 0),
+    feeFixed: Number(prop?.management_fee_fixed_amount || 0),
+  };
+}
+
+// Management fee for one (property, year, month) invoice group.
+function monthlyManagementFee(gross, { feeType, feePercent, feeFixed }) {
+  if (gross <= 0) return 0;
+  if (feeType === "percent") {
+    return Math.round(((gross * feePercent) / 100) * 100) / 100;
+  }
+  if (feeType === "fixed") return Math.min(feeFixed, gross);
+  return 0;
+}
+
 /**
  * Computes how much is currently owed to landlords.
  *
@@ -366,10 +384,7 @@ export async function getDueToLandlordsBalance({
     "SELECT management_fee_type, management_fee_percent, management_fee_fixed_amount FROM properties WHERE id = $1 LIMIT 1",
     [pId],
   );
-  const prop = propRows?.[0] || {};
-  const feeType = String(prop.management_fee_type || "percent").toLowerCase();
-  const feePercent = Number(prop.management_fee_percent || 0);
-  const feeFixed = Number(prop.management_fee_fixed_amount || 0);
+  const fees = managementFeeSettings(propRows?.[0] || {});
 
   // 2. Get all invoices grouped by (year, month) for management fee calculation
   const invoiceGroups = await sql(
@@ -387,15 +402,7 @@ export async function getDueToLandlordsBalance({
   let totalCredits = 0;
   for (const g of invoiceGroups || []) {
     const gross = Number(g.gross_rent || 0);
-    let fee = 0;
-    if (gross > 0) {
-      if (feeType === "percent") {
-        fee = Math.round(((gross * feePercent) / 100) * 100) / 100;
-      } else if (feeType === "fixed") {
-        fee = Math.min(feeFixed, gross);
-      }
-    }
-    totalCredits += gross - fee;
+    totalCredits += gross - monthlyManagementFee(gross, fees);
   }
 
   // 4. Get total payouts (optionally excluding one)
@@ -432,4 +439,80 @@ export async function getDueToLandlordsBalance({
 
   // 6. due = credits − payouts − deductions
   return totalCredits - totalPayouts - totalDeductions;
+}
+
+/**
+ * getDueToLandlordsBalance for every property against its current landlord,
+ * in four queries instead of one call per property. Same formula and fee
+ * logic; the sum of the rows is the grand total due to landlords.
+ *
+ * @returns {Promise<Array<{ landlordId: number, propertyId: number, due: number }>>}
+ */
+export async function getDueToLandlordsByProperty() {
+  const [propRows, invoiceGroups, payoutRows, dedRows] = await Promise.all([
+    sql(
+      `SELECT id, landlord_id, management_fee_type, management_fee_percent,
+              management_fee_fixed_amount
+       FROM properties
+       WHERE landlord_id IS NOT NULL`,
+    ),
+    sql(
+      `SELECT i.property_id,
+              COALESCE(SUM(i.amount), 0)::numeric AS gross_rent
+       FROM invoices i
+       WHERE i.property_id IS NOT NULL
+         AND i.status <> 'void'
+         AND COALESCE(i.is_deleted, false) = false
+       GROUP BY i.property_id, i.invoice_year, i.invoice_month`,
+    ),
+    sql(
+      `SELECT landlord_id, property_id, COALESCE(SUM(amount), 0)::numeric AS total
+       FROM landlord_payouts
+       WHERE COALESCE(is_deleted, false) = false
+       GROUP BY landlord_id, property_id`,
+    ),
+    sql(
+      `SELECT landlord_id, property_id, COALESCE(SUM(amount), 0)::numeric AS total
+       FROM landlord_deductions
+       WHERE COALESCE(is_deleted, false) = false
+       GROUP BY landlord_id, property_id`,
+    ),
+  ]);
+
+  const key = (l, p) => `${Number(l)}:${Number(p)}`;
+  const sumBy = (rows) => {
+    const m = new Map();
+    for (const r of rows || []) {
+      m.set(key(r.landlord_id, r.property_id), Number(r.total || 0));
+    }
+    return m;
+  };
+  const payouts = sumBy(payoutRows);
+  const deductions = sumBy(dedRows);
+
+  const groupsByProperty = new Map();
+  for (const g of invoiceGroups || []) {
+    const pid = Number(g.property_id);
+    if (!groupsByProperty.has(pid)) groupsByProperty.set(pid, []);
+    groupsByProperty.get(pid).push(Number(g.gross_rent || 0));
+  }
+
+  return (propRows || []).map((prop) => {
+    const landlordId = Number(prop.landlord_id);
+    const propertyId = Number(prop.id);
+    const fees = managementFeeSettings(prop);
+    let credits = 0;
+    for (const gross of groupsByProperty.get(propertyId) || []) {
+      credits += gross - monthlyManagementFee(gross, fees);
+    }
+    const k = key(landlordId, propertyId);
+    const due = credits - (payouts.get(k) || 0) - (deductions.get(k) || 0);
+    return { landlordId, propertyId, due };
+  });
+}
+
+/** Grand total due to landlords (source-table math, all properties). */
+export async function getTotalDueToLandlords() {
+  const rows = await getDueToLandlordsByProperty();
+  return rows.reduce((sum, r) => sum + r.due, 0);
 }

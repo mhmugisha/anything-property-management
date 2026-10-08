@@ -1,6 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
-import { getAccountIdByCode } from "@/app/api/utils/accounting";
+import { getDueToLandlordsBalance } from "@/app/api/utils/accounting";
 
 function toNumber(v) {
   const n = Number(v);
@@ -70,25 +70,26 @@ export async function GET(request, { params }) {
       });
     }
 
-    // Balance of account 2100 (Due to Landlords) for this landlord
-    let dueToLandlordsBalance = 0;
-    const liabilityAcctId = await getAccountIdByCode("2100");
-
-    if (liabilityAcctId) {
-      const balRows = await sql(
-        `SELECT
-           COALESCE(SUM(CASE WHEN credit_account_id = $1 THEN amount ELSE 0 END), 0)
-           - COALESCE(SUM(CASE WHEN debit_account_id = $1 THEN amount ELSE 0 END), 0)
-           AS balance
-         FROM transactions
-         WHERE (debit_account_id = $1 OR credit_account_id = $1)
-           AND landlord_id = $2
-           AND COALESCE(is_deleted, false) = false
-           AND COALESCE(approval_status, 'approved') = 'approved'`,
-        [liabilityAcctId, landlordId],
+    // Due to this landlord: getDueToLandlordsBalance (source tables) for each
+    // of their properties, summed. The 2100 ledger is out of sync and not used.
+    const propertyRows = await sql`
+      SELECT id, property_name
+      FROM properties
+      WHERE landlord_id = ${landlordId}
+      ORDER BY property_name
+    `;
+    const dueByProperty = [];
+    for (const p of propertyRows || []) {
+      const due = Number(
+        (await getDueToLandlordsBalance({ landlordId, propertyId: p.id })) || 0,
       );
-      dueToLandlordsBalance = Number(balRows?.[0]?.balance || 0);
+      dueByProperty.push({
+        property_id: Number(p.id),
+        property_name: p.property_name,
+        due,
+      });
     }
+    const dueToLandlordsBalance = dueByProperty.reduce((s, r) => s + r.due, 0);
 
     // Asset accounts for payout dropdown (Cash on Hand, Bank)
     const assetAccounts = await sql`
@@ -111,6 +112,7 @@ export async function GET(request, { params }) {
       active_lease_count: 0,
       active_tenants: [],
       due_to_landlords_balance: dueToLandlordsBalance,
+      due_by_property: dueByProperty,
       asset_accounts: (assetAccounts || []).map((a) => ({
         id: Number(a.id),
         account_code: a.account_code,

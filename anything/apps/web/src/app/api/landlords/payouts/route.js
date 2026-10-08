@@ -1,6 +1,10 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
-import { ensureCanCreditAccount, getAccountIdByCode } from "@/app/api/utils/accounting";
+import {
+  ensureCanCreditAccount,
+  getAccountIdByCode,
+  getDueToLandlordsBalance,
+} from "@/app/api/utils/accounting";
 import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
@@ -72,23 +76,15 @@ export async function POST(request) {
       return Response.json(guard.body, { status: guard.status });
     }
 
-    // Prevent overpaying landlords — read from ledger account 2100 (id = 7)
-    // to stay consistent with the dashboard's single source of truth.
-    const balanceRows = await sql`
-      SELECT
-        COALESCE(SUM(CASE WHEN credit_account_id = 7 THEN amount ELSE 0 END), 0)
-        - COALESCE(SUM(CASE WHEN debit_account_id = 7 THEN amount ELSE 0 END), 0)
-        AS balance
-      FROM transactions
-      WHERE COALESCE(is_deleted, false) = false
-        AND COALESCE(approval_status, 'approved') = 'approved'
-        AND (debit_account_id = 7 OR credit_account_id = 7)
-    `;
-    const due = Number(balanceRows?.[0]?.balance || 0);
+    // Prevent overpaying this landlord for this property (source-table balance,
+    // same figure as the landlord statement and the dashboard).
+    const due = Number(
+      (await getDueToLandlordsBalance({ landlordId, propertyId })) || 0,
+    );
     if (amount > due) {
       return Response.json(
         {
-          error: `Overpayment blocked. Due to landlords balance is ${due} UGX.`,
+          error: `Overpayment blocked. Due to this landlord for this property is ${due} UGX.`,
         },
         { status: 400 },
       );

@@ -4,6 +4,7 @@ import {
   ensureCanCreditAccount,
   getAssetAccountBalance,
   getAccountById,
+  getDueToLandlordsBalance,
 } from "@/app/api/utils/accounting";
 import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
@@ -135,25 +136,20 @@ export async function PUT(request, { params: { id } }) {
       );
     }
 
-    // Prevent overpaying landlords — read from ledger account 2100 (id = 7).
-    // Exclude the current payout's GL entry so the balance reflects what it would
-    // be after this edit, not before (same logic as the old excludePayoutId pattern).
-    const balanceRows = await sql`
-      SELECT
-        COALESCE(SUM(CASE WHEN credit_account_id = 7 THEN amount ELSE 0 END), 0)
-        - COALESCE(SUM(CASE WHEN debit_account_id = 7 THEN amount ELSE 0 END), 0)
-        AS balance
-      FROM transactions
-      WHERE COALESCE(is_deleted, false) = false
-        AND COALESCE(approval_status, 'approved') = 'approved'
-        AND (debit_account_id = 7 OR credit_account_id = 7)
-        AND NOT (source_type = 'landlord_payout' AND source_id = ${payoutId})
-    `;
-    const dueExcludingThis = Number(balanceRows?.[0]?.balance || 0);
+    // Prevent overpaying this landlord for this property. Landlord/property
+    // aren't editable, so they come from the stored payout; the payout being
+    // edited is excluded so it isn't counted against itself.
+    const dueExcludingThis = Number(
+      (await getDueToLandlordsBalance({
+        landlordId: oldPayout.landlord_id,
+        propertyId: oldPayout.property_id,
+        excludePayoutId: payoutId,
+      })) || 0,
+    );
     if (amount > dueExcludingThis) {
       return Response.json(
         {
-          error: `Overpayment blocked. Due to landlords balance is ${dueExcludingThis} UGX.`,
+          error: `Overpayment blocked. Due to this landlord for this property is ${dueExcludingThis} UGX.`,
         },
         { status: 400 },
       );

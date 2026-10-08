@@ -4,7 +4,6 @@ import {
   checkExpenseBudgetForPosting,
   ensureCanCreditAccount,
   ensureNotManuallyLocked,
-  getDueToLandlordsBalance,
 } from "@/app/api/utils/accounting";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
@@ -14,14 +13,6 @@ function toNumber(value) {
   const n = Number(value);
   if (Number.isNaN(n)) return null;
   return n;
-}
-
-async function getAccountIdByCode(code) {
-  const rows = await sql(
-    "SELECT id FROM chart_of_accounts WHERE account_code = $1 LIMIT 1",
-    [String(code)],
-  );
-  return rows?.[0]?.id ? Number(rows[0].id) : null;
 }
 
 export async function GET(request) {
@@ -204,31 +195,6 @@ export async function POST(request) {
     });
     if (!lockGuard.ok) {
       return Response.json(lockGuard.body, { status: lockGuard.status });
-    }
-
-    // NEW: prevent overpaying landlords via manual journal entries.
-    // If this manual entry reduces account 2100 (Due to Landlords) by crediting an Asset account,
-    // only allow up to the current due balance.
-    const rentPayableId = await getAccountIdByCode("2100");
-    const creditAcct = accountRows.find(
-      (a) => Number(a.id) === Number(creditAccountId),
-    );
-    const creditType = (creditAcct?.account_type || "").trim();
-    const reducesDueToLandlords =
-      rentPayableId &&
-      Number(debitAccountId) === Number(rentPayableId) &&
-      creditType === "Asset";
-
-    if (reducesDueToLandlords) {
-      const dueNow = await getDueToLandlordsBalance();
-      if (Number(amount) > Number(dueNow || 0)) {
-        return Response.json(
-          {
-            error: `Overpayment blocked. Due to landlords is ${Number(dueNow || 0)} UGX.`,
-          },
-          { status: 400 },
-        );
-      }
     }
 
     // NEW: Prevent crediting (reducing) an Asset account below zero.

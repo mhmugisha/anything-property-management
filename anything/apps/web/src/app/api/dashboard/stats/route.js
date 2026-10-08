@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
+import { getTotalDueToLandlords } from "@/app/api/utils/accounting";
 
 async function getAccountIdsByCodes(codes) {
   if (!Array.isArray(codes) || codes.length === 0) return {};
@@ -49,7 +50,7 @@ function round2(n) {
   return Math.round(x * 100) / 100;
 }
 
-// LEGACY: kept as fallback — dashboard now reads from ledger account 2100 directly.
+// LEGACY: superseded by getTotalDueToLandlords() (source tables, aggregated).
 // async function calculateAmountDueToLandlords_legacy() {
 //   const landlords = await sql`SELECT id FROM landlords ORDER BY id`;
 //   let totalDue = 0;
@@ -532,18 +533,10 @@ export async function GET(request) {
       balances[String(undepositedFundsId)] || 0,
     );
 
-    // Read Due to Landlords directly from ledger account 2100 (chart_of_accounts id = 7).
-    // Net credit balance = credits (rent accruals in) minus debits (fee deductions, payouts out).
-    const dueToLandlordsRows = await sql`
-      SELECT
-        COALESCE(SUM(CASE WHEN credit_account_id = 7 THEN amount ELSE 0 END), 0)
-        - COALESCE(SUM(CASE WHEN debit_account_id = 7 THEN amount ELSE 0 END), 0)
-        AS due_to_landlords
-      FROM transactions
-      WHERE COALESCE(is_deleted, false) = false
-        AND (debit_account_id = 7 OR credit_account_id = 7)
-    `;
-    const amountDueToLandlords = Number(dueToLandlordsRows?.[0]?.due_to_landlords || 0);
+    // Due to Landlords: grand total of getDueToLandlordsBalance across every
+    // property (source tables: net rent after fees − payouts − deductions).
+    // The 2100 ledger is out of sync and is not used here.
+    const amountDueToLandlords = await getTotalDueToLandlords();
 
     // Build P&L series from results
     const incomeMap = {};
