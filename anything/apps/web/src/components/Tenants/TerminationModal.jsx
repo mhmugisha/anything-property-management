@@ -207,6 +207,7 @@ export default function TerminationModal({ tenantId, leaseId, tenantName, onClos
     }
 
     return {
+      lease_id: leaseId,
       termination_date: terminationDate,
       invoice_handling: invoiceHandling,
       deposit_settlement: depositSettlement,

@@ -266,6 +266,64 @@ export async function checkExpenseBudgetForPosting({
   };
 }
 
+/**
+ * Security deposit still held for a lease (account 2200): deposits and
+ * adjustments for the lease, minus any refund/forfeiture already posted at
+ * termination. A lease that has been settled therefore reads 0.
+ */
+export async function getLeaseDepositBalance(leaseId) {
+  const id = toNumber(leaseId);
+  if (!id) return 0;
+  const acctId = await getAccountIdByCode("2200");
+  if (!acctId) return 0;
+
+  const rows = await sql(
+    `SELECT
+       COALESCE(SUM(CASE WHEN credit_account_id = $1 THEN amount ELSE 0 END), 0)
+       - COALESCE(SUM(CASE WHEN debit_account_id = $1 THEN amount ELSE 0 END), 0)
+       AS balance
+     FROM transactions
+     WHERE (debit_account_id = $1 OR credit_account_id = $1)
+       AND source_id = $2
+       AND source_type IN ('security_deposit', 'security_deposit_adjustment',
+                           'security_deposit_refund', 'security_deposit_forfeiture')
+       AND COALESCE(is_deleted, false) = false`,
+    [acctId, id],
+  );
+  return Number(rows?.[0]?.balance || 0);
+}
+
+/**
+ * Tenant prepayment balance (account 2150), tenant-wide: advances recorded
+ * against the tenant's payments, minus refunds/write-offs posted when any of
+ * the tenant's leases ended (those rows carry source_id = lease id).
+ */
+export async function getTenantPrepaymentBalance(tenantId) {
+  const id = toNumber(tenantId);
+  if (!id) return 0;
+  const acctId = await getAccountIdByCode("2150");
+  if (!acctId) return 0;
+
+  const rows = await sql(
+    `SELECT
+       COALESCE(SUM(CASE WHEN t.credit_account_id = $1 THEN t.amount ELSE 0 END), 0)
+       - COALESCE(SUM(CASE WHEN t.debit_account_id = $1 THEN t.amount ELSE 0 END), 0)
+       AS balance
+     FROM transactions t
+     WHERE (t.debit_account_id = $1 OR t.credit_account_id = $1)
+       AND COALESCE(t.is_deleted, false) = false
+       AND (
+         (t.source_type IN ('payment_advance', 'payment_auto_apply')
+          AND t.source_id IN (SELECT id FROM payments WHERE tenant_id = $2))
+         OR
+         (t.source_type IN ('prepayment_refund', 'prepayment_writeoff')
+          AND t.source_id IN (SELECT id FROM leases WHERE tenant_id = $2))
+       )`,
+    [acctId, id],
+  );
+  return Number(rows?.[0]?.balance || 0);
+}
+
 export async function getAssetAccountBalance(accountId) {
   const id = toNumber(accountId);
   if (!id) return 0;
