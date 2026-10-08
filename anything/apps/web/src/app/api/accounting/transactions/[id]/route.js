@@ -259,13 +259,22 @@ export async function PUT(request, { params: { id } }) {
     }
 
     // Operating budget: only re-check when the edit adds spend — a higher
-    // amount, or a move to a different debit account. This row is excluded
-    // from committed so it isn't counted against itself.
+    // amount, a move to a different debit account, or a move into a
+    // different month. This row is excluded from committed so it isn't
+    // counted against itself.
     let budgetCheck = { ok: true, override: null };
     const debitChanged =
       Number(debitAccountId) !== Number(oldTx.debit_account_id);
     const amountIncreased = Number(amount) > Number(oldTx.amount || 0);
-    if (debitChanged || amountIncreased) {
+    // Compared in SQL so the DATE column's JS representation can't skew it.
+    const monthRows = await sql`
+      SELECT date_trunc('month', ${transactionDate}::date)
+               <> date_trunc('month', transaction_date) AS month_changed
+      FROM transactions
+      WHERE id = ${txId}
+    `;
+    const monthChanged = monthRows?.[0]?.month_changed === true;
+    if (debitChanged || amountIncreased || monthChanged) {
       budgetCheck = await checkExpenseBudgetForPosting({
         staff: perm.staff,
         body,
