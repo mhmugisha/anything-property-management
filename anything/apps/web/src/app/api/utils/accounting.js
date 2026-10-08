@@ -391,7 +391,7 @@ export async function ensureCanCreditAccount({ creditAccountId, amount } = {}) {
   return { ok: true, account, available };
 }
 
-function managementFeeSettings(prop) {
+export function managementFeeSettings(prop) {
   return {
     feeType: String(prop?.management_fee_type || "percent").toLowerCase(),
     feePercent: Number(prop?.management_fee_percent || 0),
@@ -399,8 +399,9 @@ function managementFeeSettings(prop) {
   };
 }
 
-// Management fee for one (property, year, month) invoice group.
-function monthlyManagementFee(gross, { feeType, feePercent, feeFixed }) {
+// Management fee for one (property, year, month) invoice group. Canonical:
+// the landlord statement uses this too, so both show the same balance.
+export function monthlyManagementFee(gross, { feeType, feePercent, feeFixed }) {
   if (gross <= 0) return 0;
   if (feeType === "percent") {
     return Math.round(((gross * feePercent) / 100) * 100) / 100;
@@ -420,9 +421,14 @@ function monthlyManagementFee(gross, { feeType, feePercent, feeFixed }) {
  *
  * Formula:
  *   due = SUM(invoice amounts − management fees)  − SUM(payouts) − SUM(deductions)
+ *         − SUM(landlord-charged maintenance)
  *
  * Management fees are computed per (property, year, month) group using
  * the property's management_fee_type / percent / fixed_amount settings.
+ *
+ * Landlord-charged maintenance is read from maintenance_requests (the same
+ * rule as the landlord statement), never from landlord_deductions, so it is
+ * subtracted exactly once.
  */
 export async function getDueToLandlordsBalance({
   landlordId,
@@ -495,47 +501,69 @@ export async function getDueToLandlordsBalance({
   const dedRows = await sql(dedQuery, dedValues);
   const totalDeductions = Number(dedRows?.[0]?.total || 0);
 
-  // 6. due = credits − payouts − deductions
-  return totalCredits - totalPayouts - totalDeductions;
+  // 6. Landlord-charged maintenance on this property
+  const maintRows = await sql(
+    `SELECT COALESCE(SUM(completed_cost), 0)::numeric AS total
+     FROM maintenance_requests
+     WHERE property_id = $1
+       AND status IN ('completed', 'closed')
+       AND charge_type = 'landlord'
+       AND completed_cost IS NOT NULL`,
+    [pId],
+  );
+  const totalMaintenance = Number(maintRows?.[0]?.total || 0);
+
+  // 7. due = credits − payouts − deductions − maintenance
+  return totalCredits - totalPayouts - totalDeductions - totalMaintenance;
 }
 
 /**
  * getDueToLandlordsBalance for every property against its current landlord,
- * in four queries instead of one call per property. Same formula and fee
+ * in five queries instead of one call per property. Same formula and fee
  * logic; the sum of the rows is the grand total due to landlords.
  *
  * @returns {Promise<Array<{ landlordId: number, propertyId: number, due: number }>>}
  */
 export async function getDueToLandlordsByProperty() {
-  const [propRows, invoiceGroups, payoutRows, dedRows] = await Promise.all([
-    sql(
-      `SELECT id, landlord_id, management_fee_type, management_fee_percent,
+  const [propRows, invoiceGroups, payoutRows, dedRows, maintRows] =
+    await Promise.all([
+      sql(
+        `SELECT id, landlord_id, management_fee_type, management_fee_percent,
               management_fee_fixed_amount
        FROM properties
        WHERE landlord_id IS NOT NULL`,
-    ),
-    sql(
-      `SELECT i.property_id,
+      ),
+      sql(
+        `SELECT i.property_id,
               COALESCE(SUM(i.amount), 0)::numeric AS gross_rent
        FROM invoices i
        WHERE i.property_id IS NOT NULL
          AND i.status <> 'void'
          AND COALESCE(i.is_deleted, false) = false
        GROUP BY i.property_id, i.invoice_year, i.invoice_month`,
-    ),
-    sql(
-      `SELECT landlord_id, property_id, COALESCE(SUM(amount), 0)::numeric AS total
+      ),
+      sql(
+        `SELECT landlord_id, property_id, COALESCE(SUM(amount), 0)::numeric AS total
        FROM landlord_payouts
        WHERE COALESCE(is_deleted, false) = false
        GROUP BY landlord_id, property_id`,
-    ),
-    sql(
-      `SELECT landlord_id, property_id, COALESCE(SUM(amount), 0)::numeric AS total
+      ),
+      sql(
+        `SELECT landlord_id, property_id, COALESCE(SUM(amount), 0)::numeric AS total
        FROM landlord_deductions
        WHERE COALESCE(is_deleted, false) = false
        GROUP BY landlord_id, property_id`,
-    ),
-  ]);
+      ),
+      sql(
+        `SELECT property_id, COALESCE(SUM(completed_cost), 0)::numeric AS total
+       FROM maintenance_requests
+       WHERE property_id IS NOT NULL
+         AND status IN ('completed', 'closed')
+         AND charge_type = 'landlord'
+         AND completed_cost IS NOT NULL
+       GROUP BY property_id`,
+      ),
+    ]);
 
   const key = (l, p) => `${Number(l)}:${Number(p)}`;
   const sumBy = (rows) => {
@@ -547,6 +575,9 @@ export async function getDueToLandlordsByProperty() {
   };
   const payouts = sumBy(payoutRows);
   const deductions = sumBy(dedRows);
+  const maintenance = new Map(
+    (maintRows || []).map((r) => [Number(r.property_id), Number(r.total || 0)]),
+  );
 
   const groupsByProperty = new Map();
   for (const g of invoiceGroups || []) {
@@ -564,7 +595,11 @@ export async function getDueToLandlordsByProperty() {
       credits += gross - monthlyManagementFee(gross, fees);
     }
     const k = key(landlordId, propertyId);
-    const due = credits - (payouts.get(k) || 0) - (deductions.get(k) || 0);
+    const due =
+      credits -
+      (payouts.get(k) || 0) -
+      (deductions.get(k) || 0) -
+      (maintenance.get(propertyId) || 0);
     return { landlordId, propertyId, due };
   });
 }

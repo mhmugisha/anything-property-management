@@ -1,5 +1,9 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
+import {
+  managementFeeSettings,
+  monthlyManagementFee,
+} from "@/app/api/utils/accounting";
 
 function toNumber(value) {
   const n = Number(value);
@@ -44,7 +48,8 @@ function pad2(n) {
 function monthAnchorDate(year, month) {
   const y = Number(year);
   const m = Number(month);
-  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12)
+    return null;
   return `${y}-${pad2(m)}-01`;
 }
 
@@ -54,24 +59,18 @@ function monthLabel(year, month) {
   return `${name} ${year}`;
 }
 
-// Management fee for one month of gross rent on a property.
+// Management fee for one month of gross rent on a property. Uses the same
+// rounding/capping as getDueToLandlordsBalance so the closing balance matches.
 function computeMonthlyFee(property, gross) {
   if (!property) return 0;
-  const type = String(property.management_fee_type || "percent")
-    .trim()
-    .toLowerCase();
-  if (type === "fixed") {
-    const fixed = Number(property.management_fee_fixed_amount || 0);
-    return Number.isFinite(fixed) && fixed > 0 ? Math.round(fixed) : 0;
-  }
-  const pct = Number(property.management_fee_percent || 0);
-  if (!Number.isFinite(pct) || pct <= 0) return 0;
-  return Math.round((Number(gross || 0) * pct) / 100);
+  return monthlyManagementFee(
+    Number(gross || 0),
+    managementFeeSettings(property),
+  );
 }
 
 const TYPE_ORDER = {
   rent_billed: 1,
-  arrears_recovery: 1.5,
   management_fee: 2,
   landlord_deduction: 3,
   maintenance_charge: 4,
@@ -90,7 +89,10 @@ export async function GET(request) {
     const to = toDateStr((searchParams.get("to") || "").trim() || null);
 
     if (!landlordId) {
-      return Response.json({ error: "landlordId is required" }, { status: 400 });
+      return Response.json(
+        { error: "landlordId is required" },
+        { status: 400 },
+      );
     }
 
     // Landlord + every property they own (with fee settings) in one round trip.
@@ -205,44 +207,9 @@ export async function GET(request) {
       }
     }
 
-    // Recovered arrears: payments on arrears invoices (lease_id IS NULL)
-    // Use sql() function call with explicit array parameter — not tagged template
-    const arrearsRecoveryRows = scopedPropIds.length
-      ? await sql(
-          `SELECT
-            pia.id AS allocation_id,
-            p.payment_date,
-            pia.amount_applied AS amount,
-            tn.full_name AS tenant_name
-          FROM payment_invoice_allocations pia
-          JOIN payments p ON p.id = pia.payment_id
-          JOIN invoices i ON i.id = pia.invoice_id
-          LEFT JOIN tenants tn ON tn.id = i.tenant_id
-          WHERE i.property_id = ANY($1::int[])
-            AND i.lease_id IS NULL
-            AND COALESCE(i.is_deleted, false) = false
-            AND p.is_reversed = false
-          ORDER BY p.payment_date ASC, pia.id ASC`,
-          [scopedPropIds]
-        )
-      : [];
-
-    arrearsRecoveryRows.forEach((r, idx) => {
-      if (idx === 0) console.log("arrears row raw", JSON.stringify(r));
-    });
-
-    for (const r of arrearsRecoveryRows || []) {
-      const date = toDateStr(r.payment_date);
-      if (!date) continue;
-      events.push({
-        id: `arrears-recovery-${Number(r.allocation_id)}`,
-        date,
-        description: `Recovered arrears - ${r.tenant_name || "Unknown"}`,
-        source_type: "arrears_recovery",
-        debit: 0,
-        credit: Number(r.amount || 0),
-      });
-    }
+    // Arrears invoices (lease_id IS NULL) are already credited above as rent
+    // billed. The landlord is credited on a bill basis, once, so payments
+    // recovering those arrears are not credited again.
 
     // Landlord deductions (optionally filtered to a single property).
     for (const r of deductionRows || []) {
