@@ -57,11 +57,19 @@ export async function getAccountCode(accountId) {
  *
  * @param {number|string} accountId
  * @param {string|Date} periodMonth - any date in the target month; truncated to month
+ * @param {{ excludeTransactionId?: number|string|null }} [options]
+ *   excludeTransactionId - leave one row out of the sum (used by the budget
+ *   gate when editing an entry, so it isn't counted against itself)
  * @returns {Promise<number>}
  */
-export async function getExpenseCommitted(accountId, periodMonth) {
+export async function getExpenseCommitted(
+  accountId,
+  periodMonth,
+  { excludeTransactionId = null } = {},
+) {
   const id = toNumber(accountId);
   if (!id || !periodMonth) return 0;
+  const excludeId = toNumber(excludeTransactionId);
 
   const rows = await sql`
     SELECT COALESCE(SUM(amount), 0) AS total
@@ -70,9 +78,150 @@ export async function getExpenseCommitted(accountId, periodMonth) {
       AND COALESCE(is_deleted, false) = false
       AND COALESCE(approval_status, 'approved') IN ('approved', 'pending')
       AND date_trunc('month', transaction_date) = date_trunc('month', ${periodMonth}::date)
+      AND (${excludeId}::int IS NULL OR id <> ${excludeId}::int)
   `;
 
   return Number(rows?.[0]?.total || 0);
+}
+
+/**
+ * Budget gate for debits to an Expense account.
+ *
+ * Non-Expense accounts and unbudgeted (account, month) pairs are always
+ * allowed. Otherwise the posting is blocked when committed spend for the
+ * month plus this amount would exceed the budget line.
+ *
+ * @returns {Promise<{ allowed: boolean, month?: string, budget?: number,
+ *   committed?: number, overage?: number, account_name?: string }>}
+ */
+export async function enforceExpenseBudget({
+  accountId,
+  amount,
+  date,
+  excludeTransactionId = null,
+} = {}) {
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt < 0) {
+    throw new Error("enforceExpenseBudget: amount must be a number >= 0");
+  }
+
+  const account = await getAccountById(accountId);
+  if (!account || (account.account_type || "").trim() !== "Expense") {
+    return { allowed: true };
+  }
+
+  const budgetRows = await sql`
+    SELECT to_char(date_trunc('month', ${date}::date), 'YYYY-MM-DD') AS month,
+           b.amount AS budget
+    FROM (SELECT 1) AS one
+    LEFT JOIN operating_budget_lines b
+      ON b.account_id = ${account.id}
+     AND b.period_month = date_trunc('month', ${date}::date)::date
+  `;
+  const month = budgetRows?.[0]?.month;
+  const budgetRaw = budgetRows?.[0]?.budget;
+  if (budgetRaw === null || budgetRaw === undefined) {
+    return { allowed: true };
+  }
+
+  const budget = Number(budgetRaw);
+  const committed = await getExpenseCommitted(account.id, month, {
+    excludeTransactionId,
+  });
+
+  const result = {
+    month,
+    budget,
+    committed,
+    account_name: account.account_name,
+  };
+
+  if (committed + amt > budget) {
+    return { ...result, allowed: false, overage: committed + amt - budget };
+  }
+  return { ...result, allowed: true, overage: 0 };
+}
+
+function formatBudgetMonth(month) {
+  const d = new Date(`${month}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return month;
+  return d.toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * Runs the expense budget gate for a manual journal posting and applies the
+ * override rules: a blocked posting may proceed only if the caller is an
+ * Admin and supplied budget_override=true with a non-empty
+ * budget_override_reason.
+ *
+ * Returns { ok: false, status, body } to send as-is, or { ok: true, override }
+ * where override is null or the details to record in the audit log after the
+ * row is written.
+ */
+export async function checkExpenseBudgetForPosting({
+  staff,
+  body,
+  accountId,
+  amount,
+  date,
+  excludeTransactionId = null,
+}) {
+  const gate = await enforceExpenseBudget({
+    accountId,
+    amount,
+    date,
+    excludeTransactionId,
+  });
+  if (gate.allowed) return { ok: true, override: null };
+
+  if (body?.budget_override !== true) {
+    const overageText = `UGX ${Number(gate.overage).toLocaleString("en-US")}`;
+    return {
+      ok: false,
+      status: 409,
+      body: {
+        error: `Posting this would exceed ${gate.account_name} ${formatBudgetMonth(gate.month)} budget by ${overageText}.`,
+        account_name: gate.account_name,
+        month: gate.month,
+        budget: gate.budget,
+        committed: gate.committed,
+        overage: gate.overage,
+      },
+    };
+  }
+
+  if (staff?.role_name !== "Admin") {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: "Only an Admin can override the budget." },
+    };
+  }
+
+  const reason = String(body?.budget_override_reason || "").trim();
+  if (!reason) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: "A reason is required to override the budget." },
+    };
+  }
+
+  return {
+    ok: true,
+    override: {
+      account_id: Number(accountId),
+      month: gate.month,
+      amount: Number(amount),
+      overage: gate.overage,
+      reason,
+      by: staff.id,
+    },
+  };
 }
 
 export async function getAssetAccountBalance(accountId) {

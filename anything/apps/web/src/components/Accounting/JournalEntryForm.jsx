@@ -22,9 +22,21 @@ export function JournalEntryForm({
   isPending,
   error,
   successMessage,
+  isAdmin,
+  budgetBlock,
+  budgetOverride,
+  budgetOverrideReason,
+  onBudgetOverrideChange,
+  onBudgetOverrideReasonChange,
 }) {
+  const overrideActive = !!budgetBlock && isAdmin && budgetOverride;
   const canPost =
-    date && description && debitAccount && creditAccount && amount;
+    date &&
+    description &&
+    debitAccount &&
+    creditAccount &&
+    amount &&
+    (!overrideActive || budgetOverrideReason.trim());
 
   const [refWarning, setRefWarning] = useState(false);
 
@@ -131,6 +143,36 @@ export function JournalEntryForm({
         </div>
       ) : null}
 
+      {budgetBlock ? (
+        <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 space-y-2">
+          <div>{budgetBlock.error}</div>
+          {isAdmin ? (
+            <>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={budgetOverride}
+                  onChange={(e) => onBudgetOverrideChange(e.target.checked)}
+                />
+                Override budget
+              </label>
+              {budgetOverride ? (
+                <input
+                  value={budgetOverrideReason}
+                  onChange={(e) => onBudgetOverrideReasonChange(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-amber-200 bg-white outline-none text-slate-800"
+                  placeholder="Reason for override (required)"
+                />
+              ) : null}
+            </>
+          ) : (
+            <div className="text-xs">
+              Ask an Admin to override, or adjust the budget.
+            </div>
+          )}
+        </div>
+      ) : null}
+
       <div className="mt-4 flex items-center justify-end gap-2">
         <button
           onClick={handleSubmit}
@@ -138,7 +180,11 @@ export function JournalEntryForm({
           className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
         >
           <Save className="w-4 h-4" />
-          {isPending ? "Saving..." : "Post Entry"}
+          {isPending
+            ? "Saving..."
+            : overrideActive
+              ? "Post with override"
+              : "Post Entry"}
         </button>
       </div>
 

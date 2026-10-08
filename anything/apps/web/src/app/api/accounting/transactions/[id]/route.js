@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import {
+  checkExpenseBudgetForPosting,
   ensureCanCreditAccount,
   getAssetAccountBalance,
   getAccountById,
@@ -257,6 +258,27 @@ export async function PUT(request, { params: { id } }) {
       return Response.json(guard.body, { status: guard.status });
     }
 
+    // Operating budget: only re-check when the edit adds spend — a higher
+    // amount, or a move to a different debit account. This row is excluded
+    // from committed so it isn't counted against itself.
+    let budgetCheck = { ok: true, override: null };
+    const debitChanged =
+      Number(debitAccountId) !== Number(oldTx.debit_account_id);
+    const amountIncreased = Number(amount) > Number(oldTx.amount || 0);
+    if (debitChanged || amountIncreased) {
+      budgetCheck = await checkExpenseBudgetForPosting({
+        staff: perm.staff,
+        body,
+        accountId: debitAccountId,
+        amount,
+        date: transactionDate,
+        excludeTransactionId: txId,
+      });
+      if (!budgetCheck.ok) {
+        return Response.json(budgetCheck.body, { status: budgetCheck.status });
+      }
+    }
+
     const rows = await sql`
       UPDATE transactions
       SET
@@ -285,6 +307,18 @@ export async function PUT(request, { params: { id } }) {
       newValues: updated,
       ipAddress: perm.ipAddress,
     });
+
+    if (budgetCheck.override) {
+      await writeAuditLog({
+        staffId: perm.staff.id,
+        action: "budget.override",
+        entityType: "transaction",
+        entityId: txId,
+        oldValues: null,
+        newValues: budgetCheck.override,
+        ipAddress: perm.ipAddress,
+      });
+    }
 
     return Response.json({ transaction: updated });
   } catch (error) {

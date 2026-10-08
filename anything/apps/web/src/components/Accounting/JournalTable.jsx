@@ -26,6 +26,7 @@ export function JournalTable({
   isLoading,
   error,
   accountOptions,
+  isAdmin,
 }) {
   const queryClient = useQueryClient();
 
@@ -53,6 +54,11 @@ export function JournalTable({
   // Deduction source
   const [paymentSource, setPaymentSource] = useState("bank");
 
+  // Operating budget block (409) + Admin override — manual entries only
+  const [budgetBlock, setBudgetBlock] = useState(null);
+  const [budgetOverride, setBudgetOverride] = useState(false);
+  const [budgetOverrideReason, setBudgetOverrideReason] = useState("");
+
   const closeModal = useCallback(() => {
     setModalOpen(false);
     setEditKind(null);
@@ -68,6 +74,9 @@ export function JournalTable({
     setPaymentMethod("");
     setNotes("");
     setPaymentSource("bank");
+    setBudgetBlock(null);
+    setBudgetOverride(false);
+    setBudgetOverrideReason("");
   }, []);
 
   // Auto-dismiss success message after 3 seconds
@@ -114,6 +123,10 @@ export function JournalTable({
           amount: Number(amount),
           currency: "UGX",
         };
+        if (budgetBlock && budgetOverride) {
+          payload.budget_override = true;
+          payload.budget_override_reason = budgetOverrideReason.trim();
+        }
         return putJson(`/api/accounting/transactions/${activeRow.id}`, payload);
       }
 
@@ -177,10 +190,17 @@ export function JournalTable({
     },
     onError: (err) => {
       console.error(err);
-      setFormError(err?.message || "Could not save changes");
       setSuccessMessage(null);
+      if (err?.status === 409 && err?.payload?.overage != null) {
+        setBudgetBlock(err.payload);
+        setFormError(null);
+        return;
+      }
+      setFormError(err?.message || "Could not save changes");
     },
   });
+
+  const overrideActive = !!budgetBlock && isAdmin && budgetOverride;
 
   const deleteMutation = useMutation({
     mutationFn: async ({ row, kind }) => {
@@ -544,6 +564,38 @@ export function JournalTable({
                 </div>
               ) : null}
 
+              {editKind === "manual" && budgetBlock ? (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 space-y-2">
+                  <div>{budgetBlock.error}</div>
+                  {isAdmin ? (
+                    <>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={budgetOverride}
+                          onChange={(e) => setBudgetOverride(e.target.checked)}
+                        />
+                        Override budget
+                      </label>
+                      {budgetOverride ? (
+                        <input
+                          value={budgetOverrideReason}
+                          onChange={(e) =>
+                            setBudgetOverrideReason(e.target.value)
+                          }
+                          className="w-full px-3 py-2 rounded-lg border border-amber-200 bg-white outline-none text-slate-800"
+                          placeholder="Reason for override (required)"
+                        />
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="text-xs">
+                      Ask an Admin to override, or adjust the budget.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
               {/* Manual transaction fields */}
               {editKind === "manual" ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -751,11 +803,19 @@ export function JournalTable({
                 </button>
                 <button
                   onClick={() => saveMutation.mutate()}
-                  disabled={saveMutation.isPending || !editKind}
+                  disabled={
+                    saveMutation.isPending ||
+                    !editKind ||
+                    (overrideActive && !budgetOverrideReason.trim())
+                  }
                   className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
                 >
                   <Save className="w-4 h-4" />
-                  {saveMutation.isPending ? "Saving…" : "Save"}
+                  {saveMutation.isPending
+                    ? "Saving…"
+                    : overrideActive
+                      ? "Save with override"
+                      : "Save"}
                 </button>
               </div>
 

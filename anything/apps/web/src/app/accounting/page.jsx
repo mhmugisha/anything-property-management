@@ -356,6 +356,7 @@ export default function AccountingPage() {
               journalQuery={journalQuery}
               transactions={txRows}
               accountOptions={accountOptions}
+              isAdmin={isAdmin}
             />
           ) : null}
 

@@ -27,9 +27,10 @@ export async function postJson(url, body) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
+    let payload = null;
     let message = `When fetching ${url}, the response was [${res.status}] ${res.statusText}`;
     try {
-      const payload = await res.json();
+      payload = await res.json();
       const payloadError =
         typeof payload?.error === "string" ? payload.error : null;
       const payloadDetail =
@@ -44,7 +45,10 @@ export async function postJson(url, body) {
     } catch {
       // ignore
     }
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    error.payload = payload;
+    throw error;
   }
   return res.json();
 }
@@ -56,9 +60,10 @@ export async function putJson(url, body) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
+    let payload = null;
     let message = `When fetching ${url}, the response was [${res.status}] ${res.statusText}`;
     try {
-      const payload = await res.json();
+      payload = await res.json();
       const payloadError =
         typeof payload?.error === "string" ? payload.error : null;
       if (payloadError) {
@@ -67,7 +72,10 @@ export async function putJson(url, body) {
     } catch {
       // ignore
     }
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    error.payload = payload;
+    throw error;
   }
   return res.json();
 }

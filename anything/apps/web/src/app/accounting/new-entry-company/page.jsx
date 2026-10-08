@@ -24,6 +24,7 @@ export default function NewEntryCompanyPage() {
   const [successMessage, setSuccessMessage] = useState(null);
 
   const canUseAccounting = staffQuery.data?.permissions?.accounting === true;
+  const isAdmin = staffQuery.data?.role_name === "Admin";
 
   // Use authoritative Chart of Accounts via the Account Registry
   const accountRegistry = useAccountRegistry(
@@ -39,6 +40,11 @@ export default function NewEntryCompanyPage() {
   const [debitAccount, setDebitAccount] = useState("");
   const [creditAccount, setCreditAccount] = useState("");
   const [amount, setAmount] = useState("");
+
+  // Operating budget block (409) + Admin override
+  const [budgetBlock, setBudgetBlock] = useState(null);
+  const [budgetOverride, setBudgetOverride] = useState(false);
+  const [budgetOverrideReason, setBudgetOverrideReason] = useState("");
 
   // Auto-dismiss success message after 3 seconds
   useEffect(() => {
@@ -84,6 +90,10 @@ export default function NewEntryCompanyPage() {
       amount: amount === "" ? null : Number(amount),
       currency: "UGX",
     };
+    if (budgetBlock && budgetOverride) {
+      payload.budget_override = true;
+      payload.budget_override_reason = budgetOverrideReason.trim();
+    }
 
     createJournalMutation.mutate(payload, {
       onSuccess: () => {
@@ -92,7 +102,17 @@ export default function NewEntryCompanyPage() {
         setDebitAccount("");
         setCreditAccount("");
         setAmount("");
+        setBudgetBlock(null);
+        setBudgetOverride(false);
+        setBudgetOverrideReason("");
         setSuccessMessage("Journal entry created successfully!");
+      },
+      onError: (err) => {
+        if (err?.status === 409 && err?.payload?.overage != null) {
+          setBudgetBlock(err.payload);
+          // Shown in the budget panel instead of the auto-dismissing error.
+          createJournalMutation.reset();
+        }
       },
     });
   }, [
@@ -102,6 +122,9 @@ export default function NewEntryCompanyPage() {
     debitAccount,
     creditAccount,
     amount,
+    budgetBlock,
+    budgetOverride,
+    budgetOverrideReason,
     createJournalMutation,
   ]);
 
@@ -179,6 +202,12 @@ export default function NewEntryCompanyPage() {
               isPending={createJournalMutation.isPending}
               error={createJournalMutation.error}
               successMessage={successMessage}
+              isAdmin={isAdmin}
+              budgetBlock={budgetBlock}
+              budgetOverride={budgetOverride}
+              budgetOverrideReason={budgetOverrideReason}
+              onBudgetOverrideChange={setBudgetOverride}
+              onBudgetOverrideReasonChange={setBudgetOverrideReason}
             />
           </div>
 

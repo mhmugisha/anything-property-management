@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import {
+  checkExpenseBudgetForPosting,
   ensureCanCreditAccount,
   getDueToLandlordsBalance,
 } from "@/app/api/utils/accounting";
@@ -228,6 +229,19 @@ export async function POST(request) {
       return Response.json(guard.body, { status: guard.status });
     }
 
+    // Operating budget: block expense debits that would exceed the month's
+    // budget line, unless an Admin overrides with a reason.
+    const budgetCheck = await checkExpenseBudgetForPosting({
+      staff: perm.staff,
+      body,
+      accountId: debitAccountId,
+      amount,
+      date: transactionDate,
+    });
+    if (!budgetCheck.ok) {
+      return Response.json(budgetCheck.body, { status: budgetCheck.status });
+    }
+
     const approval = getApprovalFields(perm.staff);
     const rows = await sql`
       INSERT INTO transactions (
@@ -269,6 +283,18 @@ export async function POST(request) {
       newValues: tx,
       ipAddress: perm.ipAddress,
     });
+
+    if (budgetCheck.override) {
+      await writeAuditLog({
+        staffId: perm.staff.id,
+        action: "budget.override",
+        entityType: "transaction",
+        entityId: tx?.id || null,
+        oldValues: null,
+        newValues: budgetCheck.override,
+        ipAddress: perm.ipAddress,
+      });
+    }
 
     // 🔔 Notify admins about new transaction
     notifyAllAdminsAsync({
