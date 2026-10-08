@@ -107,7 +107,8 @@ export async function POST(request) {
     }
 
     const unitRows = await sql`
-      SELECT u.id, u.status, u.property_id, u.unit_number, p.property_name
+      SELECT u.id, u.status, u.property_id, u.unit_number, p.property_name,
+             COALESCE(p.is_deleted, false) AS property_archived
       FROM units u
       LEFT JOIN properties p ON p.id = u.property_id
       WHERE u.id = ${unitId}
@@ -118,6 +119,13 @@ export async function POST(request) {
 
     if (!unit || !unit.property_id) {
       return Response.json({ error: "Unit not found" }, { status: 404 });
+    }
+
+    if (unit.property_archived) {
+      return Response.json(
+        { error: "This unit's property is archived and can't take new leases" },
+        { status: 409 },
+      );
     }
 
     // Truthy vacancy check: no active lease overlaps at all.

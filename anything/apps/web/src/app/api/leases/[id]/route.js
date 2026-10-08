@@ -62,7 +62,8 @@ export async function PUT(request, { params: { id } }) {
     // Validate unit exists
     const unitRows = await sql`
       SELECT u.id, u.status, u.property_id,
-             p.management_fee_type, p.management_fee_percent, p.management_fee_fixed_amount
+             p.management_fee_type, p.management_fee_percent, p.management_fee_fixed_amount,
+             COALESCE(p.is_deleted, false) AS property_archived
       FROM units u
       LEFT JOIN properties p ON p.id = u.property_id
       WHERE u.id = ${unitId}
@@ -76,6 +77,15 @@ export async function PUT(request, { params: { id } }) {
 
     // If changing unit, require the new unit to be vacant
     if (Number(unitId) !== Number(oldLease.unit_id)) {
+      if (unit.property_archived) {
+        return Response.json(
+          {
+            error: "This unit's property is archived and can't take new leases",
+          },
+          { status: 409 },
+        );
+      }
+
       if (unit.status !== "vacant") {
         return Response.json({ error: "Unit is not vacant" }, { status: 409 });
       }

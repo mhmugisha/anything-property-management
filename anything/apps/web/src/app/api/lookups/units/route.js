@@ -20,8 +20,10 @@ export async function GET(request) {
         u.status,
         l.tenant_id
       FROM units u
+      JOIN properties p ON p.id = u.property_id
       LEFT JOIN leases l ON l.unit_id = u.id AND l.status = 'active'
       WHERE u.property_id = ${propertyId}
+        AND COALESCE(p.is_deleted, false) = false
       ORDER BY u.id
       LIMIT 200
     `;

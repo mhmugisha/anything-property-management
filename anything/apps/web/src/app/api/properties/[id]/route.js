@@ -296,14 +296,51 @@ export async function DELETE(request, { params: { id } }) {
       return Response.json({ action: "deleted" });
     }
 
-    const archivedRows = await sql`
-      UPDATE properties
-      SET is_deleted = true
-      WHERE id = ${propertyId}
-      RETURNING id
+    // Archiving stops invoicing, so it's only allowed once no lease is active.
+    // The check is repeated inside the locked write so a concurrent change
+    // can't slip past it.
+    const activeLeaseMessage =
+      "This property still has active leases. Decommission it after ending them.";
+    const activeRows = await sql`
+      SELECT 1
+      FROM leases l
+      JOIN units u ON u.id = l.unit_id
+      WHERE u.property_id = ${propertyId} AND l.status = 'active'
+      LIMIT 1
     `;
+    if (activeRows.length > 0) {
+      return Response.json({ error: activeLeaseMessage }, { status: 409 });
+    }
+
+    const results = await sql.transaction([
+      sql(`SELECT id FROM properties WHERE id = $1 FOR UPDATE`, [propertyId]),
+      sql(
+        `UPDATE properties
+         SET is_deleted = true
+         WHERE id = $1
+           AND NOT EXISTS (
+             SELECT 1
+             FROM leases l
+             JOIN units u ON u.id = l.unit_id
+             WHERE u.property_id = $1 AND l.status = 'active'
+           )
+         RETURNING id`,
+        [propertyId],
+      ),
+    ]);
+    const archivedRows = results[results.length - 1];
 
     if (!archivedRows || archivedRows.length === 0) {
+      const stillActive = await sql`
+        SELECT 1
+        FROM leases l
+        JOIN units u ON u.id = l.unit_id
+        WHERE u.property_id = ${propertyId} AND l.status = 'active'
+        LIMIT 1
+      `;
+      if (stillActive.length > 0) {
+        return Response.json({ error: activeLeaseMessage }, { status: 409 });
+      }
       return Response.json(
         { error: "Failed to archive property" },
         { status: 500 },

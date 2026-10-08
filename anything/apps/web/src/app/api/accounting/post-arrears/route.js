@@ -70,6 +70,18 @@ export async function POST(request) {
       );
     }
 
+    // Archived (decommissioned) properties don't take new invoices.
+    const archivedRows = await sql`
+      SELECT 1 FROM properties
+      WHERE id = ${propertyId} AND COALESCE(is_deleted, false) = true
+    `;
+    if (archivedRows.length > 0) {
+      return Response.json(
+        { error: "This property is archived and can't be invoiced" },
+        { status: 409 },
+      );
+    }
+
     // Extract month/year from arrears_date for invoice grouping
     const dateObj = new Date(arrearsDate + "T00:00:00");
     const invoiceMonth = dateObj.getMonth() + 1;

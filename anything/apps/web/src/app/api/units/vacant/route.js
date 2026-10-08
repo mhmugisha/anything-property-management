@@ -33,6 +33,8 @@ export async function GET(request) {
                 AND l.status = 'active'
             )
             AND u.property_id IS NOT NULL
+            -- Archived (decommissioned) properties don't take new leases.
+            AND COALESCE(p.is_deleted, false) = false
           )
          OR (${includeUnitId}::int IS NOT NULL AND u.id = ${includeUnitId})
       ORDER BY p.property_name, u.id

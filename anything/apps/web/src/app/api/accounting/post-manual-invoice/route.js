@@ -47,6 +47,7 @@ export async function POST(request) {
         l.currency,
         u.property_id,
         p.landlord_id,
+        COALESCE(p.is_deleted, false) AS property_archived,
         t.full_name AS tenant_name
       FROM leases l
       JOIN units u ON u.id = l.unit_id
@@ -65,6 +66,13 @@ export async function POST(request) {
       return Response.json(
         { error: "Lease must be active to post manual invoice" },
         { status: 400 },
+      );
+    }
+
+    if (lease.property_archived) {
+      return Response.json(
+        { error: "This property is archived and can't be invoiced" },
+        { status: 409 },
       );
     }
 

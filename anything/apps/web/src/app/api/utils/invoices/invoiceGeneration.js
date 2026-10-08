@@ -170,6 +170,7 @@ export async function ensureInvoicesForAllActiveLeasesUpToCurrentMonth(
         WHERE l.status = 'active'
           AND COALESCE(t.status, 'active') = 'active'
           AND COALESCE(ld.status, 'active') = 'active'
+          AND COALESCE(p.is_deleted, false) = false
           AND (ld.start_date IS NULL OR gs.month_start::date >= date_trunc('month', ld.start_date)::date)
           AND (ld.end_date IS NULL OR gs.month_start::date <= ld.end_date)
       ),
@@ -341,6 +342,7 @@ export async function ensureInvoicesForLease(leaseId, options = {}) {
         AND l.status = 'active'
         AND COALESCE(t.status, 'active') = 'active'
         AND COALESCE(ld.status, 'active') = 'active'
+        AND COALESCE(p.is_deleted, false) = false
         AND (ld.start_date IS NULL OR gs.month_start::date >= date_trunc('month', ld.start_date)::date)
         AND (ld.end_date IS NULL OR gs.month_start::date <= ld.end_date)
     ),

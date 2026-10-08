@@ -40,6 +40,20 @@ export async function POST(request) {
       );
     }
 
+    // Archived (decommissioned) properties don't take new leases.
+    const archivedRows = await sql`
+      SELECT 1
+      FROM units u
+      JOIN properties p ON p.id = u.property_id
+      WHERE u.id = ${unitId} AND COALESCE(p.is_deleted, false) = true
+    `;
+    if (archivedRows.length > 0) {
+      return Response.json(
+        { error: "This unit's property is archived and can't take new leases" },
+        { status: 409 },
+      );
+    }
+
     // Prevent double assignment: overlapping active lease on same unit
     const overlap = await sql`
       SELECT id FROM leases
