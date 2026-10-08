@@ -218,7 +218,11 @@ export function useCreatePayrollRun() {
 export function useApprovePayrollRun() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ runId }) => putJson(`/api/payroll/runs/${runId}/approve`, {}),
+    mutationFn: async ({ runId, raiseBudget = false }) =>
+      putJson(
+        `/api/payroll/runs/${runId}/approve`,
+        raiseBudget ? { raise_budget: true } : {},
+      ),
     onSuccess: (_, { runId }) => {
       qc.invalidateQueries({ queryKey: ["payroll", "runs"] });
       qc.invalidateQueries({ queryKey: ["payroll", "runs", runId] });

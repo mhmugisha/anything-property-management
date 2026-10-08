@@ -1491,12 +1491,70 @@ function PayAllModal({ run, onClose, onSuccess }) {
   );
 }
 
+function budgetMonthLabel(month) {
+  const [y, m] = String(month || "").split("-");
+  return MONTH_NAMES[Number(m)] ? `${MONTH_NAMES[Number(m)]} ${y}` : month;
+}
+
+function BudgetRaiseModal({ info, isAdmin, isPending, error, onConfirm, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-slate-800">Payroll budget exceeded</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-slate-400">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-sm text-slate-600 mb-4">
+          This run exceeds {budgetMonthLabel(info.month)} Payroll budget by {fmt(info.overage)}.
+          {isAdmin
+            ? ` Raise the budget to ${fmt(info.new_budget)} and approve?`
+            : " An Admin must raise the budget before this run can be approved."}
+        </p>
+        {error && (
+          <div className="mb-4">
+            <ErrorBanner error={error} />
+          </div>
+        )}
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          {isAdmin && (
+            <PrimaryBtn onClick={onConfirm} disabled={isPending}>
+              {isPending ? "Approving…" : "Approve & raise"}
+            </PrimaryBtn>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RunDetail({ runId, onBack, isAdmin }) {
   const runQuery = usePayrollRun(runId);
   const approveRun = useApprovePayrollRun();
   const deleteRun = useDeletePayrollRun();
   const [payEntry, setPayEntry] = useState(null);
   const [showPayAll, setShowPayAll] = useState(false);
+  // Set when approval would exceed the Payroll budget and needs a raise.
+  const [budgetRaise, setBudgetRaise] = useState(null);
+
+  const handleApprove = (raiseBudget = false) => {
+    approveRun.mutate(
+      { runId: run.id, raiseBudget },
+      {
+        onSuccess: (data) => {
+          setBudgetRaise(data?.needs_budget_raise ? data : null);
+        },
+      },
+    );
+  };
 
   const run = runQuery.data?.run || null;
   const entries = runQuery.data?.entries || [];
@@ -1638,7 +1696,7 @@ function RunDetail({ runId, onBack, isAdmin }) {
           <div className="flex gap-3">
             {run.status === "draft" && (
               <PrimaryBtn
-                onClick={() => approveRun.mutate({ runId: run.id })}
+                onClick={() => handleApprove()}
                 disabled={approveRun.isPending || entries.length === 0}
               >
                 {approveRun.isPending ? "Approving…" : "Approve Payroll"}
@@ -1659,6 +1717,16 @@ function RunDetail({ runId, onBack, isAdmin }) {
       {deleteRun.error && <ErrorBanner error={deleteRun.error} />}
 
       {/* Modals */}
+      {budgetRaise && (
+        <BudgetRaiseModal
+          info={budgetRaise}
+          isAdmin={isAdmin}
+          isPending={approveRun.isPending}
+          error={approveRun.error}
+          onConfirm={() => handleApprove(true)}
+          onClose={() => setBudgetRaise(null)}
+        />
+      )}
       {payEntry && (
         <PayModal
           run={run}
