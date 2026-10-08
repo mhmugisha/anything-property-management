@@ -3,6 +3,7 @@ import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import {
   checkExpenseBudgetForPosting,
   ensureCanCreditAccount,
+  ensureNotManuallyLocked,
   getDueToLandlordsBalance,
 } from "@/app/api/utils/accounting";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
@@ -192,6 +193,17 @@ export async function POST(request) {
         { error: "One of the selected accounts is inactive" },
         { status: 400 },
       );
+    }
+
+    // Every row this endpoint writes is source_type='manual'. Accounts that
+    // only a feature may post to (e.g. 5160 via Payroll) are a hard stop,
+    // checked before the budget gate.
+    const lockGuard = await ensureNotManuallyLocked({
+      debitAccountId,
+      creditAccountId,
+    });
+    if (!lockGuard.ok) {
+      return Response.json(lockGuard.body, { status: lockGuard.status });
     }
 
     // NEW: prevent overpaying landlords via manual journal entries.

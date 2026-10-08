@@ -24,6 +24,7 @@ export function JournalEntryForm({
   successMessage,
   isAdmin,
   budgetBlock,
+  lockedMessage,
   budgetOverride,
   budgetOverrideReason,
   onBudgetOverrideChange,
@@ -140,6 +141,12 @@ export function JournalEntryForm({
       {error ? (
         <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
           {error?.message || "Could not create journal entry."}
+        </div>
+      ) : null}
+
+      {lockedMessage ? (
+        <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+          {lockedMessage}
         </div>
       ) : null}
 

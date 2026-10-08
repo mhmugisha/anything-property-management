@@ -3,6 +3,7 @@ import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import {
   checkExpenseBudgetForPosting,
   ensureCanCreditAccount,
+  ensureNotManuallyLocked,
   getAssetAccountBalance,
   getAccountById,
   getAccountIdByCode,
@@ -201,6 +202,16 @@ export async function PUT(request, { params: { id } }) {
     const creditOk = await getActiveAccount(creditAccountId);
     if (!creditOk.ok)
       return Response.json(creditOk.body, { status: creditOk.status });
+
+    // Only manual rows reach here (system-generated ones are rejected above).
+    // Locked accounts are a hard stop, checked before the budget gate.
+    const lockGuard = await ensureNotManuallyLocked({
+      debitAccountId,
+      creditAccountId,
+    });
+    if (!lockGuard.ok) {
+      return Response.json(lockGuard.body, { status: lockGuard.status });
+    }
 
     // NEW: prevent overpaying landlords via manual transaction edits.
     // We only enforce this when the updated transaction reduces account 2100 by crediting an Asset account.

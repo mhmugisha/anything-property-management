@@ -165,7 +165,11 @@ export async function PUT(request, { params }) {
     }
 
     const ref = `PAY-${run.year}-${String(run.month).padStart(2, "0")}`;
-    const txDate = new Date().toISOString().slice(0, 10);
+    // Post to the run's own month (last calendar day), not the approval date,
+    // so the ledger and the budget gate both land in the labelled month.
+    const txDate = new Date(Date.UTC(Number(run.year), Number(run.month), 0))
+      .toISOString()
+      .slice(0, 10);
 
     // One transaction per non-zero credit line, all debiting 5160
     const creditLines = [

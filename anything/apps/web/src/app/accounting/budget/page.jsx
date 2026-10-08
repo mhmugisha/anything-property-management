@@ -72,6 +72,16 @@ export default function OperatingBudgetPage() {
     setInfoMessage(null);
   }, [month]);
 
+  // Auto-dismiss info message after 3 seconds
+  useEffect(() => {
+    if (infoMessage) {
+      const timer = setTimeout(() => {
+        setInfoMessage(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [infoMessage]);
+
   const serverLines = budgetQuery.data?.lines || [];
   const availableAccounts = budgetQuery.data?.available_accounts || [];
 

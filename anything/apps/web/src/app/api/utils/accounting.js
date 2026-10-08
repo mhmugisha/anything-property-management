@@ -85,6 +85,48 @@ export async function getExpenseCommitted(
 }
 
 /**
+ * Hard stop for manual postings that touch an account flagged
+ * manual_posting_locked (e.g. 5160, which only Payroll may post to).
+ * No override. Callers must only use this for source_type='manual' postings.
+ */
+export async function ensureNotManuallyLocked({
+  debitAccountId,
+  creditAccountId,
+} = {}) {
+  const ids = [toNumber(debitAccountId), toNumber(creditAccountId)].filter(
+    Boolean,
+  );
+  if (ids.length === 0) return { ok: true };
+
+  const rows = await sql`
+    SELECT account_code, account_name
+    FROM chart_of_accounts
+    WHERE id = ANY(${ids}::int[])
+      AND manual_posting_locked = true
+    ORDER BY account_code
+    LIMIT 1
+  `;
+  const locked = rows?.[0];
+  if (!locked) return { ok: true };
+
+  const error =
+    String(locked.account_code) === "5160"
+      ? "Salary payments are made through the Payroll feature — this account can’t be journaled manually."
+      : "This account is managed automatically and can’t receive manual journal entries.";
+
+  return {
+    ok: false,
+    status: 422,
+    body: {
+      error,
+      locked_account: true,
+      account_code: locked.account_code,
+      account_name: locked.account_name,
+    },
+  };
+}
+
+/**
  * Budget gate for debits to an Expense account.
  *
  * Non-Expense accounts and unbudgeted (account, month) pairs are always

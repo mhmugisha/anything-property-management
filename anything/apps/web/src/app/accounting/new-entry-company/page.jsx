@@ -45,6 +45,8 @@ export default function NewEntryCompanyPage() {
   const [budgetBlock, setBudgetBlock] = useState(null);
   const [budgetOverride, setBudgetOverride] = useState(false);
   const [budgetOverrideReason, setBudgetOverrideReason] = useState("");
+  // Locked account (422) — hard stop, no override
+  const [lockedMessage, setLockedMessage] = useState(null);
 
   // Auto-dismiss success message after 3 seconds
   useEffect(() => {
@@ -79,6 +81,7 @@ export default function NewEntryCompanyPage() {
   const onSubmit = useCallback(() => {
     // Clear any previous messages
     setSuccessMessage(null);
+    setLockedMessage(null);
     createJournalMutation.reset();
 
     const payload = {
@@ -108,6 +111,12 @@ export default function NewEntryCompanyPage() {
         setSuccessMessage("Journal entry created successfully!");
       },
       onError: (err) => {
+        if (err?.status === 422 && err?.payload?.locked_account) {
+          setBudgetBlock(null);
+          setLockedMessage(err.payload.error);
+          createJournalMutation.reset();
+          return;
+        }
         if (err?.status === 409 && err?.payload?.overage != null) {
           setBudgetBlock(err.payload);
           // Shown in the budget panel instead of the auto-dismissing error.
@@ -204,6 +213,7 @@ export default function NewEntryCompanyPage() {
               successMessage={successMessage}
               isAdmin={isAdmin}
               budgetBlock={budgetBlock}
+              lockedMessage={lockedMessage}
               budgetOverride={budgetOverride}
               budgetOverrideReason={budgetOverrideReason}
               onBudgetOverrideChange={setBudgetOverride}
