@@ -127,6 +127,11 @@ export async function POST(request, { params: { id } }) {
       getAccountIdByCode("1210"),
     ]);
 
+    // Deposit settlement amounts — declared here (not inside txOps) because the
+    // post-commit response below also reads them.
+    const netRefund = toNumber(depositSettlement?.net_refund) || 0;
+    const deductionAmount = toNumber(depositSettlement?.deduction_amount) || 0;
+
     // Build transaction operations
     const txOps = (txn) => {
       const ops = [
@@ -242,8 +247,6 @@ export async function POST(request, { params: { id } }) {
       // 4: deposit refund GL entry
       const depositTxnDate =
         parseDate(depositSettlement?.transaction_date) || terminationDate;
-      const netRefund = toNumber(depositSettlement?.net_refund) || 0;
-      const deductionAmount = toNumber(depositSettlement?.deduction_amount) || 0;
       const refundAccountId = toNumber(depositSettlement?.refund_account_id);
       const deductionIncomeAccountId = toNumber(
         depositSettlement?.deduction_income_account_id,
