@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import useUser from "@/utils/useUser";
 import useUpload from "@/utils/useUpload";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
@@ -11,6 +11,9 @@ import {
   useCreateProperty,
   useUpdateProperty,
   useDeleteProperty,
+  useReactivateProperty,
+  decommissionSummaryKey,
+  fetchDecommissionSummary,
 } from "@/hooks/useProperties";
 import {
   useUnits,
@@ -25,6 +28,7 @@ import PropertiesSidebar from "@/components/Shell/PropertiesSidebar";
 import AccessDenied from "@/components/Shell/AccessDenied";
 import { PropertyDetails } from "@/components/Properties/PropertyDetails";
 import { UnitFormModal } from "@/components/Properties/UnitFormModal";
+import { DecommissionModal } from "@/components/Properties/DecommissionModal";
 import { fetchJson } from "@/utils/api";
 
 const INITIAL_PROPERTY_FORM = {
@@ -56,6 +60,9 @@ export default function PropertiesPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedPropertyId, setSelectedPropertyId] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [decommissionOpen, setDecommissionOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   const [showCreateProperty, setShowCreateProperty] = useState(false);
   const [editingProperty, setEditingProperty] = useState(false);
@@ -78,6 +85,7 @@ export default function PropertiesPage() {
   const propertiesQuery = useProperties(
     "",
     !userLoading && !!user && canManageProperties,
+    { includeArchived: showArchived },
   );
 
   const properties = propertiesQuery.data || [];
@@ -99,6 +107,7 @@ export default function PropertiesPage() {
   const createPropertyMutation = useCreateProperty();
   const updatePropertyMutation = useUpdateProperty();
   const deletePropertyMutation = useDeleteProperty();
+  const reactivatePropertyMutation = useReactivateProperty();
   const createUnitMutation = useCreateUnit(selectedPropertyId);
   const updateUnitMutation = useUpdateUnit(selectedPropertyId);
   const deleteUnitMutation = useDeleteUnit(selectedPropertyId);
@@ -324,9 +333,35 @@ export default function PropertiesPage() {
     [deleteUnitMutation],
   );
 
-  const onDeleteProperty = useCallback(() => {
+  const onDeleteProperty = useCallback(async () => {
     const p = propertyDetailQuery.data || selectedProperty;
     if (!p) return;
+
+    // A property with active leases can't be deleted or archived here; point
+    // the user to Decommission, which works through each lease first.
+    let activeCount = 0;
+    try {
+      const summary = await queryClient.fetchQuery({
+        queryKey: decommissionSummaryKey(p.id),
+        queryFn: () => fetchDecommissionSummary(p.id),
+        staleTime: 0,
+      });
+      activeCount = (summary?.active_leases || []).length;
+    } catch (e) {
+      // Fall through; the server still refuses to archive with active leases.
+      console.error("decommission-summary check failed", e);
+    }
+
+    if (activeCount > 0) {
+      if (
+        window.confirm(
+          `${p.property_name} still has ${activeCount} active lease${activeCount === 1 ? "" : "s"}, so it can't be deleted. Use Decommission to end the leases and archive it.\n\nOpen Decommission now?`,
+        )
+      ) {
+        setDecommissionOpen(true);
+      }
+      return;
+    }
 
     if (
       !window.confirm(
@@ -352,7 +387,31 @@ export default function PropertiesPage() {
         alert(error.message || "Failed to delete property");
       },
     });
-  }, [deletePropertyMutation, propertyDetailQuery.data, selectedProperty]);
+  }, [
+    deletePropertyMutation,
+    propertyDetailQuery.data,
+    selectedProperty,
+    queryClient,
+  ]);
+
+  const onReactivateProperty = useCallback(() => {
+    const p = propertyDetailQuery.data || selectedProperty;
+    if (!p) return;
+
+    if (
+      !window.confirm(
+        `Reactivate ${p.property_name}? It will reappear in the property list and its units can take new leases (and be invoiced) again.`,
+      )
+    ) {
+      return;
+    }
+
+    reactivatePropertyMutation.mutate(p.id, {
+      onError: (error) => {
+        alert(error.message || "Failed to reactivate property");
+      },
+    });
+  }, [reactivatePropertyMutation, propertyDetailQuery.data, selectedProperty]);
 
   const onSaveUnit = useCallback(() => {
     if (!selectedPropertyId) return;
@@ -505,6 +564,8 @@ export default function PropertiesPage() {
           selectedPropertyId={selectedPropertyId}
           onSelectProperty={handleSelectProperty}
           onCreateProperty={onOpenCreateProperty}
+          showArchived={showArchived}
+          onShowArchivedChange={setShowArchived}
         />
       </Sidebar>
 
@@ -523,6 +584,9 @@ export default function PropertiesPage() {
               isSavingProperty={isSavingProperty}
               onDeleteProperty={onDeleteProperty}
               isDeletingProperty={deletePropertyMutation.isPending}
+              onDecommissionProperty={() => setDecommissionOpen(true)}
+              onReactivateProperty={onReactivateProperty}
+              isReactivatingProperty={reactivatePropertyMutation.isPending}
               propertyError={
                 createPropertyMutation.error || updatePropertyMutation.error
               }
@@ -561,6 +625,17 @@ export default function PropertiesPage() {
           propertyType={selectedPropertyType}
           onClearError={onClearUnitFormError}
         />
+
+        {decommissionOpen && propertyForDetails && (
+          <DecommissionModal
+            property={propertyForDetails}
+            onClose={() => setDecommissionOpen(false)}
+            onDecommissioned={() => {
+              setDecommissionOpen(false);
+              setSelectedPropertyId(null);
+            }}
+          />
+        )}
       </main>
     </div>
   );

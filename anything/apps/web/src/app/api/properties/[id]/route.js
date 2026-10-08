@@ -31,13 +31,15 @@ export async function GET(request, { params: { id } }) {
     const rows = await sql`
       SELECT id, property_name, address, property_type, total_units,
              management_fee_type, management_fee_percent, management_fee_fixed_amount,
-             notes, landlord_id, assigned_officer_id, created_by, created_at
+             notes, landlord_id, assigned_officer_id, created_by, created_at,
+             COALESCE(is_deleted, false) AS is_archived
       FROM properties
       WHERE id = ${propertyId}
-        AND COALESCE(is_deleted, false) = false
       LIMIT 1
     `;
 
+    // Archived properties are returned (flagged) so they can be viewed and
+    // reactivated; PUT and DELETE still only act on live properties.
     const property = rows?.[0] || null;
     if (!property) {
       return Response.json({ error: "Not found" }, { status: 404 });

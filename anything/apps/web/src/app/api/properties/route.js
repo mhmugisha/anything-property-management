@@ -35,8 +35,12 @@ export async function GET(request) {
       ? Math.min(Math.max(limitRaw, 1), 200)
       : 50;
     const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+    // ?archived=1 also returns archived (decommissioned) properties.
+    const includeArchived = url.searchParams.get("archived") === "1";
 
-    const where = ["COALESCE(is_deleted, false) = false"];
+    const where = includeArchived
+      ? []
+      : ["COALESCE(is_deleted, false) = false"];
     const values = [];
 
     if (search.length > 0) {
@@ -65,7 +69,8 @@ export async function GET(request) {
     const query = `
       SELECT id, property_name, address, property_type, total_units,
              management_fee_type, management_fee_percent, management_fee_fixed_amount,
-             notes, landlord_id, assigned_officer_id, created_by, created_at
+             notes, landlord_id, assigned_officer_id, created_by, created_at,
+             COALESCE(is_deleted, false) AS is_archived
       FROM properties
       ${whereSql}
       ORDER BY created_at DESC

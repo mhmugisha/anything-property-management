@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Plus, Building } from "lucide-react";
+import { Search, Plus, Building, Archive } from "lucide-react";
 
 export default function PropertiesSidebar({
   properties = [],
@@ -10,6 +10,8 @@ export default function PropertiesSidebar({
   selectedPropertyId,
   onSelectProperty,
   onCreateProperty,
+  showArchived = false,
+  onShowArchivedChange,
 }) {
   const filteredProperties = properties.filter((p) => {
     if (!search) return true;
@@ -51,6 +53,17 @@ export default function PropertiesSidebar({
             className="w-full pl-9 pr-3 py-2 rounded-lg bg-white/5 border border-white/10 text-slate-200 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
           />
         </div>
+        {onShowArchivedChange && (
+          <label className="mt-2 flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => onShowArchivedChange(e.target.checked)}
+              className="rounded border-white/20 bg-white/5"
+            />
+            Show archived
+          </label>
+        )}
       </div>
 
       {/* Properties list */}
@@ -67,6 +80,7 @@ export default function PropertiesSidebar({
               const isSelected =
                 selectedPropertyId != null &&
                 Number(property.id) === Number(selectedPropertyId);
+              const isArchived = property.is_archived === true;
 
               return (
                 <button
@@ -76,12 +90,21 @@ export default function PropertiesSidebar({
                     isSelected
                       ? "bg-white/15 text-white"
                       : "text-slate-200 hover:bg-white/10"
-                  }`}
+                  } ${isArchived ? "opacity-60" : ""}`}
                 >
-                  <Building className="w-4 h-4 flex-shrink-0" />
+                  {isArchived ? (
+                    <Archive className="w-4 h-4 flex-shrink-0" />
+                  ) : (
+                    <Building className="w-4 h-4 flex-shrink-0" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">
                       {property.property_name}
+                      {isArchived && (
+                        <span className="ml-1.5 text-[10px] uppercase tracking-wide text-slate-400">
+                          Archived
+                        </span>
+                      )}
                     </div>
                     {property.address && (
                       <div className="text-xs text-slate-400 truncate">

@@ -77,13 +77,15 @@ export function UnitsList({
             </span>
           )}
         </h3>
-        <button
-          onClick={onCreateUnit}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c]"
-        >
-          <Plus className="w-4 h-4" />
-          Add unit
-        </button>
+        {onCreateUnit && (
+          <button
+            onClick={onCreateUnit}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c]"
+          >
+            <Plus className="w-4 h-4" />
+            Add unit
+          </button>
+        )}
       </div>
 
       {isLoading ? (
@@ -127,20 +129,24 @@ export function UnitsList({
                       </td>
                       <td className="py-2 px-3 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-2">
-                          <button
-                            onClick={() => onEditUnit(u)}
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-slate-700"
-                          >
-                            <Pencil className="w-4 h-4" />
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => onDeleteUnit(u)}
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Delete
-                          </button>
+                          {onEditUnit && (
+                            <button
+                              onClick={() => onEditUnit(u)}
+                              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-slate-700"
+                            >
+                              <Pencil className="w-4 h-4" />
+                              Edit
+                            </button>
+                          )}
+                          {onDeleteUnit && (
+                            <button
+                              onClick={() => onDeleteUnit(u)}
+                              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

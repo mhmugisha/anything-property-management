@@ -1,12 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchJson, postJson, putJson, deleteJson } from "@/utils/api";
 
-export function useProperties(search, enabled) {
+export function useProperties(
+  search,
+  enabled,
+  { includeArchived = false } = {},
+) {
   return useQuery({
-    queryKey: ["properties", { search }],
+    queryKey: ["properties", { search, includeArchived }],
     queryFn: async () => {
       const qs = new URLSearchParams();
       if (search.trim().length > 0) qs.set("search", search.trim());
+      if (includeArchived) qs.set("archived", "1");
       const url = `/api/properties?${qs.toString()}`;
       const data = await fetchJson(url);
       return data.properties || [];
@@ -60,6 +65,52 @@ export function useDeleteProperty() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["properties"] });
       queryClient.invalidateQueries({ queryKey: ["property", id] });
+    },
+  });
+}
+
+export function decommissionSummaryKey(propertyId) {
+  return ["property", propertyId, "decommission-summary"];
+}
+
+export function fetchDecommissionSummary(propertyId) {
+  return fetchJson(`/api/properties/${propertyId}/decommission-summary`);
+}
+
+// Active leases that must be cleared before a property can be decommissioned.
+export function useDecommissionSummary(propertyId, enabled) {
+  return useQuery({
+    queryKey: decommissionSummaryKey(propertyId),
+    queryFn: () => fetchDecommissionSummary(propertyId),
+    enabled: !!propertyId && enabled,
+    staleTime: 0,
+  });
+}
+
+export function useDecommissionProperty() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id) =>
+      postJson(`/api/properties/${id}/decommission`, {}),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+      // Prefix match also refreshes the decommission summary.
+      queryClient.invalidateQueries({ queryKey: ["property", id] });
+      queryClient.invalidateQueries({ queryKey: ["units", "vacant"] });
+    },
+  });
+}
+
+export function useReactivateProperty() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id) => postJson(`/api/properties/${id}/reactivate`, {}),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+      queryClient.invalidateQueries({ queryKey: ["property", id] });
+      queryClient.invalidateQueries({ queryKey: ["units", "vacant"] });
     },
   });
 }
