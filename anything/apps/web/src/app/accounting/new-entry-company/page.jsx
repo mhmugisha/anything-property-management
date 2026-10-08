@@ -68,6 +68,16 @@ export default function NewEntryCompanyPage() {
     }
   }, [createJournalMutation.error, createJournalMutation]);
 
+  // Auto-dismiss locked-account message after 3 seconds
+  useEffect(() => {
+    if (lockedMessage) {
+      const timer = setTimeout(() => {
+        setLockedMessage(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [lockedMessage]);
+
   const accountOptions = useMemo(() => {
     const accounts = accountRegistry.accounts || [];
     const active = accounts.filter((a) => a.is_active !== false);
