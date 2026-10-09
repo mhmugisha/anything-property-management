@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS landlord_balance_adjustments (
   source_type TEXT NOT NULL DEFAULT 'landlord_credit',
   source_id INTEGER,
   created_by INTEGER,
+  effective_date DATE NOT NULL DEFAULT CURRENT_DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   is_deleted BOOLEAN NOT NULL DEFAULT false,
   deleted_at TIMESTAMPTZ,

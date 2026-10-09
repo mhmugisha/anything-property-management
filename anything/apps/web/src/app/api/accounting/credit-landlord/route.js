@@ -108,10 +108,10 @@ export async function POST(request) {
       adj AS (
         INSERT INTO landlord_balance_adjustments (
           landlord_id, property_id, amount, reason,
-          source_type, source_id, created_by
+          source_type, source_id, created_by, effective_date
         )
         SELECT ${landlordId}, ${propertyId}, ${amt}, ${desc},
-               'landlord_credit', txn.id, ${perm.staff.id}
+               'landlord_credit', txn.id, ${perm.staff.id}, ${txDate}::date
         FROM txn
         RETURNING id
       )

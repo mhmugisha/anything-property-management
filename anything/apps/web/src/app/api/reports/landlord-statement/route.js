@@ -176,7 +176,8 @@ export async function GET(request) {
             AND COALESCE(is_deleted, false) = false
         `,
       sql`
-          SELECT id, property_id, created_at::date AS event_date,
+          SELECT id, property_id,
+                 COALESCE(effective_date, created_at::date) AS event_date,
                  COALESCE(reason, '') AS reason, amount
           FROM landlord_balance_adjustments
           WHERE landlord_id = ${landlordId}
