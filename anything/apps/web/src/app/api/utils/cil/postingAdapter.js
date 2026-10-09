@@ -409,6 +409,13 @@ export async function softDeleteBySourceAndRefs({
     return { ok: false, status: 400, error: "sourceType is required" };
   }
 
+  // Only an explicit, non-empty restrict list may delete. An empty list, an
+  // all-blank list, or null/undefined touches nothing — never "every row of
+  // this source_type".
+  if (!restrict || restrict.length === 0) {
+    return { ok: true, deletedCount: 0 };
+  }
+
   const model = await discoverAccountingModel();
   if (!model.ok) {
     return { ok: false, status: 500, error: model.error || "Discovery failed" };
@@ -437,10 +444,8 @@ export async function softDeleteBySourceAndRefs({
   ];
   const values = [srcType];
 
-  if (restrict && restrict.length > 0) {
-    where.push(`${colRef} = ANY($${values.length + 1})`);
-    values.push(restrict);
-  }
+  where.push(`${colRef} = ANY($${values.length + 1})`);
+  values.push(restrict);
 
   if (keep.length > 0) {
     where.push(`NOT (${colRef} = ANY($${values.length + 1}))`);

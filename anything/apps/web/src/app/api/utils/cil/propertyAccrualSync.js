@@ -217,8 +217,7 @@ export async function ensurePropertyAccrualLedgerViaCIL(options = {}) {
   }
 
   // Soft-delete stale summary rows, always restricted to the property-months we just processed.
-  // Passing an empty array (not null) when scopeRefs is empty ensures no rows outside the current
-  // run are touched — null would mean "no restriction" in softDeleteBySourceAndRefs.
+  // When scopeRefs is empty the restrict list is [], and softDeleteBySourceAndRefs touches nothing.
   const restrictRent = Array.from(scopeRentRefs);
   const restrictFee = Array.from(scopeFeeRefs);
 
