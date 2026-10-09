@@ -17,6 +17,13 @@ export async function ensureInvoiceAccrualLedgerEntries(options = {}) {
   const leaseId =
     Number.isFinite(leaseIdRaw) && leaseIdRaw > 0 ? leaseIdRaw : null;
 
+  const propertyIdRaw =
+    options?.propertyId !== undefined && options?.propertyId !== null
+      ? Number(options.propertyId)
+      : null;
+  const propertyId =
+    Number.isFinite(propertyIdRaw) && propertyIdRaw > 0 ? propertyIdRaw : null;
+
   if (
     !force &&
     now - getLastEnsureInvoiceLedgerAtMs() < getEnsureInvoiceLedgerIntervalMs()
@@ -46,6 +53,7 @@ export async function ensureInvoiceAccrualLedgerEntries(options = {}) {
   const result = await ensurePropertyAccrualLedgerViaCIL({
     force,
     leaseId,
+    propertyId,
   });
 
   if (!result?.ok) {

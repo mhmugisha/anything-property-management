@@ -44,6 +44,14 @@ export async function ensurePropertyAccrualLedgerViaCIL(options = {}) {
       : null;
   const leaseId =
     Number.isFinite(leaseIdRaw) && leaseIdRaw > 0 ? leaseIdRaw : null;
+  const scopePropertyIdRaw =
+    options?.propertyId !== undefined && options?.propertyId !== null
+      ? Number(options.propertyId)
+      : null;
+  const scopePropertyId =
+    Number.isFinite(scopePropertyIdRaw) && scopePropertyIdRaw > 0
+      ? scopePropertyIdRaw
+      : null;
 
   // Build required monthly property summaries
   const where = ["i.status <> 'void'", "COALESCE(i.is_deleted, false) = false"];
@@ -70,6 +78,12 @@ export async function ensurePropertyAccrualLedgerViaCIL(options = {}) {
     scopedPropertyIds = (propRows || [])
       .map((r) => toNumber(r.property_id))
       .filter(Boolean);
+
+    where.push(`i.property_id = ANY($1::int[])`);
+    values.push(scopedPropertyIds);
+  } else if (scopePropertyId) {
+    // Property-scoped runs (e.g. an arrears invoice, which has no lease).
+    scopedPropertyIds = [scopePropertyId];
 
     where.push(`i.property_id = ANY($1::int[])`);
     values.push(scopedPropertyIds);
@@ -127,7 +141,7 @@ export async function ensurePropertyAccrualLedgerViaCIL(options = {}) {
     scopeFeeRefs.add(makeFeeRef({ propertyId, year, month, currency }));
   }
 
-  // Lease-scoped runs also take in every live summary row already on those
+  // Scoped runs also take in every live summary row already on those
   // properties, so a property-month with no live invoices from ANY lease has
   // its stale accrual cleared below (it can't be in the keep lists, which come
   // only from `required`). Months that still carry a live rent_reversal are
