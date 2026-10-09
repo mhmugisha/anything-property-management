@@ -37,7 +37,9 @@ export default function CreditLandlordPage() {
   const [amount, setAmount] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
 
-  const lookups = useAccountingLookups(!userLoading && !!user && canUseAccounting);
+  const lookups = useAccountingLookups(
+    !userLoading && !!user && canUseAccounting,
+  );
 
   const creditLandlordMutation = useCreditLandlord();
 
@@ -69,16 +71,20 @@ export default function CreditLandlordPage() {
     );
   }, [lookups.properties, landlordId]);
 
-  const onSelectLandlord = useCallback(
-    (landlord) => {
-      const title = landlord.title ? `${landlord.title} ` : "";
-      setLandlordId(String(landlord.id));
-      setLandlordSearch(`${title}${landlord.full_name}`);
-      setShowLandlordDropdown(false);
-      setPropertyId("");
-    },
-    [],
-  );
+  // Property is required; auto-select it when the landlord has only one.
+  useEffect(() => {
+    if (filteredProperties.length === 1 && !propertyId) {
+      setPropertyId(String(filteredProperties[0].id));
+    }
+  }, [filteredProperties, propertyId]);
+
+  const onSelectLandlord = useCallback((landlord) => {
+    const title = landlord.title ? `${landlord.title} ` : "";
+    setLandlordId(String(landlord.id));
+    setLandlordSearch(`${title}${landlord.full_name}`);
+    setShowLandlordDropdown(false);
+    setPropertyId("");
+  }, []);
 
   const onClearLandlord = useCallback(() => {
     setLandlordId("");
@@ -87,7 +93,12 @@ export default function CreditLandlordPage() {
   }, []);
 
   const canPost =
-    !!landlordId && !!date && !!description.trim() && !!amount && Number(amount) > 0;
+    !!landlordId &&
+    !!propertyId &&
+    !!date &&
+    !!description.trim() &&
+    !!amount &&
+    Number(amount) > 0;
 
   const onSubmit = useCallback(() => {
     setSuccessMessage(null);
@@ -96,7 +107,7 @@ export default function CreditLandlordPage() {
     creditLandlordMutation.mutate(
       {
         landlord_id: Number(landlordId),
-        property_id: propertyId ? Number(propertyId) : null,
+        property_id: Number(propertyId),
         amount: Number(amount),
         description: description.trim(),
         transaction_date: date,
@@ -111,7 +122,15 @@ export default function CreditLandlordPage() {
         },
       },
     );
-  }, [landlordId, propertyId, date, description, amount, referenceNumber, creditLandlordMutation]);
+  }, [
+    landlordId,
+    propertyId,
+    date,
+    description,
+    amount,
+    referenceNumber,
+    creditLandlordMutation,
+  ]);
 
   const isLoading = userLoading || staffQuery.isLoading;
 
@@ -151,7 +170,8 @@ export default function CreditLandlordPage() {
     );
   }
 
-  const landlordDropdownVisible = showLandlordDropdown && filteredLandlords.length > 0;
+  const landlordDropdownVisible =
+    showLandlordDropdown && filteredLandlords.length > 0;
 
   return (
     <div className="min-h-screen bg-slate-200 font-inter">
@@ -175,7 +195,8 @@ export default function CreditLandlordPage() {
               Credit Landlord
             </h1>
             <p className="text-slate-500 mt-2">
-              Post a manual credit to a landlord&apos;s account (Dr 3200 / Cr 2100)
+              Post a manual credit to a landlord&apos;s account (Dr 3200 / Cr
+              2100)
             </p>
           </div>
 
@@ -224,10 +245,14 @@ export default function CreditLandlordPage() {
                                 type="button"
                                 onClick={() => onSelectLandlord(l)}
                                 className={`w-full text-left px-3 py-2 text-sm hover:bg-sky-50 ${
-                                  String(l.id) === landlordId ? "bg-sky-50 font-medium" : ""
+                                  String(l.id) === landlordId
+                                    ? "bg-sky-50 font-medium"
+                                    : ""
                                 }`}
                               >
-                                <div className="font-medium text-slate-800">{label}</div>
+                                <div className="font-medium text-slate-800">
+                                  {label}
+                                </div>
                               </button>
                             );
                           })}
@@ -236,7 +261,7 @@ export default function CreditLandlordPage() {
                     </div>
                   </Field>
 
-                  <Field label="Property (Optional)">
+                  <Field label="Property">
                     <select
                       value={propertyId}
                       onChange={(e) => setPropertyId(e.target.value)}
@@ -244,7 +269,11 @@ export default function CreditLandlordPage() {
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none disabled:bg-gray-100 disabled:text-slate-500"
                     >
                       <option value="">
-                        {!landlordId ? "Select landlord first…" : "All properties"}
+                        {!landlordId
+                          ? "Select landlord first…"
+                          : filteredProperties.length
+                            ? "Select property…"
+                            : "Landlord has no properties"}
                       </option>
                       {filteredProperties.map((p) => (
                         <option key={p.id} value={String(p.id)}>
@@ -310,7 +339,9 @@ export default function CreditLandlordPage() {
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c] disabled:opacity-50"
                 >
                   <Save className="w-4 h-4" />
-                  {creditLandlordMutation.isPending ? "Posting..." : "Post Credit"}
+                  {creditLandlordMutation.isPending
+                    ? "Posting..."
+                    : "Post Credit"}
                 </button>
               </div>
 
@@ -328,7 +359,8 @@ export default function CreditLandlordPage() {
 
           {creditLandlordMutation.error ? (
             <div className="max-w-[960px] mx-auto mt-4 rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
-              {creditLandlordMutation.error?.message || "Could not post landlord credit."}
+              {creditLandlordMutation.error?.message ||
+                "Could not post landlord credit."}
             </div>
           ) : null}
         </div>

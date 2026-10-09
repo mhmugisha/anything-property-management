@@ -75,6 +75,7 @@ const TYPE_ORDER = {
   landlord_deduction: 3,
   maintenance_charge: 4,
   landlord_payout: 5,
+  balance_adjustment: 6,
 };
 
 export async function GET(request) {
@@ -129,10 +130,15 @@ export async function GET(request) {
 
     // Pull every source for the whole of history; date filtering (opening vs
     // period) happens in JS below so all row types share one consistent rule.
-    const [invoiceRows, deductionRows, maintenanceRows, payoutRows] =
-      await Promise.all([
-        scopedPropIds.length
-          ? sql`
+    const [
+      invoiceRows,
+      deductionRows,
+      maintenanceRows,
+      payoutRows,
+      adjustmentRows,
+    ] = await Promise.all([
+      scopedPropIds.length
+        ? sql`
               SELECT property_id, invoice_year, invoice_month,
                      SUM(amount) AS gross
               FROM invoices
@@ -141,16 +147,16 @@ export async function GET(request) {
                 AND COALESCE(status, '') <> 'void'
               GROUP BY property_id, invoice_year, invoice_month
             `
-          : Promise.resolve([]),
-        sql`
+        : Promise.resolve([]),
+      sql`
           SELECT id, property_id, deduction_date,
                  COALESCE(description, '') AS description, amount
           FROM landlord_deductions
           WHERE landlord_id = ${landlordId}
             AND COALESCE(is_deleted, false) = false
         `,
-        scopedPropIds.length
-          ? sql`
+      scopedPropIds.length
+        ? sql`
               SELECT id, property_id,
                      COALESCE(NULLIF(description, ''), title, '') AS description,
                      completed_cost,
@@ -162,14 +168,21 @@ export async function GET(request) {
                 AND charge_type = 'landlord'
                 AND completed_cost IS NOT NULL
             `
-          : Promise.resolve([]),
-        sql`
+        : Promise.resolve([]),
+      sql`
           SELECT id, property_id, payout_date, reference_number, amount
           FROM landlord_payouts
           WHERE landlord_id = ${landlordId}
             AND COALESCE(is_deleted, false) = false
         `,
-      ]);
+      sql`
+          SELECT id, property_id, created_at::date AS event_date,
+                 COALESCE(reason, '') AS reason, amount
+          FROM landlord_balance_adjustments
+          WHERE landlord_id = ${landlordId}
+            AND COALESCE(is_deleted, false) = false
+        `,
+    ]);
 
     // Build a flat, undated-filtered event list. Each event carries the anchor
     // date used for ordering and opening/period partitioning.
@@ -254,6 +267,23 @@ export async function GET(request) {
         source_type: "landlord_payout",
         debit: Number(r.amount || 0),
         credit: 0,
+      });
+    }
+
+    // Balance adjustments are signed: + credits the landlord, − debits them.
+    for (const r of adjustmentRows || []) {
+      const pid = Number(r.property_id);
+      if (propertyId && pid !== propertyId) continue;
+      const date = toDateStr(r.event_date);
+      if (!date) continue;
+      const amount = Number(r.amount || 0);
+      events.push({
+        id: `adjustment-${Number(r.id)}`,
+        date,
+        description: `Balance adjustment - ${r.reason || `#${r.id}`}`,
+        source_type: "balance_adjustment",
+        debit: amount < 0 ? -amount : 0,
+        credit: amount > 0 ? amount : 0,
       });
     }
 

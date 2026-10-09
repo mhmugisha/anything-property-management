@@ -21,24 +21,52 @@ export async function POST(request) {
     const body = await request.json();
 
     const landlordId = toNumber(body?.landlord_id);
-    const propertyId = toNumber(body?.property_id) || null;
+    const propertyId = toNumber(body?.property_id);
     const amt = toNumber(body?.amount);
     const desc = (body?.description || "").trim();
     const txDate = (body?.transaction_date || "").trim().slice(0, 10);
     const refNumber = (body?.reference_number || "").trim() || null;
 
     if (!landlordId) {
-      return Response.json({ error: "landlord_id is required" }, { status: 400 });
+      return Response.json(
+        { error: "landlord_id is required" },
+        { status: 400 },
+      );
+    }
+    if (!propertyId) {
+      return Response.json(
+        { error: "property_id is required" },
+        { status: 400 },
+      );
     }
     if (!amt || amt <= 0) {
       return Response.json({ error: "amount must be > 0" }, { status: 400 });
     }
+    if (!Number.isInteger(amt)) {
+      return Response.json(
+        { error: "amount must be a whole number of UGX" },
+        { status: 400 },
+      );
+    }
     if (!desc) {
-      return Response.json({ error: "description is required" }, { status: 400 });
+      return Response.json(
+        { error: "description is required" },
+        { status: 400 },
+      );
     }
     if (!txDate || !/^\d{4}-\d{2}-\d{2}$/.test(txDate)) {
       return Response.json(
         { error: "transaction_date must be YYYY-MM-DD" },
+        { status: 400 },
+      );
+    }
+
+    const [propRow] = await sql`
+      SELECT landlord_id FROM properties WHERE id = ${propertyId} LIMIT 1
+    `;
+    if (!propRow || Number(propRow.landlord_id) !== landlordId) {
+      return Response.json(
+        { error: "Property does not belong to this landlord" },
         { status: 400 },
       );
     }
@@ -48,25 +76,46 @@ export async function POST(request) {
       getAccountIdByCode("3200"),
     ]);
     if (!acct2100Id)
-      return Response.json({ error: "Account 2100 not configured" }, { status: 500 });
+      return Response.json(
+        { error: "Account 2100 not configured" },
+        { status: 500 },
+      );
     if (!acct3200Id)
-      return Response.json({ error: "Account 3200 not configured" }, { status: 500 });
+      return Response.json(
+        { error: "Account 3200 not configured" },
+        { status: 500 },
+      );
 
-    // Dr 3200 Retained Earnings / Cr 2100 Due to Landlords
+    // Dr 3200 Retained Earnings / Cr 2100 Due to Landlords, plus the signed
+    // balance adjustment the due-to-landlord helper and statement read.
+    // One statement so the GL posting and the adjustment commit together.
     const [txnRow] = await sql`
-      INSERT INTO transactions (
-        transaction_date, description,
-        debit_account_id, credit_account_id,
-        amount, currency,
-        created_by, landlord_id, property_id,
-        reference_number, source_type
-      ) VALUES (
-        ${txDate}::date, ${desc},
-        ${acct3200Id}, ${acct2100Id},
-        ${amt}, 'UGX',
-        ${perm.staff.id}, ${landlordId}, ${propertyId},
-        ${refNumber}, 'landlord_credit'
-      ) RETURNING id
+      WITH txn AS (
+        INSERT INTO transactions (
+          transaction_date, description,
+          debit_account_id, credit_account_id,
+          amount, currency,
+          created_by, landlord_id, property_id,
+          reference_number, source_type
+        ) VALUES (
+          ${txDate}::date, ${desc},
+          ${acct3200Id}, ${acct2100Id},
+          ${amt}, 'UGX',
+          ${perm.staff.id}, ${landlordId}, ${propertyId},
+          ${refNumber}, 'landlord_credit'
+        ) RETURNING id
+      ),
+      adj AS (
+        INSERT INTO landlord_balance_adjustments (
+          landlord_id, property_id, amount, reason,
+          source_type, source_id, created_by
+        )
+        SELECT ${landlordId}, ${propertyId}, ${amt}, ${desc},
+               'landlord_credit', txn.id, ${perm.staff.id}
+        FROM txn
+        RETURNING id
+      )
+      SELECT txn.id, adj.id AS adjustment_id FROM txn, adj
     `;
 
     await writeAuditLog({
@@ -76,6 +125,7 @@ export async function POST(request) {
       entityId: toNumber(txnRow?.id),
       oldValues: null,
       newValues: {
+        adjustment_id: toNumber(txnRow?.adjustment_id),
         landlord_id: landlordId,
         property_id: propertyId,
         amount: amt,
