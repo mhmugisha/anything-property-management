@@ -459,7 +459,26 @@ export async function POST(request, { params: { id } }) {
     // lease is already ended, so a failure is reported, not raised.
     let accrualResyncWarning = null;
     try {
-      await ensureInvoiceAccrualLedgerEntries({ force: true, leaseId });
+      const resync = await ensureInvoiceAccrualLedgerEntries({
+        force: true,
+        leaseId,
+      });
+      // The wrapper returns only counts. CIL switched off, unresolved
+      // accounts and a failed sync all come back as zeros without throwing.
+      // A forced lease-scoped run upserts every live month on the lease's
+      // properties, so all zeros means nothing was posted.
+      const posted =
+        Number(resync?.insertedCount || 0) +
+        Number(resync?.updatedCount || 0) +
+        Number(resync?.voidedCount || 0);
+      if (posted === 0) {
+        console.error(
+          "end-lease: accrual resync posted nothing after ending lease",
+          { leaseId, resync },
+        );
+        accrualResyncWarning =
+          "Lease ended, but the rent accrual resync posted nothing (accrual engine off, accounts unresolved, or sync failed) — Due to Landlords and tenant receivables may be out of date until the next sync.";
+      }
     } catch (resyncError) {
       console.error("end-lease: accrual resync failed after ending lease", {
         leaseId,
