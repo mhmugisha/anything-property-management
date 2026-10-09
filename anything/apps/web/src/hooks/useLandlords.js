@@ -64,12 +64,14 @@ export function useLandlordProperties(landlordId, enabled) {
   });
 }
 
+// Source-table statement (same figures as the dashboard and Reports →
+// Landlord Statement), plus due_to_landlord: the all-time overpay cap.
 export function useLandlordPropertyStatement(filters, enabled) {
   const safe = filters || {};
   return useQuery({
     queryKey: [
       "reports",
-      "landlordPropertyStatement",
+      "landlordStatement",
       safe.landlordId,
       safe.propertyId,
       safe.from,
@@ -82,7 +84,7 @@ export function useLandlordPropertyStatement(filters, enabled) {
       if (safe.from) params.set("from", safe.from);
       if (safe.to) params.set("to", safe.to);
       const data = await fetchJson(
-        `/api/reports/landlord-property-statement?${params.toString()}`,
+        `/api/reports/landlord-statement?${params.toString()}`,
       );
       return data;
     },
@@ -96,7 +98,7 @@ export function useCreateLandlordPayout() {
     mutationFn: async (payload) => postJson("/api/landlords/payouts", payload),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({
-        queryKey: ["reports", "landlordPropertyStatement"],
+        queryKey: ["reports", "landlordStatement"],
       });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["accounting"] });

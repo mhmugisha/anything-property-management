@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
 import {
+  getDueToLandlordsBalance,
   managementFeeSettings,
   monthlyManagementFee,
 } from "@/app/api/utils/accounting";
@@ -118,12 +119,14 @@ export async function GET(request) {
     }
 
     const allPropIds = Array.from(propertyMap.keys());
+    if (propertyId && !allPropIds.includes(propertyId)) {
+      return Response.json(
+        { error: "Property not linked to this landlord" },
+        { status: 400 },
+      );
+    }
     // Property-keyed sources (invoices, maintenance) are scoped to these ids.
-    const scopedPropIds = propertyId
-      ? allPropIds.includes(propertyId)
-        ? [propertyId]
-        : []
-      : allPropIds;
+    const scopedPropIds = propertyId ? [propertyId] : allPropIds;
 
     const propertyName = (pid) =>
       propertyMap.get(Number(pid))?.property_name || `Property #${pid}`;
@@ -136,6 +139,7 @@ export async function GET(request) {
       maintenanceRows,
       payoutRows,
       adjustmentRows,
+      dueToLandlord,
     ] = await Promise.all([
       scopedPropIds.length
         ? sql`
@@ -183,6 +187,10 @@ export async function GET(request) {
           WHERE landlord_id = ${landlordId}
             AND COALESCE(is_deleted, false) = false
         `,
+      // All-time due for one property — the payout overpay cap. Not windowed.
+      propertyId
+        ? getDueToLandlordsBalance({ landlordId, propertyId })
+        : Promise.resolve(null),
     ]);
 
     // Build a flat, undated-filtered event list. Each event carries the anchor
@@ -315,6 +323,7 @@ export async function GET(request) {
         date: from,
         description: "Opening Balance",
         source_type: "opening_balance",
+        kind: "opening",
         debit: openingBalance < 0 ? Math.abs(openingBalance) : 0,
         credit: openingBalance > 0 ? openingBalance : 0,
         balance: openingBalance,
@@ -332,6 +341,7 @@ export async function GET(request) {
         date: e.date,
         description: e.description,
         source_type: e.source_type,
+        kind: e.credit > 0 ? "credit" : "debit",
         debit: e.debit,
         credit: e.credit,
         balance,
@@ -353,6 +363,7 @@ export async function GET(request) {
         debits: totalDebited,
         closing_balance: balance,
       },
+      due_to_landlord: dueToLandlord,
     });
   } catch (error) {
     console.error("GET /api/reports/landlord-statement error", error);

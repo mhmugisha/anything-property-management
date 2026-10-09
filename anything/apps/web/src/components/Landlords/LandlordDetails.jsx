@@ -12,7 +12,6 @@ import {
 import { PropertiesCard } from "./PropertiesCard";
 import { PayoutCard } from "./PayoutCard";
 import { StatementCard } from "./StatementCard";
-import { ReconcileModal } from "./ReconcileModal";
 import { ordinalDay, monthLabelFromRange } from "@/utils/formatters";
 import { formatDate } from "@/utils/formatDate";
 
@@ -44,11 +43,6 @@ export function LandlordDetails({
   statementRows,
   statementSummary,
   canReports,
-  // reconciliation
-  reconciliation,
-  onApplyReconciliation,
-  reconciliationPending,
-  reconciliationError,
   // read-only actions
   onArchive,
   onReactivate,
@@ -61,7 +55,6 @@ export function LandlordDetails({
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [showReconcileModal, setShowReconcileModal] = useState(false);
   const moreMenuRef = useRef(null);
 
   useEffect(() => {
@@ -326,8 +319,6 @@ export function LandlordDetails({
           onOpenPaymentNote={openPaymentNote}
           paymentNoteDisabled={actionsDisabled || !canOpenPaymentNote}
           paymentNoteTitle={paymentNoteLabel}
-          reconciliation={reconciliation}
-          onOpenReconcileModal={() => setShowReconcileModal(true)}
         />
       </div>
 
@@ -346,25 +337,6 @@ export function LandlordDetails({
         summary={statementSummary}
         canReports={canReports}
       />
-
-      {reconciliationError ? (
-        <div className="mt-3 rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
-          {reconciliationError.message || "Could not apply reconciliation."}
-        </div>
-      ) : null}
-
-      {showReconcileModal && reconciliation ? (
-        <ReconcileModal
-          reconciliation={reconciliation}
-          onClose={() => setShowReconcileModal(false)}
-          onConfirm={(payload) => {
-            onApplyReconciliation(payload, {
-              onSuccess: () => setShowReconcileModal(false),
-            });
-          }}
-          isPending={reconciliationPending}
-        />
-      ) : null}
     </div>
   );
 }

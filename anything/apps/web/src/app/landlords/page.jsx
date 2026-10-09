@@ -26,10 +26,6 @@ import { LandlordTerminationModal } from "@/components/Landlords/LandlordTermina
 import { useLandlordForm } from "@/hooks/useLandlordForm";
 import { useLandlordPayout } from "@/hooks/useLandlordPayout";
 import { useLandlordStatement } from "@/hooks/useLandlordStatement";
-import {
-  useLandlordReconciliation,
-  useApplyReconciliation,
-} from "@/hooks/useReconciliation";
 
 const initialForm = {
   full_name: "",
@@ -169,44 +165,18 @@ export default function LandlordsPage() {
     resetPayout,
   } = useLandlordPayout();
 
-  const now = new Date();
-  const reconcileMonth = from
-    ? new Date(from).getMonth() + 1
-    : now.getMonth() + 1;
-  const reconcileYear = from
-    ? new Date(from).getFullYear()
-    : now.getFullYear();
-
-  const reconciliationQuery = useLandlordReconciliation(
-    selected?.id,
-    reconcileMonth,
-    reconcileYear,
-    !!selected?.id && !userLoading && !!user && !!canView,
-  );
-
-  const applyReconciliationMutation = useApplyReconciliation();
-
-  const onApplyReconciliation = useCallback(
-    (payload, callbacks) => {
-      if (!selected?.id) return;
-      applyReconciliationMutation.mutate(
-        { landlordId: Number(selected.id), payload },
-        callbacks,
-      );
-    },
-    [selected?.id, applyReconciliationMutation],
-  );
-
   const lastAutoPayoutAmountRef = useRef(null);
 
+  // Pre-fill with the all-time due for this property — the exact figure the
+  // payout overpay check caps at — not the date-windowed closing balance.
   useEffect(() => {
-    const summary = statementQuery.data?.summary;
-    if (!summary) return;
+    const raw = statementQuery.data?.due_to_landlord;
+    if (raw === null || raw === undefined) return;
 
-    const closing = Number(summary.closing_balance || 0);
-    if (!Number.isFinite(closing)) return;
+    const allTimeDue = Number(raw);
+    if (!Number.isFinite(allTimeDue)) return;
 
-    const due = Math.max(0, closing);
+    const due = Math.max(0, allTimeDue);
     const dueText = String(due);
 
     const shouldAutofill =
@@ -470,10 +440,6 @@ export default function LandlordsPage() {
                 statementRows={rows}
                 statementSummary={statement?.summary}
                 canReports={canReports}
-                reconciliation={reconciliationQuery.data || null}
-                onApplyReconciliation={onApplyReconciliation}
-                reconciliationPending={applyReconciliationMutation.isPending}
-                reconciliationError={applyReconciliationMutation.error}
                 onArchive={onArchiveLandlord}
                 onReactivate={onReactivateLandlord}
                 onEndLeases={onEndLeases}
