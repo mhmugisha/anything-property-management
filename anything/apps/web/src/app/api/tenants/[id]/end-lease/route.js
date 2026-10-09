@@ -7,6 +7,7 @@ import {
   getLeaseDepositBalance,
   getTenantPrepaymentBalance,
 } from "@/app/api/utils/accounting";
+import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -139,19 +140,12 @@ export async function POST(request, { params: { id } }) {
 
     const leaseId = Number(lease.id);
 
-    const [
-      prepaymentAcctId,
-      depositPayableAcctId,
-      retainedEarningsAcctId,
-      acct2100Id,
-      acct1210Id,
-    ] = await Promise.all([
-      getAccountIdByCode("2150"),
-      getAccountIdByCode("2200"),
-      getAccountIdByCode("3200"),
-      getAccountIdByCode("2100"),
-      getAccountIdByCode("1210"),
-    ]);
+    const [prepaymentAcctId, depositPayableAcctId, retainedEarningsAcctId] =
+      await Promise.all([
+        getAccountIdByCode("2150"),
+        getAccountIdByCode("2200"),
+        getAccountIdByCode("3200"),
+      ]);
 
     const tenantRow = await sql`
       SELECT full_name FROM tenants WHERE id = ${tenantId} LIMIT 1
@@ -235,8 +229,7 @@ export async function POST(request, { params: { id } }) {
 
     // ── User-chosen accounts: type, lock and available-funds checks ────────
     // Only the accounts the user picks are checked. The fixed system accounts
-    // (2100, 1210, 2200, 2150, 3200) are not: 2100 is manual-locked and the
-    // rent_reversal rows to it are legitimate.
+    // (2200, 2150, 3200) are not.
     const refundTotals = new Map();
     if (postDepositRefund) {
       const err = await checkChosenAccount(refundAccountId, {
@@ -272,30 +265,6 @@ export async function POST(request, { params: { id } }) {
         return Response.json(guard.body, { status: guard.status });
       }
     }
-
-    // Fetch the invoices that will be voided/written off by step 2 (same
-    // WHERE clauses as steps 2a + 2b) along with their property/landlord info,
-    // so we can post reversing GL entries that keep the landlord statement in
-    // sync with the Payment Note. We capture paid_amount so the reversing entry
-    // can use the OUTSTANDING amount (amount - paid_amount) for partially paid
-    // invoices that were explicitly voided.
-    const voidedInvoiceRows = await sql(
-      `SELECT i.id, i.amount, i.paid_amount, i.property_id, i.invoice_year, i.invoice_month,
-              p.landlord_id, u.id AS unit_id
-       FROM invoices i
-       LEFT JOIN properties p ON p.id = i.property_id
-       LEFT JOIN units u ON u.id = i.unit_id
-       WHERE i.lease_id = $1
-         AND i.status <> 'paid'
-         AND NOT i.id = ANY($4::int[])
-         AND COALESCE(i.is_deleted, false) = false
-         AND (
-           (i.paid_amount = 0 AND (i.invoice_year * 100 + i.invoice_month > $2 OR i.id = ANY($3::int[])))
-           OR
-           (i.paid_amount > 0 AND i.id = ANY($3::int[]))
-         )`,
-      [leaseId, termYM, explicitVoidIds, explicitKeepIds],
-    );
 
     // ── One atomic transaction: lock, guarded writes, flip lease last ──────
     const ops = [
@@ -350,50 +319,6 @@ export async function POST(request, { params: { id } }) {
            AND ${LEASE_ACTIVE(1)}`,
         [leaseId, explicitVoidIds, explicitKeepIds],
       ),
-
-      // 2c: post reversing GL entries for voided/written-off invoices (Dr 2100 / Cr 1210)
-      // using the OUTSTANDING amount (amount - paid_amount) so the landlord
-      // statement stays in sync with the Payment Note for both fully unpaid
-      // and partially paid invoices.
-      ...voidedInvoiceRows
-        .filter(
-          (r) =>
-            Number(r.amount) - Number(r.paid_amount) > 0 &&
-            r.property_id &&
-            r.landlord_id,
-        )
-        .map((r) =>
-          sql(
-            `INSERT INTO transactions (
-               transaction_date, description,
-               debit_account_id, credit_account_id,
-               amount, currency, created_by,
-               source_type, source_id,
-               property_id, landlord_id,
-               approval_status
-             )
-             SELECT
-               $1::date, $2,
-               $3, $4,
-               $5, 'UGX', $6,
-               'rent_reversal', $7,
-               $8, $9,
-               'approved'
-             WHERE ${LEASE_ACTIVE(10)}`,
-            [
-              terminationDate,
-              `Rent invoice reversal - lease termination - ${tenantName}`,
-              acct2100Id,
-              acct1210Id,
-              Number(r.amount) - Number(r.paid_amount),
-              perm.staff.id,
-              Number(r.id),
-              Number(r.property_id),
-              Number(r.landlord_id),
-              leaseId,
-            ],
-          ),
-        ),
 
       // 3: resolve open review flags
       sql(
@@ -528,6 +453,22 @@ export async function POST(request, { params: { id } }) {
       return Response.json({ error: "Lease already ended" }, { status: 409 });
     }
 
+    // Voided / written-off rent leaves 2100 and 1210 through the accrual sync:
+    // it recomputes each property-month from live invoices, moving both legs
+    // once. Run it now, outside the transaction, so the ledger is current. The
+    // lease is already ended, so a failure is reported, not raised.
+    let accrualResyncWarning = null;
+    try {
+      await ensureInvoiceAccrualLedgerEntries({ force: true, leaseId });
+    } catch (resyncError) {
+      console.error("end-lease: accrual resync failed after ending lease", {
+        leaseId,
+        error: resyncError,
+      });
+      accrualResyncWarning =
+        "Lease ended, but the rent accrual resync failed — Due to Landlords and tenant receivables may be briefly out of date until the next sync.";
+    }
+
     await writeAuditLog({
       staffId: perm.staff.id,
       action: "lease.end",
@@ -555,6 +496,9 @@ export async function POST(request, { params: { id } }) {
       deposit_refund_amount: netRefund,
       prepayment_handled: prepaymentHandled,
       prepayment_action: prepaymentHandling?.action || null,
+      ...(accrualResyncWarning
+        ? { accrual_resync_warning: accrualResyncWarning }
+        : {}),
     });
   } catch (error) {
     console.error("POST /api/tenants/[id]/end-lease error", error);

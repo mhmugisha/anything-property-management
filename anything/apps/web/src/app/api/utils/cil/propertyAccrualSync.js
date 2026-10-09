@@ -49,11 +49,30 @@ export async function ensurePropertyAccrualLedgerViaCIL(options = {}) {
   const where = ["i.status <> 'void'", "COALESCE(i.is_deleted, false) = false"];
   const values = [];
 
+  // Lease-scoped runs cover the lease's properties whether or not its own
+  // invoices are still live (e.g. all voided at termination), so the list is
+  // known even when `required` comes back empty.
+  let scopedPropertyIds = null;
   if (leaseId) {
-    where.push(
-      `i.property_id IN (SELECT DISTINCT property_id FROM invoices WHERE lease_id = $1 AND status <> 'void' AND COALESCE(is_deleted, false) = false)`,
+    const propRows = await sql(
+      `
+        SELECT u.property_id
+        FROM leases l
+        JOIN units u ON u.id = l.unit_id
+        WHERE l.id = $1 AND u.property_id IS NOT NULL
+        UNION
+        SELECT property_id
+        FROM invoices
+        WHERE lease_id = $1 AND property_id IS NOT NULL
+      `,
+      [leaseId],
     );
-    values.push(leaseId);
+    scopedPropertyIds = (propRows || [])
+      .map((r) => toNumber(r.property_id))
+      .filter(Boolean);
+
+    where.push(`i.property_id = ANY($1::int[])`);
+    values.push(scopedPropertyIds);
   }
 
   const required = await sql(
@@ -106,6 +125,69 @@ export async function ensurePropertyAccrualLedgerViaCIL(options = {}) {
     if (!propertyId || !year || !month) continue;
     scopeRentRefs.add(makeRentRef({ propertyId, year, month, currency }));
     scopeFeeRefs.add(makeFeeRef({ propertyId, year, month, currency }));
+  }
+
+  // Lease-scoped runs also take in every live summary row already on those
+  // properties, so a property-month with no live invoices from ANY lease has
+  // its stale accrual cleared below (it can't be in the keep lists, which come
+  // only from `required`). Months that still carry a live rent_reversal are
+  // left out: their stale accrual offsets that reversal, and both are
+  // historical artifacts for a separate cleanup.
+  if (scopedPropertyIds && scopedPropertyIds.length > 0) {
+    const [existingRows, reversalMonths] = await Promise.all([
+      sql(
+        `
+          SELECT source_type, reference_number, property_id
+          FROM transactions
+          WHERE source_type IN ('rent_accrual_summary', 'mgmt_fee_summary')
+            AND COALESCE(is_deleted, false) = false
+            AND property_id = ANY($1::int[])
+        `,
+        [scopedPropertyIds],
+      ),
+      // rent_reversal rows carry the invoice in source_id; the month comes
+      // from the invoice, not transaction_date (the reversal date).
+      sql(
+        `
+          SELECT DISTINCT i.property_id, i.invoice_year, i.invoice_month,
+                 COALESCE(i.currency, 'UGX')::text AS currency
+          FROM transactions t
+          JOIN invoices i ON i.id = t.source_id
+          WHERE t.source_type = 'rent_reversal'
+            AND COALESCE(t.is_deleted, false) = false
+            AND i.property_id = ANY($1::int[])
+        `,
+        [scopedPropertyIds],
+      ),
+    ]);
+
+    const monthKey = (propertyId, ym, currency) =>
+      `${propertyId}:${ym}:${currency}`;
+    const reversalKeys = new Set(
+      (reversalMonths || []).map((r) =>
+        monthKey(
+          toNumber(r.property_id),
+          `${r.invoice_year}-${pad2(r.invoice_month)}`,
+          String(r.currency || "UGX").trim() || "UGX",
+        ),
+      ),
+    );
+
+    for (const r of existingRows || []) {
+      // RENT-ACCRUAL:{propertyId}:{YYYY-MM}:{currency} / MGMTFEE:...
+      const parts = String(r.reference_number || "").split(":");
+      if (parts.length !== 4) continue;
+      const refPropertyId = toNumber(parts[1]);
+      if (!refPropertyId || refPropertyId !== toNumber(r.property_id)) continue;
+      if (reversalKeys.has(monthKey(refPropertyId, parts[2], parts[3]))) {
+        continue;
+      }
+      if (r.source_type === "rent_accrual_summary") {
+        scopeRentRefs.add(r.reference_number);
+      } else {
+        scopeFeeRefs.add(r.reference_number);
+      }
+    }
   }
 
   const keepRentRefs = [];
