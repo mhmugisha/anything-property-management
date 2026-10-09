@@ -75,9 +75,10 @@ export async function GET(request) {
 
     const openingFrom = from ? from : "1900-01-01";
 
-    // FIX: Removed status <> 'void' filter to include voided arrears invoices in opening balance
+    // A void invoice is charged its paid portion only (0 if nothing was paid),
+    // so money paid against a later-voided invoice still nets out.
     const openingInvoiceRows = await sql`
-      SELECT COALESCE(SUM(amount), 0) AS total
+      SELECT COALESCE(SUM(CASE WHEN status = 'void' THEN COALESCE(paid_amount, 0) ELSE amount END), 0) AS total
       FROM invoices
       WHERE tenant_id = ${tenantId}
         AND COALESCE(is_deleted, false) = false
@@ -104,23 +105,10 @@ export async function GET(request) {
         AND deduction_date < ${openingFrom}::date
     `;
 
-    // Opening credits from invoice reversals (rent_reversal only)
-    const openingReversalRows = await sql`
-      SELECT COALESCE(SUM(t.amount), 0) AS total
-      FROM transactions t
-      JOIN invoices i ON i.id = t.source_id
-      WHERE t.source_type = 'rent_reversal'
-        AND i.tenant_id = ${tenantId}
-        AND t.transaction_date < ${openingFrom}::date
-        AND COALESCE(t.is_deleted, false) = false
-    `;
-
     const openingDebits =
       Number(openingInvoiceRows?.[0]?.total || 0) +
       Number(openingDedRows?.[0]?.total || 0);
-    const openingCredits =
-      Number(openingPaymentRows?.[0]?.total || 0) +
-      Number(openingReversalRows?.[0]?.total || 0);
+    const openingCredits = Number(openingPaymentRows?.[0]?.total || 0);
 
     const openingBalance = openingDebits - openingCredits;
 
@@ -144,7 +132,8 @@ export async function GET(request) {
     // IMPORTANT: This query includes BOTH regular rent invoices (lease_id IS NOT NULL)
     // AND arrears invoices (lease_id IS NULL). Both types should appear as debits.
     const invoiceQuery = `
-      SELECT i.id, i.invoice_date, i.description, i.amount, i.lease_id
+      SELECT i.id, i.invoice_date, i.description, i.lease_id,
+             CASE WHEN i.status = 'void' THEN COALESCE(i.paid_amount, 0) ELSE i.amount END AS amount
       FROM invoices i
       WHERE ${invoiceWhere.join(" AND ")}
       ORDER BY i.invoice_date ASC, i.id ASC
@@ -277,61 +266,7 @@ export async function GET(request) {
       credit: 0,
     }));
 
-    // Credit rows for invoice reversals (rent_reversal only)
-    const reversalWhere = [
-      "t.source_type = 'rent_reversal'",
-      "COALESCE(t.is_deleted, false) = false",
-    ];
-    const reversalValues = [tenantId];
-
-    if (from) {
-      reversalWhere.push(
-        `t.transaction_date >= $${reversalValues.length + 1}::date`,
-      );
-      reversalValues.push(from);
-    }
-
-    if (to) {
-      reversalWhere.push(
-        `t.transaction_date <= $${reversalValues.length + 1}::date`,
-      );
-      reversalValues.push(to);
-    }
-
-    const reversalQuery = `
-      SELECT 
-        t.id,
-        t.transaction_date,
-        t.description,
-        t.amount,
-        t.reference_number
-      FROM transactions t
-      JOIN invoices i ON i.id = t.source_id
-      WHERE i.tenant_id = $1
-        AND ${reversalWhere.join(" AND ")}
-      ORDER BY t.transaction_date ASC, t.id ASC
-    `;
-
-    const reversals = await sql(reversalQuery, reversalValues);
-
-    const reversalRows = reversals.map((r) => {
-      const ref = r.reference_number ? ` (${r.reference_number})` : "";
-      return {
-        kind: "credit",
-        date: toDateStr(r.transaction_date),
-        description: `Invoice reversal - ${r.description}${ref}`,
-        debit: 0,
-        credit: Number(r.amount || 0),
-        reference_number: r.reference_number || null,
-      };
-    });
-
-    const all = [
-      ...invoiceRows,
-      ...paymentRows,
-      ...deductionRows,
-      ...reversalRows,
-    ];
+    const all = [...invoiceRows, ...paymentRows, ...deductionRows];
 
     all.sort((a, b) => {
       const ad = String(a.date);
@@ -355,7 +290,7 @@ export async function GET(request) {
     const closingTo = to ? to : "9999-12-31";
 
     const closingInvoiceRows = await sql`
-      SELECT COALESCE(SUM(amount), 0) AS total
+      SELECT COALESCE(SUM(CASE WHEN status = 'void' THEN COALESCE(paid_amount, 0) ELSE amount END), 0) AS total
       FROM invoices
       WHERE tenant_id = ${tenantId}
         AND COALESCE(is_deleted, false) = false
@@ -381,22 +316,10 @@ export async function GET(request) {
         AND deduction_date <= ${closingTo}::date
     `;
 
-    const closingReversalRows = await sql`
-      SELECT COALESCE(SUM(t.amount), 0) AS total
-      FROM transactions t
-      JOIN invoices i ON i.id = t.source_id
-      WHERE t.source_type = 'rent_reversal'
-        AND i.tenant_id = ${tenantId}
-        AND t.transaction_date <= ${closingTo}::date
-        AND COALESCE(t.is_deleted, false) = false
-    `;
-
     const closingDebits =
       Number(closingInvoiceRows?.[0]?.total || 0) +
       Number(closingDedRows?.[0]?.total || 0);
-    const closingCredits =
-      Number(closingPaymentRows?.[0]?.total || 0) +
-      Number(closingReversalRows?.[0]?.total || 0);
+    const closingCredits = Number(closingPaymentRows?.[0]?.total || 0);
 
     const closingBalance = closingDebits - closingCredits;
 
