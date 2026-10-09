@@ -72,6 +72,9 @@ export function ConsolidatedBalancesDueReport({
     rent_total: 0,
     management_fees: 0,
     other_deductions: 0,
+    maintenance: 0,
+    payouts: 0,
+    adjustments: 0,
     total_deductions: 0,
     balance_due: 0,
   };
@@ -114,7 +117,10 @@ export function ConsolidatedBalancesDueReport({
         "Rent Total": l.rent_total,
         "Management Fees": l.management_fees,
         "Other Deductions": l.other_deductions,
+        Maintenance: l.maintenance,
         "Total Deductions": l.total_deductions,
+        Payouts: l.payouts,
+        Adjustments: l.adjustments,
         "Balance Due": l.balance_due,
       }));
     } else {
@@ -125,7 +131,10 @@ export function ConsolidatedBalancesDueReport({
         "Rent Total": p.rent_total,
         "Management Fees": p.management_fees,
         "Other Deductions": p.other_deductions,
+        Maintenance: p.maintenance,
         "Total Deductions": p.total_deductions,
+        Payouts: p.payouts,
+        Adjustments: p.adjustments,
         "Balance Due": p.balance_due,
       }));
     }
@@ -137,7 +146,10 @@ export function ConsolidatedBalancesDueReport({
       "Rent Total": totals.rent_total,
       "Management Fees": totals.management_fees,
       "Other Deductions": totals.other_deductions,
+      Maintenance: totals.maintenance,
       "Total Deductions": totals.total_deductions,
+      Payouts: totals.payouts,
+      Adjustments: totals.adjustments,
       "Balance Due": totals.balance_due,
     });
 
@@ -394,8 +406,9 @@ function LandlordsTable({ landlords, totals }) {
             <th className="py-2 pr-3 text-right">Rent Total</th>
             <th className="py-2 pr-3 text-right">Mgmt Fees</th>
             <th className="py-2 pr-3 text-right">Other Deductions</th>
-            <th className="py-2 pr-3 text-right">Reversals</th>
+            <th className="py-2 pr-3 text-right">Maintenance</th>
             <th className="py-2 pr-3 text-right">Payouts</th>
+            <th className="py-2 pr-3 text-right">Adjustments</th>
             <th className="py-2 pr-3 text-right">Balance Due</th>
           </tr>
         </thead>
@@ -419,10 +432,13 @@ function LandlordsTable({ landlords, totals }) {
                 {formatCurrencyUGX(l.other_deductions)}
               </td>
               <td className="py-2 pr-3 text-right text-slate-700">
-                {formatCurrencyUGX(l.reversals || 0)}
+                {formatCurrencyUGX(l.maintenance || 0)}
               </td>
               <td className="py-2 pr-3 text-right text-slate-700">
                 {formatCurrencyUGX(l.payouts || 0)}
+              </td>
+              <td className="py-2 pr-3 text-right text-slate-700">
+                {formatCurrencyUGX(l.adjustments || 0)}
               </td>
               <td className="py-2 pr-3 text-right font-semibold text-slate-900">
                 {formatCurrencyUGX(l.balance_due)}
@@ -445,10 +461,13 @@ function LandlordsTable({ landlords, totals }) {
               {formatCurrencyUGX(totals.other_deductions)}
             </td>
             <td className="py-2 pr-3 text-right font-bold text-slate-900">
-              {formatCurrencyUGX(totals.reversals || 0)}
+              {formatCurrencyUGX(totals.maintenance || 0)}
             </td>
             <td className="py-2 pr-3 text-right font-bold text-slate-900">
               {formatCurrencyUGX(totals.payouts || 0)}
+            </td>
+            <td className="py-2 pr-3 text-right font-bold text-slate-900">
+              {formatCurrencyUGX(totals.adjustments || 0)}
             </td>
             <td className="py-2 pr-3 text-right font-bold text-slate-900">
               {formatCurrencyUGX(totals.balance_due)}
@@ -463,7 +482,7 @@ function LandlordsTable({ landlords, totals }) {
 function PropertiesTable({ properties, totals }) {
   return (
     <div className="overflow-auto">
-      <table className="w-full text-sm" style={{ minWidth: 800 }}>
+      <table className="w-full text-sm" style={{ minWidth: 1000 }}>
         <thead>
           <tr className="text-left text-slate-500 border-b-2 border-slate-700">
             <th className="py-2 pr-3" style={{ width: "60px" }}>
@@ -473,14 +492,17 @@ function PropertiesTable({ properties, totals }) {
             <th className="py-2 pr-3 text-right">Rent Total</th>
             <th className="py-2 pr-3 text-right">Mgmt Fees</th>
             <th className="py-2 pr-3 text-right">Other Deductions</th>
+            <th className="py-2 pr-3 text-right">Maintenance</th>
             <th className="py-2 pr-3 text-right">Total Deductions</th>
+            <th className="py-2 pr-3 text-right">Payouts</th>
+            <th className="py-2 pr-3 text-right">Adjustments</th>
             <th className="py-2 pr-3 text-right">Balance Due</th>
           </tr>
         </thead>
         <tbody>
           {properties.map((p, idx) => (
             <tr
-              key={p.property_id}
+              key={p.property_id ?? "unassigned"}
               className="border-b last:border-b-0 hover:bg-slate-50"
             >
               <td className="py-2 pr-3 text-slate-700">{idx + 1}</td>
@@ -497,7 +519,16 @@ function PropertiesTable({ properties, totals }) {
                 {formatCurrencyUGX(p.other_deductions)}
               </td>
               <td className="py-2 pr-3 text-right text-slate-700">
+                {formatCurrencyUGX(p.maintenance || 0)}
+              </td>
+              <td className="py-2 pr-3 text-right text-slate-700">
                 {formatCurrencyUGX(p.total_deductions)}
+              </td>
+              <td className="py-2 pr-3 text-right text-slate-700">
+                {formatCurrencyUGX(p.payouts || 0)}
+              </td>
+              <td className="py-2 pr-3 text-right text-slate-700">
+                {formatCurrencyUGX(p.adjustments || 0)}
               </td>
               <td className="py-2 pr-3 text-right font-semibold text-slate-900">
                 {formatCurrencyUGX(p.balance_due)}
@@ -520,7 +551,16 @@ function PropertiesTable({ properties, totals }) {
               {formatCurrencyUGX(totals.other_deductions)}
             </td>
             <td className="py-2 pr-3 text-right font-bold text-slate-900">
+              {formatCurrencyUGX(totals.maintenance || 0)}
+            </td>
+            <td className="py-2 pr-3 text-right font-bold text-slate-900">
               {formatCurrencyUGX(totals.total_deductions)}
+            </td>
+            <td className="py-2 pr-3 text-right font-bold text-slate-900">
+              {formatCurrencyUGX(totals.payouts || 0)}
+            </td>
+            <td className="py-2 pr-3 text-right font-bold text-slate-900">
+              {formatCurrencyUGX(totals.adjustments || 0)}
             </td>
             <td className="py-2 pr-3 text-right font-bold text-slate-900">
               {formatCurrencyUGX(totals.balance_due)}

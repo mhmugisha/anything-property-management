@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
+import { buildLandlordEvents } from "@/app/api/utils/landlordEvents";
 
 function toNumber(value) {
   const n = Number(value);
@@ -7,37 +8,17 @@ function toNumber(value) {
   return n;
 }
 
-function toDateStr(value) {
-  if (value === null || value === undefined) return null;
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return null;
-    return value.toISOString().slice(0, 10);
-  }
-  const s = String(value).trim();
-  if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
-}
-
 const isIsoDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
 
-// Which report column a GL transaction's source_type contributes to. Every
-// source_type that can touch account 2100 is mapped so the visible columns
-// always reconcile to the raw credit/debit net. Unknown types fall to "other".
+// Which report column each landlord event contributes to. Balance adjustments
+// show under "Other Adj."; unknown types also fall to "other".
 const SOURCE_TYPE_CATEGORY = {
-  rent_accrual_summary: "rent",
-  rent_reversal: "rent",
-  mgmt_fee_summary: "fee",
-  mgmt_fee_fixed: "fee",
-  mgmt_fee_reversal: "fee",
+  rent_billed: "rent",
+  management_fee: "fee",
   landlord_deduction: "deduction",
-  maintenance: "maintenance",
+  maintenance_charge: "maintenance",
   landlord_payout: "payout",
-  landlord_balance_payout: "payout",
-  landlord_credit: "other",
-  reconciliation: "other",
+  balance_adjustment: "other",
 };
 
 export async function GET(request) {
@@ -63,37 +44,15 @@ export async function GET(request) {
       );
     }
 
-    // 1. Account 2100 (Due to Landlords) is the source of truth for landlord
-    //    balances — the same ledger account the landlord property statement
-    //    uses. Credits to 2100 increase what we owe; debits decrease it.
-    const [acct2100Rows, landlordRows, propertyRows] = await Promise.all([
-      sql`SELECT id FROM chart_of_accounts WHERE account_code = '2100' LIMIT 1`,
-      landlordId
-        ? sql`SELECT id, full_name FROM landlords WHERE id = ${landlordId} ORDER BY full_name ASC`
-        : sql`SELECT id, full_name FROM landlords ORDER BY full_name ASC`,
-      landlordId
-        ? sql`SELECT id, landlord_id FROM properties WHERE landlord_id = ${landlordId}`
-        : sql`SELECT id, landlord_id FROM properties`,
-    ]);
-
-    const acct2100Id = Number(acct2100Rows?.[0]?.id) || null;
-    if (!acct2100Id) {
-      return Response.json(
-        { error: "Account 2100 (Due to Landlords) not configured" },
-        { status: 500 },
-      );
-    }
+    // 1. Landlords in scope. Balances come from the same source-table events
+    //    as the landlord statement and getDueToLandlordsBalance, so the
+    //    all-time closing balance equals the dashboard's Due to Landlords.
+    const landlordRows = landlordId
+      ? await sql`SELECT id, full_name FROM landlords WHERE id = ${landlordId} ORDER BY full_name ASC`
+      : await sql`SELECT id, full_name FROM landlords ORDER BY full_name ASC`;
 
     const landlords = landlordRows || [];
     const landlordIds = landlords.map((l) => Number(l.id));
-
-    // property_id -> owning landlord_id, so property-level postings roll up to
-    // the right landlord.
-    const propertyToLandlord = new Map();
-    for (const p of propertyRows || []) {
-      propertyToLandlord.set(Number(p.id), Number(p.landlord_id));
-    }
-    const propertyIds = Array.from(propertyToLandlord.keys());
 
     // One accumulator per landlord. Every landlord in scope appears in the
     // output, even with no ledger activity.
@@ -131,71 +90,51 @@ export async function GET(request) {
       });
     }
 
-    // 2. Every approved, non-deleted GL movement touching account 2100 for the
-    //    scoped properties (property-level entries) plus landlord-level entries
-    //    that carry no property. Fetch all history; the opening-vs-period split
-    //    happens in JS so opening balances reflect any historical corrections.
-    const txnRows = await sql`
-      SELECT transaction_date, amount, debit_account_id, credit_account_id,
-             property_id, landlord_id, source_type
-      FROM transactions
-      WHERE (debit_account_id = ${acct2100Id} OR credit_account_id = ${acct2100Id})
-        AND COALESCE(is_deleted, false) = false
-        AND COALESCE(approval_status, 'approved') = 'approved'
-        AND (
-          property_id = ANY(${propertyIds}::int[])
-          OR (property_id IS NULL AND landlord_id = ANY(${landlordIds}::int[]))
-        )
-    `;
+    // 2. Every dated event for each landlord. Fetch all history; the
+    //    opening-vs-period split happens here so opening balances reflect any
+    //    backdated entries.
+    const eventsByLandlord = await Promise.all(
+      landlordIds.map((lid) =>
+        buildLandlordEvents(lid).then(({ events }) => [lid, events]),
+      ),
+    );
 
-    for (const t of txnRows || []) {
-      // Attribute to a landlord: property-level entries via the property's
-      // owner; landlord-level (no property) entries via landlord_id.
-      let lid = null;
-      if (t.property_id !== null && t.property_id !== undefined) {
-        lid = propertyToLandlord.get(Number(t.property_id)) ?? null;
-      } else if (t.landlord_id !== null && t.landlord_id !== undefined) {
-        lid = Number(t.landlord_id);
-      }
-      if (lid === null) continue;
-
+    for (const [lid, events] of eventsByLandlord) {
       const bucket = acc.get(lid);
       if (!bucket) continue;
 
-      const date = toDateStr(t.transaction_date);
-      if (!date) continue;
-      if (date > to) continue; // ignore activity after the period
+      for (const e of events) {
+        if (e.date > to) continue; // ignore activity after the period
 
-      const amount = Number(t.amount || 0);
-      const isCredit = Number(t.credit_account_id) === acct2100Id;
-      const delta = isCredit ? amount : -amount; // effect on amount owed
+        const delta = e.credit - e.debit; // effect on amount owed
 
-      if (date < from) {
-        bucket.opening += delta;
-        continue;
-      }
+        if (e.date < from) {
+          bucket.opening += delta;
+          continue;
+        }
 
-      // Within [from, to]: bucket the signed delta by source_type category.
-      const category = SOURCE_TYPE_CATEGORY[t.source_type] || "other";
-      switch (category) {
-        case "rent":
-          bucket.catRent += delta;
-          break;
-        case "fee":
-          bucket.catFee += delta;
-          break;
-        case "deduction":
-          bucket.catDeduction += delta;
-          break;
-        case "maintenance":
-          bucket.catMaintenance += delta;
-          break;
-        case "payout":
-          bucket.catPayout += delta;
-          break;
-        default:
-          bucket.catOther += delta;
-          break;
+        // Within [from, to]: bucket the signed delta by event category.
+        const category = SOURCE_TYPE_CATEGORY[e.source_type] || "other";
+        switch (category) {
+          case "rent":
+            bucket.catRent += delta;
+            break;
+          case "fee":
+            bucket.catFee += delta;
+            break;
+          case "deduction":
+            bucket.catDeduction += delta;
+            break;
+          case "maintenance":
+            bucket.catMaintenance += delta;
+            break;
+          case "payout":
+            bucket.catPayout += delta;
+            break;
+          default:
+            bucket.catOther += delta;
+            break;
+        }
       }
     }
 
