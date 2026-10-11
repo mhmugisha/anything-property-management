@@ -10,6 +10,16 @@ import {
 } from "@/app/api/utils/accounting";
 import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
 import { recordLandlordPayout } from "@/app/api/utils/landlordPayouts";
+import {
+  countActiveLeasesForLandlord,
+  countLivePropertiesForLandlord,
+} from "@/app/api/utils/landlordLeases";
+import {
+  SETTLED_EPSILON,
+  evaluateLandlordCloseGate,
+  isSettled,
+  landlordOwedMessage,
+} from "@/app/api/utils/landlordCloseGate";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -44,26 +54,6 @@ export async function POST(request, { params }) {
       return Response.json({ error: "Landlord not found" }, { status: 404 });
     }
 
-    // Guard: block if any active tenant leases remain
-    const activeLeaseRows = await sql(
-      `SELECT l.id
-       FROM leases l
-       JOIN units u ON u.id = l.unit_id
-       JOIN properties p ON p.id = u.property_id
-       WHERE p.landlord_id = $1 AND l.status = 'active'
-       LIMIT 1`,
-      [landlordId],
-    );
-    if (activeLeaseRows?.length > 0) {
-      return Response.json(
-        {
-          error:
-            "This landlord still has active tenant leases. Please terminate all tenant leases before closing this landlord.",
-        },
-        { status: 409 },
-      );
-    }
-
     const body = await request.json().catch(() => ({}));
     const today = new Date().toISOString().slice(0, 10);
     const terminationDate = parseDate(body?.termination_date) || today;
@@ -74,11 +64,69 @@ export async function POST(request, { params }) {
     const payoutTxnDate =
       parseDate(balanceSettlement?.transaction_date) || terminationDate;
 
+    // ── Close gate: every check runs before any write ─────────────────────
+    // 1. no active lease, 2. no live property, 3. net due not negative —
+    // the same rules the exit summary reports as close_blockers.
+    const [activeLeasesCount, livePropertiesCount, propertyRows] =
+      await Promise.all([
+        countActiveLeasesForLandlord(landlordId),
+        countLivePropertiesForLandlord(landlordId),
+        sql`SELECT id FROM properties WHERE landlord_id = ${landlordId} ORDER BY id`,
+      ]);
+
+    // Net due from the source tables, per property (payouts are per property).
+    const dues = [];
+    for (const p of propertyRows || []) {
+      const propertyId = Number(p.id);
+      const due = Number(
+        (await getDueToLandlordsBalance({ landlordId, propertyId })) || 0,
+      );
+      dues.push({ propertyId, due });
+    }
+    const netDue = dues.reduce((s, d) => s + d.due, 0);
+
+    const gate = evaluateLandlordCloseGate({
+      activeLeasesCount,
+      livePropertiesCount,
+      netDue,
+    });
+    if (!gate.can_close) {
+      return Response.json(
+        {
+          error: gate.close_blockers[0],
+          close_blockers: gate.close_blockers,
+          close_blocker_codes: gate.close_blocker_codes,
+          active_lease_count: activeLeasesCount,
+          live_properties_count: livePropertiesCount,
+          due_to_landlord: netDue,
+        },
+        { status: 409 },
+      );
+    }
+
+    const owed = !isSettled(netDue); // gate passed, so owed means > 0
+
+    // Still owing the landlord: only a full payout may close.
+    if (owed && payoutAmount <= 0) {
+      return Response.json(
+        { error: landlordOwedMessage(netDue), due_to_landlord: netDue },
+        { status: 409 },
+      );
+    }
+    if (!owed && payoutAmount > 0) {
+      return Response.json(
+        {
+          error:
+            "Nothing is owed to this landlord, so there is no payout to record.",
+        },
+        { status: 409 },
+      );
+    }
+
     // Final payout: a real landlord payout per property (landlord_payouts row
     // + Dr 2100 / Cr cash or bank), so getDueToLandlordsBalance drops to zero.
-    // Only for a positive balance owed to the landlord, paid in full.
     const payouts = [];
-    if (payoutAmount > 0) {
+    if (owed) {
       // Same permission as recording a payout directly.
       if (!hasPermission(perm.permissions, "accounting")) {
         return Response.json({ error: "Forbidden" }, { status: 403 });
@@ -103,31 +151,7 @@ export async function POST(request, { params }) {
         );
       }
 
-      const propertyRows = await sql`
-        SELECT id FROM properties
-        WHERE landlord_id = ${landlordId}
-        ORDER BY id
-      `;
-      const dues = [];
-      for (const p of propertyRows || []) {
-        const propertyId = Number(p.id);
-        const due = Number(
-          (await getDueToLandlordsBalance({ landlordId, propertyId })) || 0,
-        );
-        dues.push({ propertyId, due });
-      }
-      const netDue = dues.reduce((s, d) => s + d.due, 0);
-
-      if (netDue <= 0) {
-        return Response.json(
-          {
-            error:
-              "Nothing is owed to this landlord, so there is no payout to record.",
-          },
-          { status: 409 },
-        );
-      }
-      if (dues.some((d) => d.due < -0.005)) {
+      if (dues.some((d) => d.due < -SETTLED_EPSILON)) {
         return Response.json(
           {
             error:
@@ -136,12 +160,10 @@ export async function POST(request, { params }) {
           { status: 409 },
         );
       }
+      // A payout that wouldn't bring the balance to zero can't close.
       if (Math.abs(payoutAmount - netDue) >= 1) {
         return Response.json(
-          {
-            error: `Closing pays out the full balance. Due to this landlord is now ${netDue} UGX.`,
-            due_to_landlord: netDue,
-          },
+          { error: landlordOwedMessage(netDue), due_to_landlord: netDue },
           { status: 409 },
         );
       }
@@ -186,6 +208,25 @@ export async function POST(request, { params }) {
           payout_id: Number(result.payout.id),
           amount,
         });
+      }
+
+      // Never mark ended while still owing: re-read the balance the payouts
+      // were meant to clear (guards a concurrent change to the dues).
+      let remaining = 0;
+      for (const { propertyId } of dues) {
+        remaining += Number(
+          (await getDueToLandlordsBalance({ landlordId, propertyId })) || 0,
+        );
+      }
+      if (!isSettled(remaining)) {
+        return Response.json(
+          {
+            error: `${landlordOwedMessage(remaining)} The landlord was not closed.`,
+            due_to_landlord: remaining,
+            payouts_recorded: payouts,
+          },
+          { status: 409 },
+        );
       }
     }
     const paidOut = payouts.reduce((s, p) => s + p.amount, 0);

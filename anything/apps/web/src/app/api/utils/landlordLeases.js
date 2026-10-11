@@ -14,3 +14,17 @@ export async function countActiveLeasesForLandlord(landlordId) {
   `;
   return Number(rows?.[0]?.c || 0);
 }
+
+/**
+ * The landlord's live (not archived / decommissioned) properties. Closing a
+ * landlord requires every property to be decommissioned first.
+ */
+export async function countLivePropertiesForLandlord(landlordId) {
+  const rows = await sql`
+    SELECT COUNT(*)::int AS c
+    FROM properties
+    WHERE landlord_id = ${landlordId}
+      AND COALESCE(is_deleted, false) = false
+  `;
+  return Number(rows?.[0]?.c || 0);
+}

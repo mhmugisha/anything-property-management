@@ -5,6 +5,7 @@ import {
   getTenantPrepaymentBalance,
 } from "@/app/api/utils/accounting";
 import { buildLandlordEvents } from "@/app/api/utils/landlordEvents";
+import { evaluateLandlordCloseGate } from "@/app/api/utils/landlordCloseGate";
 
 /**
  * Read-only landlord exit preview: every property the landlord owns
@@ -105,6 +106,12 @@ export async function getLandlordExitSummary(landlordId) {
   );
   const eventsDifference = eventsClosingBalance - netDue;
 
+  const gate = evaluateLandlordCloseGate({
+    activeLeasesCount,
+    livePropertiesCount,
+    netDue,
+  });
+
   return {
     properties,
     net_due: netDue,
@@ -112,7 +119,11 @@ export async function getLandlordExitSummary(landlordId) {
       "positive = agency owes landlord; negative = landlord owes agency",
     active_leases_count: activeLeasesCount,
     live_properties_count: livePropertiesCount,
-    can_close: activeLeasesCount === 0 && livePropertiesCount === 0,
+    // Active leases = 0, live properties = 0 and net due >= 0. A positive
+    // net due is settled by the close payout, so it doesn't block.
+    can_close: gate.can_close,
+    close_blockers: gate.close_blockers,
+    close_blocker_codes: gate.close_blocker_codes,
     events_closing_balance: eventsClosingBalance,
     events_difference: eventsDifference,
     events_match: Math.abs(eventsDifference) < 1,
