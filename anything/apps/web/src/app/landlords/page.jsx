@@ -23,6 +23,7 @@ import {
 import { LandlordForm } from "@/components/Landlords/LandlordForm";
 import { LandlordDetails } from "@/components/Landlords/LandlordDetails";
 import { LandlordTerminationModal } from "@/components/Landlords/LandlordTerminationModal";
+import { LandlordExitWizard } from "@/components/Landlords/LandlordExitWizard";
 import { useLandlordForm } from "@/hooks/useLandlordForm";
 import { useLandlordPayout } from "@/hooks/useLandlordPayout";
 import { useLandlordStatement } from "@/hooks/useLandlordStatement";
@@ -128,6 +129,7 @@ export default function LandlordsPage() {
 
   const createPayoutMutation = useCreateLandlordPayout();
   const [showTerminationModal, setShowTerminationModal] = useState(false);
+  const [showExitWizard, setShowExitWizard] = useState(false);
 
   // Track success state
   const [payoutSuccess, setPayoutSuccess] = useState(false);
@@ -449,6 +451,7 @@ export default function LandlordsPage() {
                 onArchive={onArchiveLandlord}
                 onReactivate={onReactivateLandlord}
                 onEndLeases={onEndLeases}
+                onExitLandlord={() => setShowExitWizard(true)}
                 onDelete={onDeleteLandlord}
                 isArchiving={archiveLandlordMutation.isPending}
                 isReactivating={reactivateLandlordMutation.isPending}
@@ -465,6 +468,14 @@ export default function LandlordsPage() {
           </div>
         </div>
       </main>
+
+      {showExitWizard && selected && (
+        <LandlordExitWizard
+          landlordId={selected.id}
+          landlordName={selected.full_name}
+          onClose={() => setShowExitWizard(false)}
+        />
+      )}
 
       {showTerminationModal && selected && (
         <LandlordTerminationModal

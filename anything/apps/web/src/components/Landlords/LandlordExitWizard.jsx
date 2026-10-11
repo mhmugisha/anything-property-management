@@ -1,0 +1,408 @@
+"use client";
+
+import {
+  X,
+  Check,
+  ChevronRight,
+  AlertTriangle,
+  Circle,
+  RotateCw,
+  Info,
+} from "lucide-react";
+import { useLandlordExitSummary } from "@/hooks/useLandlords";
+import { formatCurrencyUGX } from "@/utils/formatCurrency";
+
+// Landlord exit, one level above property decommission: end every lease,
+// decommission every property, settle the balance, close. This chunk is the
+// read-only overview; the later steps are shown but not yet available.
+const STEPS = ["overview", "leases", "properties", "close"];
+const STEP_LABELS = {
+  overview: "Overview",
+  leases: "End leases",
+  properties: "Decommission",
+  close: "Settle & close",
+};
+
+function StepPills({ stepIndex }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-5 pt-4">
+      {STEPS.map((s, i) => (
+        <div key={s} className="flex items-center gap-2">
+          <span
+            className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium ${
+              i === stepIndex
+                ? "bg-[#0B1F3A] text-white"
+                : "bg-gray-100 text-slate-400"
+            }`}
+          >
+            {i + 1}
+          </span>
+          <span
+            className={`text-xs ${i === stepIndex ? "text-[#0B1F3A] font-medium" : "text-slate-400"}`}
+          >
+            {STEP_LABELS[s]}
+          </span>
+          {i < STEPS.length - 1 && (
+            <ChevronRight className="w-3 h-3 text-gray-300" />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function netDueLabel(net) {
+  if (net > 0) return "Owed to landlord";
+  if (net < 0) return "Landlord owes Exela";
+  return "Settled";
+}
+
+function ChecklistItem({ state, title, detail }) {
+  // state: "done" | "todo" | "blocked" | "info"
+  const icon =
+    state === "done" ? (
+      <span className="w-5 h-5 rounded-full bg-green-100 text-green-700 flex items-center justify-center">
+        <Check className="w-3 h-3" />
+      </span>
+    ) : state === "blocked" ? (
+      <AlertTriangle className="w-5 h-5 text-rose-600" />
+    ) : state === "info" ? (
+      <Info className="w-5 h-5 text-amber-600" />
+    ) : (
+      <Circle className="w-5 h-5 text-amber-500" />
+    );
+  return (
+    <li className="flex items-start gap-3 py-2">
+      <span className="shrink-0 mt-0.5">{icon}</span>
+      <div>
+        <div
+          className={`text-sm font-medium ${state === "done" ? "text-slate-500" : "text-slate-800"}`}
+        >
+          {title}
+        </div>
+        {detail && <div className="text-xs text-slate-500">{detail}</div>}
+      </div>
+    </li>
+  );
+}
+
+function ReadinessChecklist({ exit }) {
+  const codes = exit.close_blocker_codes || [];
+  const leases = exit.active_leases_count || 0;
+  const live = exit.live_properties_count || 0;
+  const net = Number(exit.net_due || 0);
+
+  let balanceItem;
+  if (codes.includes("negative_balance")) {
+    balanceItem = (
+      <ChecklistItem
+        state="blocked"
+        title={`Landlord owes Exela ${formatCurrencyUGX(Math.abs(net))} UGX`}
+        detail="Collecting or writing off a landlord's debt is not yet supported, so this landlord can't be closed yet."
+      />
+    );
+  } else if (net > 0) {
+    balanceItem = (
+      <ChecklistItem
+        state="info"
+        title={`Settle balance: pay ${formatCurrencyUGX(net)} UGX to the landlord`}
+        detail="Paid out in full at the final close step."
+      />
+    );
+  } else {
+    balanceItem = (
+      <ChecklistItem
+        state="done"
+        title="Balance settled"
+        detail="Nothing is owed either way."
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-100 p-4">
+      <div className="text-sm font-semibold text-slate-800 mb-1">
+        Close readiness
+      </div>
+      <ul className="divide-y divide-gray-50">
+        <ChecklistItem
+          state={codes.includes("active_leases") ? "todo" : "done"}
+          title="End all tenant leases"
+          detail={
+            leases > 0
+              ? `${leases} active lease${leases === 1 ? "" : "s"} remaining`
+              : "No active leases"
+          }
+        />
+        <ChecklistItem
+          state={codes.includes("live_properties") ? "todo" : "done"}
+          title="Decommission all properties"
+          detail={
+            live > 0
+              ? `${live} propert${live === 1 ? "y" : "ies"} still live`
+              : "All properties decommissioned"
+          }
+        />
+        {balanceItem}
+      </ul>
+      {exit.can_close ? (
+        <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800 flex gap-2">
+          <Check className="w-4 h-4 shrink-0 mt-0.5" />
+          Ready to close.
+          {net > 0
+            ? ` The ${formatCurrencyUGX(net)} UGX balance is paid out as part of the close.`
+            : ""}
+        </div>
+      ) : (
+        <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+          <div className="font-medium mb-1">Not ready to close yet:</div>
+          <ul className="list-disc pl-5 space-y-0.5">
+            {(exit.close_blockers || []).map((b) => (
+              <li key={b}>{b}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PropertySection({ property }) {
+  const leases = property.active_leases || [];
+  const net = Number(property.net_due || 0);
+  return (
+    <div className="rounded-xl border border-gray-100">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-medium text-slate-800 truncate">
+            {property.property_name}
+          </span>
+          {property.is_archived ? (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-slate-600">
+              Decommissioned
+            </span>
+          ) : (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">
+              Live
+            </span>
+          )}
+          <span className="text-xs text-slate-500">
+            {leases.length} active lease{leases.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        <div className="text-right">
+          <div className="text-xs text-slate-500">{netDueLabel(net)}</div>
+          <div
+            className={`text-sm font-semibold ${net < 0 ? "text-rose-700" : "text-slate-800"}`}
+          >
+            {formatCurrencyUGX(Math.abs(net))}
+          </div>
+        </div>
+      </div>
+      {leases.length === 0 ? (
+        <div className="px-4 py-3 text-sm text-slate-500">
+          No active leases.
+        </div>
+      ) : (
+        <div className="overflow-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-500 border-b border-gray-100">
+                <th className="py-2 px-4">Tenant</th>
+                <th className="py-2 px-3 whitespace-nowrap">Unit</th>
+                <th className="py-2 px-3 text-right whitespace-nowrap">
+                  Outstanding
+                </th>
+                <th className="py-2 px-3 text-right whitespace-nowrap">
+                  Deposit held
+                </th>
+                <th className="py-2 px-4 text-right whitespace-nowrap">
+                  Prepayment
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {leases.map((l) => (
+                <tr key={l.lease_id} className="border-b last:border-b-0">
+                  <td className="py-2 px-4 font-medium text-slate-800">
+                    {l.tenant_name}
+                  </td>
+                  <td className="py-2 px-3 text-slate-700 whitespace-nowrap">
+                    {l.unit_number || "—"}
+                  </td>
+                  <td className="py-2 px-3 text-right text-slate-700 whitespace-nowrap">
+                    {formatCurrencyUGX(l.outstanding)}
+                  </td>
+                  <td className="py-2 px-3 text-right text-slate-700 whitespace-nowrap">
+                    {formatCurrencyUGX(l.deposit_held)}
+                  </td>
+                  <td
+                    className="py-2 px-4 text-right text-slate-700 whitespace-nowrap"
+                    title="Tenant-wide prepayment balance"
+                  >
+                    {formatCurrencyUGX(l.prepayment)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Overview({ exit }) {
+  const net = Number(exit.net_due || 0);
+  // Live properties first (they still need work), then decommissioned ones.
+  const properties = [...(exit.properties || [])].sort(
+    (a, b) => Number(a.is_archived) - Number(b.is_archived),
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-xl border border-gray-100 p-4">
+          <div className="text-xs text-slate-500">{netDueLabel(net)}</div>
+          <div
+            className={`text-lg font-semibold ${net < 0 ? "text-rose-700" : "text-[#0B1F3A]"}`}
+          >
+            {formatCurrencyUGX(Math.abs(net))} UGX
+          </div>
+          <div className="text-xs text-slate-400 mt-0.5">
+            Net due: positive = Exela owes the landlord, negative = the landlord
+            owes Exela
+          </div>
+        </div>
+        <div className="rounded-xl border border-gray-100 p-4">
+          <div className="text-xs text-slate-500">Active leases</div>
+          <div className="text-lg font-semibold text-[#0B1F3A]">
+            {exit.active_leases_count || 0}
+          </div>
+        </div>
+        <div className="rounded-xl border border-gray-100 p-4">
+          <div className="text-xs text-slate-500">Live properties</div>
+          <div className="text-lg font-semibold text-[#0B1F3A]">
+            {exit.live_properties_count || 0}
+            <span className="text-xs font-normal text-slate-400">
+              {" "}
+              of {(exit.properties || []).length}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {exit.events_match === false && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          The landlord statement differs from this balance by{" "}
+          {formatCurrencyUGX(exit.events_difference)} UGX. Check the statement
+          before closing.
+        </div>
+      )}
+
+      <ReadinessChecklist exit={exit} />
+
+      <div className="space-y-3">
+        <div className="text-sm font-semibold text-slate-800">Properties</div>
+        {properties.length === 0 ? (
+          <div className="text-sm text-slate-500">
+            This landlord has no properties.
+          </div>
+        ) : (
+          properties.map((p) => (
+            <PropertySection key={p.property_id} property={p} />
+          ))
+        )}
+        <p className="text-xs text-slate-400">Amounts in UGX.</p>
+      </div>
+    </div>
+  );
+}
+
+export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
+  // No saved progress: every open (and every refresh) reads live state.
+  const summaryQuery = useLandlordExitSummary(landlordId, true);
+  const exit = summaryQuery.data?.exit || null;
+  const status = summaryQuery.data?.landlord?.status;
+  const stepIndex = 0;
+
+  const updatedAt = summaryQuery.dataUpdatedAt
+    ? new Date(summaryQuery.dataUpdatedAt).toLocaleTimeString()
+    : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-xl border border-gray-100 flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-semibold text-slate-800">
+              Landlord Exit
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {landlordName}
+              {status && status !== "active" && (
+                <span className="ml-2 px-2 py-0.5 rounded-full bg-gray-100 text-slate-600 capitalize">
+                  {status}
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => summaryQuery.refetch()}
+              disabled={summaryQuery.isFetching}
+              title={updatedAt ? `Updated ${updatedAt}` : "Refresh"}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-slate-400 disabled:opacity-50"
+            >
+              <RotateCw
+                className={`w-4 h-4 ${summaryQuery.isFetching ? "animate-spin" : ""}`}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-gray-100 text-slate-400"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <StepPills stepIndex={stepIndex} />
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 min-h-[200px]">
+          {summaryQuery.isLoading ? (
+            <div className="text-center py-8 text-slate-500 text-sm">
+              Loading landlord exit summary…
+            </div>
+          ) : summaryQuery.isError || !exit ? (
+            <div className="text-sm text-red-600">
+              Failed to load the landlord exit summary.
+            </div>
+          ) : (
+            <Overview exit={exit} />
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
+          <span className="text-xs text-slate-400">
+            {updatedAt ? `Live data · updated ${updatedAt}` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-[#0B1F3A] hover:bg-[#08172c] text-white text-sm"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

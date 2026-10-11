@@ -8,6 +8,7 @@ import {
   Eye,
   EyeOff,
   MoreVertical,
+  LogOut,
 } from "lucide-react";
 import { PropertiesCard } from "./PropertiesCard";
 import { PayoutCard } from "./PayoutCard";
@@ -47,6 +48,7 @@ export function LandlordDetails({
   onArchive,
   onReactivate,
   onEndLeases,
+  onExitLandlord,
   onDelete,
   isArchiving,
   isReactivating,
@@ -208,6 +210,18 @@ export function LandlordDetails({
 
             {showMoreMenu && (
               <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                {onExitLandlord && (
+                  <button
+                    onClick={() => {
+                      onExitLandlord();
+                      setShowMoreMenu(false);
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 text-[#0B1F3A] rounded-t-lg"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Exit Landlord
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     onEndLeases();
@@ -215,7 +229,7 @@ export function LandlordDetails({
                   }}
                   disabled={isInactive || isEndingLeases || isDeleting}
                   title={isInactive ? "This landlord is ended/archived" : ""}
-                  className="w-full text-left px-4 py-2 hover:bg-amber-50 flex items-center gap-2 text-amber-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-t-lg"
+                  className={`w-full text-left px-4 py-2 hover:bg-amber-50 flex items-center gap-2 text-amber-800 disabled:opacity-50 disabled:cursor-not-allowed ${onExitLandlord ? "" : "rounded-t-lg"}`}
                 >
                   <Ban className="w-4 h-4" />
                   {endLeasesLabel}

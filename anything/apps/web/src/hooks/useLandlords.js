@@ -193,3 +193,17 @@ export function useDeleteLandlord() {
     },
   });
 }
+
+// Landlord exit preview (termination-summary, incl. its `exit` object). Always
+// read live: the exit wizard has no saved progress, the data is the state.
+// Same key as the Close Landlord modal's summary, so they refresh together.
+export function useLandlordExitSummary(landlordId, enabled) {
+  return useQuery({
+    queryKey: ["landlords", landlordId, "termination-summary"],
+    queryFn: () =>
+      fetchJson(`/api/landlords/${landlordId}/termination-summary`),
+    enabled: enabled && !!landlordId,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+}
