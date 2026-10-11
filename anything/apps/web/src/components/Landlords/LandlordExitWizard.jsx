@@ -9,12 +9,15 @@ import {
   RotateCw,
   Info,
 } from "lucide-react";
+import { useState } from "react";
 import { useLandlordExitSummary } from "@/hooks/useLandlords";
+import TerminationModal from "@/components/Tenants/TerminationModal";
 import { formatCurrencyUGX } from "@/utils/formatCurrency";
 
 // Landlord exit, one level above property decommission: end every lease,
 // decommission every property, settle the balance, close. This chunk is the
-// read-only overview; the later steps are shown but not yet available.
+// overview, with End lease on each lease row (step 2); steps 3 and 4 are
+// shown but not yet available.
 const STEPS = ["overview", "leases", "properties", "close"];
 const STEP_LABELS = {
   overview: "Overview",
@@ -22,6 +25,8 @@ const STEP_LABELS = {
   properties: "Decommission",
   close: "Settle & close",
 };
+// Steps whose actions exist (inline on the overview).
+const AVAILABLE_STEPS = ["leases"];
 
 function StepPills({ stepIndex }) {
   return (
@@ -32,13 +37,21 @@ function StepPills({ stepIndex }) {
             className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium ${
               i === stepIndex
                 ? "bg-[#0B1F3A] text-white"
-                : "bg-gray-100 text-slate-400"
+                : AVAILABLE_STEPS.includes(s)
+                  ? "border border-[#0B1F3A] text-[#0B1F3A]"
+                  : "bg-gray-100 text-slate-400"
             }`}
           >
             {i + 1}
           </span>
           <span
-            className={`text-xs ${i === stepIndex ? "text-[#0B1F3A] font-medium" : "text-slate-400"}`}
+            className={`text-xs ${
+              i === stepIndex
+                ? "text-[#0B1F3A] font-medium"
+                : AVAILABLE_STEPS.includes(s)
+                  ? "text-[#0B1F3A]"
+                  : "text-slate-400"
+            }`}
           >
             {STEP_LABELS[s]}
           </span>
@@ -167,7 +180,7 @@ function ReadinessChecklist({ exit }) {
   );
 }
 
-function PropertySection({ property }) {
+function PropertySection({ property, onEndLease }) {
   const leases = property.active_leases || [];
   const net = Number(property.net_due || 0);
   return (
@@ -216,9 +229,10 @@ function PropertySection({ property }) {
                 <th className="py-2 px-3 text-right whitespace-nowrap">
                   Deposit held
                 </th>
-                <th className="py-2 px-4 text-right whitespace-nowrap">
+                <th className="py-2 px-3 text-right whitespace-nowrap">
                   Prepayment
                 </th>
+                <th className="py-2 px-4" />
               </tr>
             </thead>
             <tbody>
@@ -237,10 +251,21 @@ function PropertySection({ property }) {
                     {formatCurrencyUGX(l.deposit_held)}
                   </td>
                   <td
-                    className="py-2 px-4 text-right text-slate-700 whitespace-nowrap"
+                    className="py-2 px-3 text-right text-slate-700 whitespace-nowrap"
                     title="Tenant-wide prepayment balance"
                   >
                     {formatCurrencyUGX(l.prepayment)}
+                  </td>
+                  <td className="py-2 px-4 text-right whitespace-nowrap">
+                    {/* Also on decommissioned properties: their leases still
+                        have to end before the landlord can close. */}
+                    <button
+                      type="button"
+                      onClick={() => onEndLease(l)}
+                      className="px-2.5 py-1 rounded-lg bg-[#0B1F3A] hover:bg-[#08172c] text-white text-xs font-medium"
+                    >
+                      End lease
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -252,7 +277,7 @@ function PropertySection({ property }) {
   );
 }
 
-function Overview({ exit }) {
+function Overview({ exit, onEndLease }) {
   const net = Number(exit.net_due || 0);
   // Live properties first (they still need work), then decommissioned ones.
   const properties = [...(exit.properties || [])].sort(
@@ -305,13 +330,25 @@ function Overview({ exit }) {
 
       <div className="space-y-3">
         <div className="text-sm font-semibold text-slate-800">Properties</div>
+        {(exit.active_leases_count || 0) > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex gap-2">
+            <Info className="w-4 h-4 shrink-0" />
+            Ending a tenant&apos;s lease voids their unpaid invoices, which
+            reduces what this landlord is owed. The &apos;Owed to landlord&apos;
+            figure above updates after each lease ends.
+          </div>
+        )}
         {properties.length === 0 ? (
           <div className="text-sm text-slate-500">
             This landlord has no properties.
           </div>
         ) : (
           properties.map((p) => (
-            <PropertySection key={p.property_id} property={p} />
+            <PropertySection
+              key={p.property_id}
+              property={p}
+              onEndLease={onEndLease}
+            />
           ))
         )}
         <p className="text-xs text-slate-400">Amounts in UGX.</p>
@@ -326,83 +363,102 @@ export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
   const exit = summaryQuery.data?.exit || null;
   const status = summaryQuery.data?.landlord?.status;
   const stepIndex = 0;
+  // The lease being ended: { tenant_id, lease_id, tenant_name, ... }.
+  const [endingLease, setEndingLease] = useState(null);
 
   const updatedAt = summaryQuery.dataUpdatedAt
     ? new Date(summaryQuery.dataUpdatedAt).toLocaleTimeString()
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-xl border border-gray-100 flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
-          <div>
-            <h2 className="text-base font-semibold text-slate-800">
-              Landlord Exit
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {landlordName}
-              {status && status !== "active" && (
-                <span className="ml-2 px-2 py-0.5 rounded-full bg-gray-100 text-slate-600 capitalize">
-                  {status}
-                </span>
-              )}
-            </p>
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+        <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-xl border border-gray-100 flex flex-col max-h-[90vh]">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
+            <div>
+              <h2 className="text-base font-semibold text-slate-800">
+                Landlord Exit
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {landlordName}
+                {status && status !== "active" && (
+                  <span className="ml-2 px-2 py-0.5 rounded-full bg-gray-100 text-slate-600 capitalize">
+                    {status}
+                  </span>
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => summaryQuery.refetch()}
+                disabled={summaryQuery.isFetching}
+                title={updatedAt ? `Updated ${updatedAt}` : "Refresh"}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-slate-400 disabled:opacity-50"
+              >
+                <RotateCw
+                  className={`w-4 h-4 ${summaryQuery.isFetching ? "animate-spin" : ""}`}
+                />
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-slate-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => summaryQuery.refetch()}
-              disabled={summaryQuery.isFetching}
-              title={updatedAt ? `Updated ${updatedAt}` : "Refresh"}
-              className="p-1.5 rounded-lg hover:bg-gray-100 text-slate-400 disabled:opacity-50"
-            >
-              <RotateCw
-                className={`w-4 h-4 ${summaryQuery.isFetching ? "animate-spin" : ""}`}
-              />
-            </button>
+
+          <StepPills stepIndex={stepIndex} />
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto px-5 py-4 min-h-[200px]">
+            {summaryQuery.isLoading ? (
+              <div className="text-center py-8 text-slate-500 text-sm">
+                Loading landlord exit summary…
+              </div>
+            ) : summaryQuery.isError || !exit ? (
+              <div className="text-sm text-red-600">
+                Failed to load the landlord exit summary.
+              </div>
+            ) : (
+              <Overview exit={exit} onEndLease={(l) => setEndingLease(l)} />
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
+            <span className="text-xs text-slate-400">
+              {updatedAt ? `Live data · updated ${updatedAt}` : ""}
+            </span>
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-gray-100 text-slate-400"
+              className="px-4 py-2 rounded-lg bg-[#0B1F3A] hover:bg-[#08172c] text-white text-sm"
             >
-              <X className="w-4 h-4" />
+              Close
             </button>
           </div>
         </div>
-
-        <StepPills stepIndex={stepIndex} />
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 min-h-[200px]">
-          {summaryQuery.isLoading ? (
-            <div className="text-center py-8 text-slate-500 text-sm">
-              Loading landlord exit summary…
-            </div>
-          ) : summaryQuery.isError || !exit ? (
-            <div className="text-sm text-red-600">
-              Failed to load the landlord exit summary.
-            </div>
-          ) : (
-            <Overview exit={exit} />
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
-          <span className="text-xs text-slate-400">
-            {updatedAt ? `Live data · updated ${updatedAt}` : ""}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-[#0B1F3A] hover:bg-[#08172c] text-white text-sm"
-          >
-            Close
-          </button>
-        </div>
       </div>
-    </div>
+
+      {/* Rendered after the wizard so it layers on top (both are z-50). */}
+      {endingLease && (
+        <TerminationModal
+          tenantId={endingLease.tenant_id}
+          leaseId={endingLease.lease_id}
+          tenantName={endingLease.tenant_name}
+          onClose={() => setEndingLease(null)}
+          onSuccess={() => {
+            setEndingLease(null);
+            // The end-lease hook doesn't refresh landlord queries.
+            summaryQuery.refetch();
+          }}
+        />
+      )}
+    </>
   );
 }
