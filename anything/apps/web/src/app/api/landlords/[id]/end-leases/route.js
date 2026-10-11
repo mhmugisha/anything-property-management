@@ -1,6 +1,15 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
-import { getAccountIdByCode } from "@/app/api/utils/accounting";
+import {
+  hasPermission,
+  requirePermission,
+  writeAuditLog,
+} from "@/app/api/utils/staff";
+import {
+  ensureCanCreditAccount,
+  getDueToLandlordsBalance,
+} from "@/app/api/utils/accounting";
+import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
+import { recordLandlordPayout } from "@/app/api/utils/landlordPayouts";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -60,56 +69,134 @@ export async function POST(request, { params }) {
     const terminationDate = parseDate(body?.termination_date) || today;
     const balanceSettlement = body?.balance_settlement || null;
 
-    const dueToLandlordsAcctId = await getAccountIdByCode("2100");
-
     const payoutAmount = toNumber(balanceSettlement?.payout_amount) || 0;
     const payoutAccountId = toNumber(balanceSettlement?.payout_account_id);
     const payoutTxnDate =
       parseDate(balanceSettlement?.transaction_date) || terminationDate;
 
-    const txOps = (txn) => {
-      const ops = [
-        // Mark landlord as ended
-        txn(
-          `UPDATE landlords
-           SET status = 'ended',
-               end_date = CASE WHEN end_date IS NULL OR end_date > $1::date THEN $1::date ELSE end_date END
-           WHERE id = $2`,
-          [terminationDate, landlordId],
-        ),
-      ];
+    // Final payout: a real landlord payout per property (landlord_payouts row
+    // + Dr 2100 / Cr cash or bank), so getDueToLandlordsBalance drops to zero.
+    // Only for a positive balance owed to the landlord, paid in full.
+    const payouts = [];
+    if (payoutAmount > 0) {
+      // Same permission as recording a payout directly.
+      if (!hasPermission(perm.permissions, "accounting")) {
+        return Response.json({ error: "Forbidden" }, { status: 403 });
+      }
 
-      // GL: settle remaining Due to Landlords balance
-      // DR 2100 (Due to Landlords) / CR payout_account_id (Cash/Bank)
-      if (dueToLandlordsAcctId && payoutAmount > 0 && payoutAccountId) {
-        ops.push(
-          txn(
-            `INSERT INTO transactions (
-               transaction_date, description, reference_number,
-               debit_account_id, credit_account_id,
-               amount, currency, created_by,
-               source_type, source_id, landlord_id, approval_status
-             ) VALUES ($1::date, $2, $3, $4, $5, $6, 'UGX', $7,
-                       'landlord_balance_payout', $8, $9, 'approved')`,
-            [
-              payoutTxnDate,
-              `Final balance payout - ${landlord.full_name}`,
-              `LDL-CLOSE-${landlordId}`,
-              dueToLandlordsAcctId,
-              payoutAccountId,
-              payoutAmount,
-              perm.staff.id,
-              landlordId,
-              landlordId,
-            ],
-          ),
+      // The payout helper picks cash or bank from the method, so map the
+      // chosen account onto the method that resolves to that same account.
+      const [cashRes, bankRes] = await Promise.all([
+        resolveAccountIntent("cash_account"),
+        resolveAccountIntent("bank_account"),
+      ]);
+      let method = null;
+      if (cashRes.ok && Number(cashRes.accountId) === payoutAccountId) {
+        method = "Cash on Hand";
+      } else if (bankRes.ok && Number(bankRes.accountId) === payoutAccountId) {
+        method = "Bank Account - Operating";
+      }
+      if (!method) {
+        return Response.json(
+          { error: "Choose Cash on Hand or the operating bank account" },
+          { status: 400 },
         );
       }
 
-      return ops;
-    };
+      const propertyRows = await sql`
+        SELECT id FROM properties
+        WHERE landlord_id = ${landlordId}
+        ORDER BY id
+      `;
+      const dues = [];
+      for (const p of propertyRows || []) {
+        const propertyId = Number(p.id);
+        const due = Number(
+          (await getDueToLandlordsBalance({ landlordId, propertyId })) || 0,
+        );
+        dues.push({ propertyId, due });
+      }
+      const netDue = dues.reduce((s, d) => s + d.due, 0);
 
-    await sql.transaction(txOps);
+      if (netDue <= 0) {
+        return Response.json(
+          {
+            error:
+              "Nothing is owed to this landlord, so there is no payout to record.",
+          },
+          { status: 409 },
+        );
+      }
+      if (dues.some((d) => d.due < -0.005)) {
+        return Response.json(
+          {
+            error:
+              "This landlord owes the agency on at least one property. Settle the per-property balances before closing with a payout.",
+          },
+          { status: 409 },
+        );
+      }
+      if (Math.abs(payoutAmount - netDue) >= 1) {
+        return Response.json(
+          {
+            error: `Closing pays out the full balance. Due to this landlord is now ${netDue} UGX.`,
+            due_to_landlord: netDue,
+          },
+          { status: 409 },
+        );
+      }
+
+      // Check funds for the whole payout up front, so it can't stop halfway
+      // for lack of cash.
+      const guard = await ensureCanCreditAccount({
+        creditAccountId: payoutAccountId,
+        amount: netDue,
+      });
+      if (!guard.ok) return Response.json(guard.body, { status: guard.status });
+
+      for (const { propertyId, due } of dues) {
+        // Whole cents, never above the due (the helper blocks overpayment).
+        const amount = Math.floor(due * 100) / 100;
+        if (amount <= 0) continue;
+        const result = await recordLandlordPayout({
+          landlordId,
+          propertyId,
+          payoutDate: payoutTxnDate,
+          amount,
+          method,
+          referenceNumber: `LDL-CLOSE-${landlordId}`,
+          notes: "Final balance payout on landlord close",
+          staff: perm.staff,
+          ipAddress: perm.ipAddress,
+        });
+        if (!result.ok) {
+          // Payouts already recorded stand (each is complete on its own); the
+          // landlord stays open, and a retry pays only what is still due.
+          return Response.json(
+            {
+              ...result.body,
+              error: `Payout for property ${propertyId} failed: ${result.body?.error || "unknown error"}. The landlord was not closed.`,
+              payouts_recorded: payouts,
+            },
+            { status: result.status },
+          );
+        }
+        payouts.push({
+          property_id: propertyId,
+          payout_id: Number(result.payout.id),
+          amount,
+        });
+      }
+    }
+    const paidOut = payouts.reduce((s, p) => s + p.amount, 0);
+
+    await sql`
+      UPDATE landlords
+      SET status = 'ended',
+          end_date = CASE WHEN end_date IS NULL OR end_date > ${terminationDate}::date
+                          THEN ${terminationDate}::date ELSE end_date END
+      WHERE id = ${landlordId}
+    `;
 
     await writeAuditLog({
       staffId: perm.staff.id,
@@ -120,7 +207,8 @@ export async function POST(request, { params }) {
       newValues: {
         status: "ended",
         termination_date: terminationDate,
-        payout_amount: payoutAmount,
+        payout_amount: paidOut,
+        payouts,
       },
       ipAddress: perm.ipAddress,
     });
@@ -129,8 +217,9 @@ export async function POST(request, { params }) {
       success: true,
       landlord_id: landlordId,
       termination_date: terminationDate,
-      balance_paid_out: payoutAmount > 0 && !!payoutAccountId,
-      payout_amount: payoutAmount,
+      balance_paid_out: payouts.length > 0,
+      payout_amount: paidOut,
+      payouts,
     });
   } catch (error) {
     console.error("POST /api/landlords/[id]/end-leases error", error);

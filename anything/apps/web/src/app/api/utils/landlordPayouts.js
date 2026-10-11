@@ -1,0 +1,335 @@
+import sql from "@/app/api/utils/sql";
+import { writeAuditLog } from "@/app/api/utils/staff";
+import {
+  ensureCanCreditAccount,
+  getAccountIdByCode,
+  getDueToLandlordsBalance,
+} from "@/app/api/utils/accounting";
+import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
+import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
+
+/**
+ * Record one landlord payout for one property: the landlord_payouts row
+ * (which getDueToLandlordsBalance subtracts per landlord + property), the GL
+ * entry Dr landlord_liability (2100) / Cr cash or bank, the audit log, an
+ * admin notification and the payment-note snapshot. Shared by the payouts
+ * route and Close Landlord so the two can't drift.
+ *
+ * The credit account follows the method: one containing "cash" credits the
+ * cash_account intent (1110), anything else the bank_account intent (1120).
+ *
+ * Validates the amount (> 0, funds available, not above the property's due).
+ * Not transactional: the GL post can't run inside sql.transaction(), so a
+ * failed post deletes the payout row again.
+ *
+ * @returns {Promise<{ ok: true, payout: object, transactionId: number|null }
+ *   | { ok: false, status: number, body: object }>}
+ */
+export async function recordLandlordPayout({
+  landlordId,
+  propertyId,
+  payoutDate,
+  amount,
+  method,
+  referenceNumber = null,
+  notes = null,
+  staff,
+  ipAddress = null,
+}) {
+  if (!landlordId || !propertyId || !payoutDate || !amount || !method) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error:
+          "landlord_id, property_id, payout_date, amount, payment_method are required",
+      },
+    };
+  }
+
+  if (amount <= 0) {
+    return { ok: false, status: 400, body: { error: "Amount must be > 0" } };
+  }
+
+  // Get landlord name for the transaction description
+  const landlordRows = await sql`
+    SELECT full_name FROM landlords WHERE id = ${landlordId} LIMIT 1
+  `;
+  const landlordName = landlordRows?.[0]?.full_name || "Unknown Landlord";
+
+  // FIX: Detect cash vs bank based on method containing "cash" (case-insensitive)
+  // This handles both "Cash" and "Cash on Hand"
+  const isCash = method.toLowerCase().includes("cash");
+  const creditIntent = isCash ? "cash_account" : "bank_account";
+
+  const creditRes = await resolveAccountIntent(creditIntent);
+  if (!creditRes.ok) {
+    return {
+      ok: false,
+      status: 500,
+      body: { error: `Could not resolve ${creditIntent} account` },
+    };
+  }
+
+  const creditAccountId = Number(creditRes.accountId);
+
+  // Prevent paying out money that isn't available in the credited Asset account.
+  // This checks account 1110 (Cash on Hand) if isCash=true, or 1120 (Bank) otherwise.
+  const guard = await ensureCanCreditAccount({
+    creditAccountId,
+    amount,
+  });
+  if (!guard.ok) {
+    return { ok: false, status: guard.status, body: guard.body };
+  }
+
+  // Prevent overpaying this landlord for this property (source-table balance,
+  // same figure as the landlord statement and the dashboard).
+  const due = Number(
+    (await getDueToLandlordsBalance({ landlordId, propertyId })) || 0,
+  );
+  if (amount > due) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: `Overpayment blocked. Due to this landlord for this property is ${due} UGX.`,
+      },
+    };
+  }
+
+  const dupeRows = await sql`
+    SELECT id FROM landlord_payouts
+    WHERE landlord_id = ${landlordId}
+      AND property_id = ${propertyId}
+      AND amount = ${amount}
+      AND payout_date = ${payoutDate}::date
+      AND payment_method = ${method}
+      AND COALESCE(is_deleted, false) = false
+      AND created_at >= NOW() - INTERVAL '60 seconds'
+    LIMIT 1
+  `;
+
+  if (dupeRows?.length > 0) {
+    return {
+      ok: false,
+      status: 409,
+      body: {
+        error:
+          "Duplicate payout detected. A payout with identical details was recorded within the last 60 seconds. If this is intentional, wait a moment and try again.",
+      },
+    };
+  }
+
+  const rows = await sql`
+    INSERT INTO landlord_payouts (
+      landlord_id, property_id, payout_date,
+      amount, payment_method, reference_number, notes,
+      created_by,
+      is_deleted
+    )
+    VALUES (
+      ${landlordId}, ${propertyId}, ${payoutDate}::date,
+      ${amount}, ${method}, ${referenceNumber}, ${notes},
+      ${staff.id},
+      false
+    )
+    RETURNING *
+  `;
+
+  const payout = rows?.[0] || null;
+
+  const desc = `Landlord payout - ${landlordName}`;
+
+  const post = await postAccountingEntryFromIntents({
+    transactionDate: payoutDate,
+    description: desc,
+    referenceNumber: referenceNumber,
+    debitIntent: "landlord_liability",
+    creditIntent,
+    amount,
+    currency: "UGX",
+    createdBy: staff.id,
+    landlordId,
+    propertyId,
+    sourceType: "landlord_payout",
+    sourceId: payout.id,
+    auditContext: {
+      sourceModule: "property",
+      businessEvent: "LANDLORD_PAID",
+      sourceEntity: { type: "landlord_payout", id: payout.id },
+    },
+  });
+
+  if (!post.ok) {
+    // postAccountingEntryFromIntents cannot run inside sql.transaction(), so
+    // compensate by deleting the orphaned payout row (same pattern as payments/route.js).
+    try {
+      await sql`DELETE FROM landlord_payouts WHERE id = ${payout.id}`;
+    } catch (rollbackErr) {
+      console.error(
+        "CRITICAL: GL post failed AND compensating delete failed. Manual cleanup required.",
+        {
+          payoutId: payout.id,
+          glError: post.error,
+          rollbackError: rollbackErr.message,
+        },
+      );
+    }
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        error: `Accounting posting failed; payout was rolled back: ${post.error || "unknown error"}`,
+      },
+    };
+  }
+
+  await writeAuditLog({
+    staffId: staff.id,
+    action: "landlord.payout.create",
+    entityType: "landlord_payout",
+    entityId: payout?.id || null,
+    oldValues: null,
+    newValues: payout,
+    ipAddress: ipAddress,
+  });
+
+  // 🔔 Notify admins about landlord payout
+  // Get landlord and property details for notification
+  if (payout?.id) {
+    const detailsRows = await sql`
+      SELECT 
+        l.full_name AS landlord_name,
+        p.property_name
+      FROM landlord_payouts lp
+      JOIN landlords l ON l.id = lp.landlord_id
+      JOIN properties p ON p.id = lp.property_id
+      WHERE lp.id = ${payout.id}
+      LIMIT 1
+    `;
+
+    const details = detailsRows?.[0];
+    if (details) {
+      notifyAllAdminsAsync({
+        title: "Landlord Payout Recorded",
+        message: `Payout of UGX ${Number(amount).toLocaleString()} recorded for ${details.landlord_name} (${details.property_name}) via ${method}. Recorded by ${staff.full_name || "Staff"}`,
+        type: "payout",
+        reference_id: payout.id,
+        reference_type: "landlord_payout",
+      });
+    }
+  }
+
+  // Snapshot save — non-blocking, does not affect payout success
+  try {
+    const [snYear, snMonth] = payoutDate.split("-").map(Number);
+    const snYearMonth = snYear * 100 + snMonth;
+    const snMM = String(snMonth).padStart(2, "0");
+    const snFirstDay = `${snYear}-${snMM}-01`;
+    const snLastDay = `${snYear}-${snMM}-${String(new Date(snYear, snMonth, 0).getDate()).padStart(2, "0")}`;
+
+    const [acct2100Id, propRows] = await Promise.all([
+      getAccountIdByCode("2100"),
+      sql`SELECT management_fee_type, management_fee_percent, management_fee_fixed_amount FROM properties WHERE id = ${propertyId} LIMIT 1`,
+    ]);
+
+    const prop = propRows?.[0] || {};
+    const feeType = String(prop.management_fee_type || "percent").toLowerCase();
+    const feePercent = Number(prop.management_fee_percent || 0);
+    const feeFixed = Number(prop.management_fee_fixed_amount || 0);
+
+    const [invoiceRows, arrearsRows, dedRows, maintRows] = await Promise.all([
+      sql`SELECT amount FROM invoices WHERE property_id = ${propertyId} AND invoice_year * 100 + invoice_month = ${snYearMonth} AND status <> 'void' AND COALESCE(is_deleted, false) = false AND lease_id IS NOT NULL`,
+      sql`SELECT pia.amount_applied FROM payment_invoice_allocations pia JOIN payments p ON p.id = pia.payment_id JOIN invoices i ON i.id = pia.invoice_id WHERE i.property_id = ${propertyId} AND i.lease_id IS NULL AND COALESCE(i.is_deleted, false) = false AND p.is_reversed = false AND p.payment_date >= ${snFirstDay}::date AND p.payment_date <= ${snLastDay}::date`,
+      sql`SELECT id, deduction_date, description, amount FROM landlord_deductions WHERE landlord_id = ${landlordId} AND property_id = ${propertyId} AND COALESCE(is_deleted, false) = false AND deduction_date >= ${snFirstDay}::date AND deduction_date <= ${snLastDay}::date AND LOWER(description) NOT LIKE 'fees on recovered arrears%'`,
+      acct2100Id
+        ? sql`SELECT id, transaction_date, description, amount FROM transactions WHERE property_id = ${propertyId} AND landlord_id = ${landlordId} AND source_type = 'maintenance' AND debit_account_id = ${acct2100Id} AND COALESCE(is_deleted, false) = false AND transaction_date >= ${snFirstDay}::date AND transaction_date <= ${snLastDay}::date`
+        : Promise.resolve([]),
+    ]);
+
+    const currentRent = invoiceRows.reduce(
+      (s, r) => s + Number(r.amount || 0),
+      0,
+    );
+    const recoveredArrears = arrearsRows.reduce(
+      (s, r) => s + Number(r.amount_applied || 0),
+      0,
+    );
+    const grossRent = currentRent + recoveredArrears;
+
+    let mgmtFee = 0;
+    if (feeType === "percent") {
+      mgmtFee = Math.round(((grossRent * feePercent) / 100) * 100) / 100;
+    } else if (feeType === "fixed" && grossRent > 0) {
+      mgmtFee = Math.min(feeFixed, grossRent);
+    }
+
+    const deductionsSum = dedRows.reduce(
+      (s, r) => s + Number(r.amount || 0),
+      0,
+    );
+    const deductionsJson = dedRows.map((r) => ({
+      id: r.id,
+      date: r.deduction_date,
+      description: r.description,
+      amount: Number(r.amount || 0),
+    }));
+
+    const maintenanceSum = maintRows.reduce(
+      (s, r) => s + Number(r.amount || 0),
+      0,
+    );
+    const maintenanceJson = maintRows.map((r) => ({
+      id: r.id,
+      date: r.transaction_date,
+      description: r.description,
+      amount: Number(r.amount || 0),
+    }));
+
+    const netPayable = grossRent - mgmtFee - deductionsSum - maintenanceSum;
+    const txnId = post.transaction?.id || null;
+
+    await sql(
+      `INSERT INTO landlord_payment_notes (
+        landlord_id, property_id, month, year,
+        payout_date, gross_rent, management_fee,
+        deductions, maintenance, net_payable,
+        amount_paid, payment_account_id, payout_transaction_id, created_by
+      ) VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14)
+      ON CONFLICT (landlord_id, property_id, month, year) DO UPDATE SET
+        payout_date = EXCLUDED.payout_date,
+        gross_rent = EXCLUDED.gross_rent,
+        management_fee = EXCLUDED.management_fee,
+        deductions = EXCLUDED.deductions,
+        maintenance = EXCLUDED.maintenance,
+        net_payable = EXCLUDED.net_payable,
+        amount_paid = EXCLUDED.amount_paid,
+        payment_account_id = EXCLUDED.payment_account_id,
+        payout_transaction_id = EXCLUDED.payout_transaction_id`,
+      [
+        landlordId,
+        propertyId,
+        snMonth,
+        snYear,
+        payoutDate,
+        grossRent,
+        mgmtFee,
+        JSON.stringify(deductionsJson),
+        JSON.stringify(maintenanceJson),
+        netPayable,
+        amount,
+        creditAccountId,
+        txnId,
+        staff.id,
+      ],
+    );
+  } catch (snapshotErr) {
+    console.error(
+      "Payment note snapshot failed (non-blocking):",
+      snapshotErr.message,
+    );
+  }
+  return { ok: true, payout, transactionId: post.transaction?.id || null };
+}
