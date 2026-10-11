@@ -1,6 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
-import { getDueToLandlordsBalance } from "@/app/api/utils/accounting";
+import { getLandlordExitSummary } from "@/app/api/utils/landlordExitSummary";
 
 function toNumber(v) {
   const n = Number(v);
@@ -29,31 +29,19 @@ export async function GET(request, { params }) {
       return Response.json({ error: "Landlord not found" }, { status: 404 });
     }
 
-    // Active tenant lease guard
-    const activeLeaseRows = await sql(
-      `SELECT
-         l.id AS lease_id,
-         l.tenant_id,
-         t.full_name AS tenant_name,
-         p.property_name,
-         u.unit_number
-       FROM leases l
-       JOIN units u ON u.id = l.unit_id
-       JOIN properties p ON p.id = u.property_id
-       JOIN tenants t ON t.id = l.tenant_id
-       WHERE p.landlord_id = $1
-         AND l.status = 'active'
-       ORDER BY p.property_name, u.unit_number`,
-      [landlordId],
-    );
+    // One read-only exit preview; the legacy fields below are derived from it
+    // so the Close Landlord modal and the exit flow can't drift apart.
+    const exit = await getLandlordExitSummary(landlordId);
 
-    const activeLeaseTenants = (activeLeaseRows || []).map((r) => ({
-      lease_id: Number(r.lease_id),
-      tenant_id: Number(r.tenant_id),
-      tenant_name: r.tenant_name,
-      property_name: r.property_name,
-      unit_number: r.unit_number,
-    }));
+    const activeLeaseTenants = exit.properties.flatMap((p) =>
+      p.active_leases.map((l) => ({
+        lease_id: l.lease_id,
+        tenant_id: l.tenant_id,
+        tenant_name: l.tenant_name,
+        property_name: p.property_name,
+        unit_number: l.unit_number,
+      })),
+    );
 
     if (activeLeaseTenants.length > 0) {
       return Response.json({
@@ -67,29 +55,18 @@ export async function GET(request, { params }) {
         active_lease_count: activeLeaseTenants.length,
         active_tenants: activeLeaseTenants,
         message: `This landlord still has ${activeLeaseTenants.length} active tenant lease(s). Please terminate all tenant leases before closing this landlord.`,
+        exit,
       });
     }
 
     // Due to this landlord: getDueToLandlordsBalance (source tables) for each
     // of their properties, summed. The 2100 ledger is out of sync and not used.
-    const propertyRows = await sql`
-      SELECT id, property_name
-      FROM properties
-      WHERE landlord_id = ${landlordId}
-      ORDER BY property_name
-    `;
-    const dueByProperty = [];
-    for (const p of propertyRows || []) {
-      const due = Number(
-        (await getDueToLandlordsBalance({ landlordId, propertyId: p.id })) || 0,
-      );
-      dueByProperty.push({
-        property_id: Number(p.id),
-        property_name: p.property_name,
-        due,
-      });
-    }
-    const dueToLandlordsBalance = dueByProperty.reduce((s, r) => s + r.due, 0);
+    const dueByProperty = exit.properties.map((p) => ({
+      property_id: p.property_id,
+      property_name: p.property_name,
+      due: p.net_due,
+    }));
+    const dueToLandlordsBalance = exit.net_due;
 
     // Asset accounts for payout dropdown (Cash on Hand, Bank)
     const assetAccounts = await sql`
@@ -118,6 +95,7 @@ export async function GET(request, { params }) {
         account_code: a.account_code,
         account_name: a.account_name,
       })),
+      exit,
     });
   } catch (error) {
     console.error("GET /api/landlords/[id]/termination-summary error", error);
