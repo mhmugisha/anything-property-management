@@ -213,7 +213,7 @@ export default function LandlordsPage() {
     if (!selected?.id) return;
     if (typeof window !== "undefined") {
       const ok = window.confirm(
-        "Archive this landlord? This will end all active leases under their properties, make units vacant, and stop auto-invoicing. You can reactivate later.",
+        "Archive this landlord? All their tenant leases must already be ended. Archived landlords are hidden and not invoiced. You can reactivate later.",
       );
       if (!ok) return;
     }
@@ -221,6 +221,12 @@ export default function LandlordsPage() {
     archiveLandlordMutation.mutate(selected.id, {
       onSuccess: () => {
         setShowArchived(true);
+      },
+      // e.g. 409 "still has N active tenant lease(s)": tell the user why.
+      onError: (error) => {
+        if (typeof window !== "undefined") {
+          window.alert(error?.message || "Failed to archive landlord");
+        }
       },
     });
   }, [selected?.id, archiveLandlordMutation]);

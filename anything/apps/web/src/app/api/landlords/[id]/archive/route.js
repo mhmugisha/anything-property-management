@@ -1,84 +1,11 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { countActiveLeasesForLandlord } from "@/app/api/utils/landlordLeases";
 
 function toNumber(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
   return n;
-}
-
-async function endActiveLeasesForLandlord({ landlordId, staffId }) {
-  const activeLeaseRows = await sql(
-    `
-      SELECT l.id, l.unit_id
-      FROM leases l
-      JOIN units u ON u.id = l.unit_id
-      JOIN properties p ON p.id = u.property_id
-      WHERE p.landlord_id = $1
-        AND l.status = 'active'
-    `,
-    [landlordId],
-  );
-
-  const leaseIds = (activeLeaseRows || [])
-    .map((r) => Number(r.id))
-    .filter(Boolean);
-  const unitIds = (activeLeaseRows || [])
-    .map((r) => Number(r.unit_id))
-    .filter(Boolean);
-
-  if (leaseIds.length === 0) {
-    return { endedLeases: 0 };
-  }
-
-  await sql.transaction((txn) => [
-    txn(
-      `
-        UPDATE leases
-        SET status = 'ended',
-            auto_renew = false,
-            end_date = CASE
-              WHEN end_date > CURRENT_DATE THEN CURRENT_DATE
-              ELSE end_date
-            END
-        WHERE id = ANY($1::int[])
-      `,
-      [leaseIds],
-    ),
-
-    unitIds.length
-      ? txn(`UPDATE units SET status = 'vacant' WHERE id = ANY($1::int[])`, [
-          unitIds,
-        ])
-      : txn`SELECT 1`,
-
-    txn(
-      `
-        UPDATE invoices
-        SET status = 'void'
-        WHERE lease_id = ANY($1::int[])
-          AND invoice_date > CURRENT_DATE
-          AND paid_amount = 0
-          AND status <> 'paid'
-      `,
-      [leaseIds],
-    ),
-
-    // Resolve any open review flags for these leases
-    txn(
-      `
-        UPDATE lease_review_flags
-        SET resolved_at     = NOW(),
-            resolved_by     = $2,
-            resolution_note = 'Leases ended: landlord archived'
-        WHERE lease_id = ANY($1::int[])
-          AND resolved_at IS NULL
-      `,
-      [leaseIds, staffId],
-    ),
-  ]);
-
-  return { endedLeases: leaseIds.length };
 }
 
 export async function POST(request, { params }) {
@@ -103,13 +30,20 @@ export async function POST(request, { params }) {
       return Response.json({ error: "Landlord not found" }, { status: 404 });
     }
 
-    // End any active leases under this landlord and resolve their review flags.
-    const ended = await endActiveLeasesForLandlord({ landlordId, staffId: perm.staff.id });
-
+    // Archive only while no lease on the landlord's properties is active, in
+    // one statement, so a lease can't slip in between check and write. Leases
+    // are ended one at a time through the tenant end-lease flow, never here.
     const updatedRows = await sql`
       UPDATE landlords
       SET status = 'archived'
       WHERE id = ${landlordId}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM leases l
+          JOIN units u ON u.id = l.unit_id
+          JOIN properties p ON p.id = u.property_id
+          WHERE p.landlord_id = ${landlordId} AND l.status = 'active'
+        )
       RETURNING id, title, full_name, phone, email, due_date,
         (CASE WHEN due_date IS NULL THEN NULL ELSE EXTRACT(day FROM due_date)::int END) AS due_day,
         start_date,
@@ -117,6 +51,17 @@ export async function POST(request, { params }) {
         status,
         created_at
     `;
+
+    if (!updatedRows?.length) {
+      const activeCount = await countActiveLeasesForLandlord(landlordId);
+      return Response.json(
+        {
+          error: `This landlord still has ${activeCount} active tenant lease(s). End all tenant leases before archiving.`,
+          active_lease_count: activeCount,
+        },
+        { status: 409 },
+      );
+    }
 
     const updated = updatedRows?.[0] || null;
 
@@ -126,11 +71,11 @@ export async function POST(request, { params }) {
       entityType: "landlord",
       entityId: landlordId,
       oldValues: landlord,
-      newValues: { ...updated, ...ended },
+      newValues: updated,
       ipAddress: perm.ipAddress,
     });
 
-    return Response.json({ landlord: updated, ...ended });
+    return Response.json({ landlord: updated });
   } catch (error) {
     console.error("POST /api/landlords/[id]/archive error", error);
     return Response.json(

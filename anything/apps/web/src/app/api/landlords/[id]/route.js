@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { countActiveLeasesForLandlord } from "@/app/api/utils/landlordLeases";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 const ALLOWED_PAYMENT_METHODS = new Set(["bank", "mobile_money"]);
@@ -53,77 +54,6 @@ function normalizeDateInput(value) {
   }
 
   return null;
-}
-
-async function endActiveLeasesForLandlord({ landlordId }) {
-  await sql.transaction((txn) => [
-    txn(
-      `
-        UPDATE leases l
-        SET status = 'ended',
-            auto_renew = false,
-            end_date = CASE
-              WHEN l.end_date > CURRENT_DATE THEN CURRENT_DATE
-              ELSE l.end_date
-            END
-        FROM units u
-        JOIN properties p ON p.id = u.property_id
-        WHERE l.unit_id = u.id
-          AND p.landlord_id = $1
-          AND l.status = 'active'
-      `,
-      [landlordId],
-    ),
-
-    // Make units vacant only if they truly have no active lease
-    txn(
-      `
-        UPDATE units u
-        SET status = 'vacant'
-        FROM properties p
-        WHERE u.property_id = p.id
-          AND p.landlord_id = $1
-          AND NOT EXISTS (
-            SELECT 1
-            FROM leases l
-            WHERE l.unit_id = u.id
-              AND l.status = 'active'
-          )
-      `,
-      [landlordId],
-    ),
-
-    txn(
-      `
-        UPDATE invoices i
-        SET status = 'void'
-        FROM leases l
-        JOIN units u ON u.id = l.unit_id
-        JOIN properties p ON p.id = u.property_id
-        WHERE i.lease_id = l.id
-          AND p.landlord_id = $1
-          AND i.invoice_date > CURRENT_DATE
-          AND i.paid_amount = 0
-          AND i.status <> 'paid'
-      `,
-      [landlordId],
-    ),
-  ]);
-
-  const countRows = await sql(
-    `
-      SELECT COUNT(*)::int AS ended
-      FROM leases l
-      JOIN units u ON u.id = l.unit_id
-      JOIN properties p ON p.id = u.property_id
-      WHERE p.landlord_id = $1
-        AND l.status = 'ended'
-        AND l.end_date = CURRENT_DATE
-    `,
-    [landlordId],
-  );
-
-  return { endedLeases: Number(countRows?.[0]?.ended || 0) };
 }
 
 export async function GET(request, { params }) {
@@ -390,18 +320,30 @@ export async function PUT(request, { params }) {
       return Response.json({ error: "No valid fields" }, { status: 400 });
     }
 
+    // A past end date ends the landlord (see the status CASE above). That is
+    // only allowed once no lease on their properties is active; leases are
+    // ended one at a time through the tenant end-lease flow, never here.
+    if (endDate && oldLandlord.status !== "ended") {
+      const [{ ends }] =
+        await sql`SELECT CURRENT_DATE > ${endDate}::date AS ends`;
+      if (ends) {
+        const activeCount = await countActiveLeasesForLandlord(id);
+        if (activeCount > 0) {
+          return Response.json(
+            {
+              error: `This landlord still has ${activeCount} active tenant lease(s). End all tenant leases before ending the landlord.`,
+              active_lease_count: activeCount,
+            },
+            { status: 409 },
+          );
+        }
+      }
+    }
+
     const query = `UPDATE landlords SET ${set.join(", ")} WHERE id = $${values.length + 1} RETURNING id, title, full_name, phone, email, due_date, (CASE WHEN due_date IS NULL THEN NULL ELSE EXTRACT(day FROM due_date)::int END) AS due_day, start_date, end_date, payment_method, bank_name, bank_account_title, bank_account_number, mobile_money_name, mobile_money_phone, COALESCE(status, 'active') AS status, created_at`;
 
     const updatedRows = await sql(query, [...values, id]);
     const landlord = updatedRows?.[0] || null;
-
-    let extraAudit = null;
-
-    // If landlord just became ended, end all their tenants' active leases and void future invoices.
-    if (landlord?.status === "ended" && oldLandlord?.status !== "ended") {
-      const ended = await endActiveLeasesForLandlord({ landlordId: id });
-      extraAudit = ended;
-    }
 
     await writeAuditLog({
       staffId: perm.staff.id,
@@ -409,11 +351,11 @@ export async function PUT(request, { params }) {
       entityType: "landlord",
       entityId: id,
       oldValues: oldLandlord,
-      newValues: extraAudit ? { ...landlord, ...extraAudit } : landlord,
+      newValues: landlord,
       ipAddress: perm.ipAddress,
     });
 
-    return Response.json({ landlord, ...(extraAudit || {}) });
+    return Response.json({ landlord });
   } catch (error) {
     console.error("PUT /api/landlords/[id] error", error);
     return Response.json(
