@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useLandlordExitSummary } from "@/hooks/useLandlords";
+import { useDecommissionProperty } from "@/hooks/useProperties";
 import TerminationModal from "@/components/Tenants/TerminationModal";
 import { formatCurrencyUGX } from "@/utils/formatCurrency";
 
@@ -26,7 +27,7 @@ const STEP_LABELS = {
   close: "Settle & close",
 };
 // Steps whose actions exist (inline on the overview).
-const AVAILABLE_STEPS = ["leases"];
+const AVAILABLE_STEPS = ["leases", "properties"];
 
 function StepPills({ stepIndex }) {
   return (
@@ -180,9 +181,18 @@ function ReadinessChecklist({ exit }) {
   );
 }
 
-function PropertySection({ property, onEndLease }) {
+function PropertySection({
+  property,
+  onEndLease,
+  onDecommission,
+  decommissioningId,
+  decommissionError,
+}) {
   const leases = property.active_leases || [];
   const net = Number(property.net_due || 0);
+  const canDecommission =
+    !property.is_archived && property.active_lease_count === 0;
+  const isDecommissioning = decommissioningId === property.property_id;
   return (
     <div className="rounded-xl border border-gray-100">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-100">
@@ -203,15 +213,32 @@ function PropertySection({ property, onEndLease }) {
             {leases.length} active lease{leases.length === 1 ? "" : "s"}
           </span>
         </div>
-        <div className="text-right">
-          <div className="text-xs text-slate-500">{netDueLabel(net)}</div>
-          <div
-            className={`text-sm font-semibold ${net < 0 ? "text-rose-700" : "text-slate-800"}`}
-          >
-            {formatCurrencyUGX(Math.abs(net))}
+        <div className="flex items-center gap-3">
+          {canDecommission && (
+            <button
+              type="button"
+              onClick={() => onDecommission(property)}
+              disabled={isDecommissioning}
+              className="px-2.5 py-1 rounded-lg bg-[#0B1F3A] hover:bg-[#08172c] text-white text-xs font-medium disabled:opacity-50"
+            >
+              {isDecommissioning ? "Decommissioning…" : "Decommission"}
+            </button>
+          )}
+          <div className="text-right">
+            <div className="text-xs text-slate-500">{netDueLabel(net)}</div>
+            <div
+              className={`text-sm font-semibold ${net < 0 ? "text-rose-700" : "text-slate-800"}`}
+            >
+              {formatCurrencyUGX(Math.abs(net))}
+            </div>
           </div>
         </div>
       </div>
+      {decommissionError?.id === property.property_id && (
+        <div className="px-4 pt-2 text-xs text-red-600">
+          {decommissionError.msg}
+        </div>
+      )}
       {leases.length === 0 ? (
         <div className="px-4 py-3 text-sm text-slate-500">
           No active leases.
@@ -292,7 +319,13 @@ function PropertySection({ property, onEndLease }) {
   );
 }
 
-function Overview({ exit, onEndLease }) {
+function Overview({
+  exit,
+  onEndLease,
+  onDecommission,
+  decommissioningId,
+  decommissionError,
+}) {
   const net = Number(exit.net_due || 0);
   // Live properties first (they still need work), then decommissioned ones.
   const properties = [...(exit.properties || [])].sort(
@@ -365,6 +398,9 @@ function Overview({ exit, onEndLease }) {
               key={p.property_id}
               property={p}
               onEndLease={onEndLease}
+              onDecommission={onDecommission}
+              decommissioningId={decommissioningId}
+              decommissionError={decommissionError}
             />
           ))
         )}
@@ -382,6 +418,35 @@ export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
   const stepIndex = 0;
   // The lease being ended: { tenant_id, lease_id, tenant_name, ... }.
   const [endingLease, setEndingLease] = useState(null);
+  const decommissionMutation = useDecommissionProperty();
+  const [decommissioningId, setDecommissioningId] = useState(null);
+  // { id, msg } for the property whose decommission failed.
+  const [decommissionError, setDecommissionError] = useState(null);
+
+  function onDecommission(property) {
+    const ok = window.confirm(
+      `Decommission ${property.property_name}? No new rent invoices will be generated, it will be hidden from the property list, and its units can't take new leases. History is kept and you can reactivate it later.`,
+    );
+    if (!ok) return;
+    setDecommissionError(null);
+    setDecommissioningId(property.property_id);
+    decommissionMutation.mutate(property.property_id, {
+      onSuccess: () => {
+        setDecommissioningId(null);
+        // The decommission hook doesn't refresh landlord queries.
+        summaryQuery.refetch();
+      },
+      onError: (e) => {
+        setDecommissionError({
+          id: property.property_id,
+          msg: e?.message || "Could not decommission this property.",
+        });
+        setDecommissioningId(null);
+        // Resync after a 409, same as DecommissionModal.
+        summaryQuery.refetch();
+      },
+    });
+  }
 
   const updatedAt = summaryQuery.dataUpdatedAt
     ? new Date(summaryQuery.dataUpdatedAt).toLocaleTimeString()
@@ -442,7 +507,13 @@ export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
                 Failed to load the landlord exit summary.
               </div>
             ) : (
-              <Overview exit={exit} onEndLease={(l) => setEndingLease(l)} />
+              <Overview
+                exit={exit}
+                onEndLease={(l) => setEndingLease(l)}
+                onDecommission={onDecommission}
+                decommissioningId={decommissioningId}
+                decommissionError={decommissionError}
+              />
             )}
           </div>
 
