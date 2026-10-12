@@ -23,11 +23,14 @@ import { evaluateLandlordCloseGate } from "@/app/api/utils/landlordCloseGate";
  * date cap, so future-month invoices count, as they do in the helper).
  * events_match is false when the two figures diverge by 1 UGX or more.
  *
- * Each active lease carries owed_reduction: how much ending it today would
- * cut net_due through its auto-voided invoices (future months, nothing
- * paid — the termination-summary auto-void set). Computed per month as the
- * landlord credit (gross − fee) before minus after removing those invoices,
- * so it tracks getDueToLandlordsBalance exactly, fixed fees included.
+ * Each active lease carries owed_reduction_ceiling: the MAXIMUM ending it
+ * could cut net_due, if every invoice on it with an unpaid portion (past,
+ * current or future month) is voided or written down to its paid amount at
+ * termination. It is not what a default termination does — kept or
+ * collected invoices avoid their share. Computed per month as the landlord
+ * credit (gross − fee) before minus after removing each invoice's unpaid
+ * portion, so it tracks getDueToLandlordsBalance exactly, fixed fees
+ * included.
  *
  * @param {number} landlordId
  */
@@ -88,14 +91,11 @@ export async function getLandlordExitSummary(landlordId) {
     });
   }
 
-  const today = new Date();
-  const termYM = today.getUTCFullYear() * 100 + (today.getUTCMonth() + 1);
-
   const properties = [];
   for (const p of propertyRows || []) {
     const propertyId = Number(p.id);
     const activeLeases = leasesByProperty.get(propertyId) || [];
-    await attachOwedReductions(p, activeLeases, termYM);
+    await attachOwedReductions(p, activeLeases);
     const netDue = Number(
       (await getDueToLandlordsBalance({ landlordId, propertyId })) || 0,
     );
@@ -145,18 +145,18 @@ export async function getLandlordExitSummary(landlordId) {
 }
 
 /**
- * Sets owed_reduction on each lease row (see getLandlordExitSummary). Two
- * queries per property; same invoice filter and fee helper as
- * getDueToLandlordsBalance.
+ * Sets owed_reduction_ceiling on each lease row (see
+ * getLandlordExitSummary). Two queries per property; same invoice filter and
+ * fee helper as getDueToLandlordsBalance.
  */
-async function attachOwedReductions(property, leases, termYM) {
-  for (const l of leases) l.owed_reduction = 0;
+async function attachOwedReductions(property, leases) {
+  for (const l of leases) l.owed_reduction_ceiling = 0;
   if (leases.length === 0) return;
 
   const propertyId = Number(property.id);
   const leaseIds = leases.map((l) => l.lease_id);
 
-  const [grossRows, autoVoidRows] = await Promise.all([
+  const [grossRows, removableRows] = await Promise.all([
     sql(
       `SELECT invoice_year, invoice_month,
               COALESCE(SUM(amount), 0)::numeric AS gross
@@ -169,16 +169,15 @@ async function attachOwedReductions(property, leases, termYM) {
     ),
     sql(
       `SELECT lease_id, invoice_year, invoice_month,
-              COALESCE(SUM(amount), 0)::numeric AS auto_void
+              COALESCE(SUM(amount - paid_amount), 0)::numeric AS removable
        FROM invoices
        WHERE property_id = $1
          AND lease_id = ANY($2::int[])
-         AND invoice_year * 100 + invoice_month > $3
-         AND paid_amount = 0
-         AND status NOT IN ('void', 'paid')
+         AND status <> 'void'
          AND COALESCE(is_deleted, false) = false
+         AND (amount - paid_amount) > 0
        GROUP BY lease_id, invoice_year, invoice_month`,
-      [propertyId, leaseIds, termYM],
+      [propertyId, leaseIds],
     ),
   ]);
 
@@ -190,11 +189,11 @@ async function attachOwedReductions(property, leases, termYM) {
   const credit = (gross) => gross - monthlyManagementFee(gross, fees);
 
   const reductionByLease = new Map();
-  for (const r of autoVoidRows || []) {
-    const a = Number(r.auto_void || 0);
-    if (a <= 0) continue;
+  for (const r of removableRows || []) {
+    const removable = Number(r.removable || 0);
+    if (removable <= 0) continue;
     const g = grossMap.get(ym(r)) || 0;
-    const gp = Math.max(0, g - a);
+    const gp = Math.max(0, g - removable);
     const leaseId = Number(r.lease_id);
     reductionByLease.set(
       leaseId,
@@ -203,7 +202,7 @@ async function attachOwedReductions(property, leases, termYM) {
   }
 
   for (const l of leases) {
-    l.owed_reduction = Math.max(
+    l.owed_reduction_ceiling = Math.max(
       0,
       Math.round(reductionByLease.get(l.lease_id) || 0),
     );

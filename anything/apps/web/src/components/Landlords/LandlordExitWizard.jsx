@@ -233,7 +233,7 @@ function PropertySection({ property, onEndLease }) {
                   Prepayment
                 </th>
                 <th className="py-2 px-3 text-right whitespace-nowrap">
-                  Reduces owed
+                  Could reduce owed
                 </th>
                 <th className="py-2 px-4" />
               </tr>
@@ -261,11 +261,11 @@ function PropertySection({ property, onEndLease }) {
                   </td>
                   <td
                     className="py-2 px-3 text-right whitespace-nowrap"
-                    title="Ending this lease voids its unpaid future invoices, reducing what the landlord is owed by this amount (assumes ending today). Voiding current unpaid invoices during termination increases it."
+                    title="The most ending this lease could cut what the landlord is owed — if every unpaid invoice on it is voided at termination. Keeping an invoice (the default) or collecting it first avoids that part."
                   >
-                    {Number(l.owed_reduction || 0) > 0 ? (
+                    {Number(l.owed_reduction_ceiling || 0) > 0 ? (
                       <span className="text-amber-700">
-                        −{formatCurrencyUGX(l.owed_reduction)}
+                        up to −{formatCurrencyUGX(l.owed_reduction_ceiling)}
                       </span>
                     ) : (
                       <span className="text-slate-400">—</span>
@@ -348,9 +348,11 @@ function Overview({ exit, onEndLease }) {
         {(exit.active_leases_count || 0) > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 flex gap-2">
             <Info className="w-4 h-4 shrink-0" />
-            Ending a tenant&apos;s lease voids their unpaid invoices, which
-            reduces what this landlord is owed. The &apos;Owed to landlord&apos;
-            figure above updates after each lease ends.
+            Voiding a tenant&apos;s unpaid invoices at termination reduces what
+            this landlord is owed. &apos;Could reduce owed&apos; is the most
+            each lease could cut if all its unpaid invoices are voided — keeping
+            or collecting them avoids it. The &apos;Owed to landlord&apos;
+            figure updates after each lease ends.
           </div>
         )}
         {properties.length === 0 ? (
