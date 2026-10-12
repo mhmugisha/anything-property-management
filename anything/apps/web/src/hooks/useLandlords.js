@@ -139,22 +139,6 @@ export function useReactivateLandlord() {
   });
 }
 
-export function useEndLandlordLeases() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ landlordId, payload }) =>
-      postJson(`/api/landlords/${landlordId}/end-leases`, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["landlords"] });
-      qc.invalidateQueries({ queryKey: ["tenants"] });
-      qc.invalidateQueries({ queryKey: ["invoices"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["reports"] });
-      qc.invalidateQueries({ queryKey: ["accounting"] });
-    },
-  });
-}
-
 // Close a landlord: the gated close in end-leases, which also pays out any
 // positive balance per property before marking the landlord ended.
 export function useCloseLandlord() {
@@ -167,33 +151,6 @@ export function useCloseLandlord() {
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["accounting"] });
       qc.invalidateQueries({ queryKey: ["reports"] });
-    },
-  });
-}
-
-export function useLandlordTerminationSummary(landlordId, enabled = true) {
-  return useQuery({
-    queryKey: ["landlords", landlordId, "termination-summary"],
-    queryFn: async () =>
-      fetchJson(`/api/landlords/${landlordId}/termination-summary`),
-    enabled: enabled && !!landlordId,
-    staleTime: 0,
-  });
-}
-
-export function useEndLandlordContractNow() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id) =>
-      postJson(`/api/landlords/${id}/end-contract-now`, {}),
-    onSuccess: (_data, id) => {
-      qc.invalidateQueries({ queryKey: ["landlords"] });
-      qc.invalidateQueries({ queryKey: ["landlord", String(id)] });
-      qc.invalidateQueries({ queryKey: ["tenants"] });
-      qc.invalidateQueries({ queryKey: ["invoices"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["reports"] });
-      qc.invalidateQueries({ queryKey: ["lookups", "landlords"] });
     },
   });
 }

@@ -17,12 +17,10 @@ import {
   useCreateLandlordPayout,
   useArchiveLandlord,
   useReactivateLandlord,
-  useEndLandlordContractNow,
   useDeleteLandlord,
 } from "@/hooks/useLandlords";
 import { LandlordForm } from "@/components/Landlords/LandlordForm";
 import { LandlordDetails } from "@/components/Landlords/LandlordDetails";
-import { LandlordTerminationModal } from "@/components/Landlords/LandlordTerminationModal";
 import { LandlordExitWizard } from "@/components/Landlords/LandlordExitWizard";
 import { useLandlordForm } from "@/hooks/useLandlordForm";
 import { useLandlordPayout } from "@/hooks/useLandlordPayout";
@@ -74,7 +72,6 @@ export default function LandlordsPage() {
 
   const archiveLandlordMutation = useArchiveLandlord();
   const reactivateLandlordMutation = useReactivateLandlord();
-  const endContractNowMutation = useEndLandlordContractNow();
   const deleteLandlordMutation = useDeleteLandlord();
 
   const {
@@ -128,7 +125,6 @@ export default function LandlordsPage() {
   const rows = statement?.rows || [];
 
   const createPayoutMutation = useCreateLandlordPayout();
-  const [showTerminationModal, setShowTerminationModal] = useState(false);
   const [showExitWizard, setShowExitWizard] = useState(false);
 
   // Track success state
@@ -237,11 +233,6 @@ export default function LandlordsPage() {
     if (!selected?.id) return;
     reactivateLandlordMutation.mutate(selected.id);
   }, [selected?.id, reactivateLandlordMutation]);
-
-  const onEndLeases = useCallback(() => {
-    if (!selected?.id) return;
-    setShowTerminationModal(true);
-  }, [selected?.id]);
 
   const onDeleteLandlord = useCallback(() => {
     if (!selected?.id) return;
@@ -450,12 +441,10 @@ export default function LandlordsPage() {
                 canReports={canReports}
                 onArchive={onArchiveLandlord}
                 onReactivate={onReactivateLandlord}
-                onEndLeases={onEndLeases}
                 onExitLandlord={() => setShowExitWizard(true)}
                 onDelete={onDeleteLandlord}
                 isArchiving={archiveLandlordMutation.isPending}
                 isReactivating={reactivateLandlordMutation.isPending}
-                isEndingLeases={endContractNowMutation.isPending}
                 isDeleting={deleteLandlordMutation.isPending}
               />
             ) : null}
@@ -474,18 +463,6 @@ export default function LandlordsPage() {
           landlordId={selected.id}
           landlordName={selected.full_name}
           onClose={() => setShowExitWizard(false)}
-        />
-      )}
-
-      {showTerminationModal && selected && (
-        <LandlordTerminationModal
-          landlordId={selected.id}
-          landlordName={selected.full_name}
-          onClose={() => setShowTerminationModal(false)}
-          onSuccess={() => {
-            setShowTerminationModal(false);
-            setShowArchived(true);
-          }}
         />
       )}
     </div>

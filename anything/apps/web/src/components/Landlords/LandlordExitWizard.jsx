@@ -116,7 +116,7 @@ function ChecklistItem({ state, title, detail }) {
   );
 }
 
-function ReadinessChecklist({ exit }) {
+function ReadinessChecklist({ exit, isEnded }) {
   const codes = exit.close_blocker_codes || [];
   const leases = exit.active_leases_count || 0;
   const live = exit.live_properties_count || 0;
@@ -175,7 +175,8 @@ function ReadinessChecklist({ exit }) {
         />
         {balanceItem}
       </ul>
-      {exit.can_close ? (
+      {/* Once ended, the Settle & close panel says so instead. */}
+      {isEnded ? null : exit.can_close ? (
         <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800 flex gap-2">
           <Check className="w-4 h-4 shrink-0 mt-0.5" />
           Ready to close.
@@ -445,6 +446,7 @@ function SettleClosePanel({
 
 function Overview({
   exit,
+  isEnded,
   settlePanel,
   onEndLease,
   onDecommission,
@@ -499,7 +501,7 @@ function Overview({
         </div>
       )}
 
-      <ReadinessChecklist exit={exit} />
+      <ReadinessChecklist exit={exit} isEnded={isEnded} />
 
       {exit.can_close === true && settlePanel}
 
@@ -682,6 +684,7 @@ export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
             ) : (
               <Overview
                 exit={exit}
+                isEnded={status === "ended"}
                 settlePanel={
                   <SettleClosePanel
                     exit={exit}

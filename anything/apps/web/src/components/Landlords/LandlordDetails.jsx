@@ -3,7 +3,6 @@ import {
   Save,
   Archive,
   RotateCcw,
-  Ban,
   Trash2,
   Eye,
   EyeOff,
@@ -47,12 +46,10 @@ export function LandlordDetails({
   // read-only actions
   onArchive,
   onReactivate,
-  onEndLeases,
   onExitLandlord,
   onDelete,
   isArchiving,
   isReactivating,
-  isEndingLeases,
   isDeleting,
 }) {
   const [showDetails, setShowDetails] = useState(false);
@@ -124,15 +121,13 @@ export function LandlordDetails({
 
   const archiveLabel = isArchiving ? "Archiving…" : "Archive";
   const reactivateLabel = isReactivating ? "Reactivating…" : "Reactivate";
-  const endLeasesLabel = isEndingLeases ? "Ending…" : "End Lease";
   const deleteLabel = isDeleting ? "Deleting…" : "Delete";
 
   const toggleDetailsLabel = showDetails ? "Hide Details" : "View Details";
   const toggleDetailsIcon = showDetails ? EyeOff : Eye;
   const ToggleDetailsIcon = toggleDetailsIcon;
 
-  const actionsDisabled =
-    isDeleting || isArchiving || isReactivating || isEndingLeases;
+  const actionsDisabled = isDeleting || isArchiving || isReactivating;
 
   const canOpenPaymentNote =
     canReports === true && !!landlord?.id && !!selectedPropertyId;
@@ -222,18 +217,6 @@ export function LandlordDetails({
                     Exit Landlord
                   </button>
                 )}
-                <button
-                  onClick={() => {
-                    onEndLeases();
-                    setShowMoreMenu(false);
-                  }}
-                  disabled={isInactive || isEndingLeases || isDeleting}
-                  title={isInactive ? "This landlord is ended/archived" : ""}
-                  className={`w-full text-left px-4 py-2 hover:bg-amber-50 flex items-center gap-2 text-amber-800 disabled:opacity-50 disabled:cursor-not-allowed ${onExitLandlord ? "" : "rounded-t-lg"}`}
-                >
-                  <Ban className="w-4 h-4" />
-                  {endLeasesLabel}
-                </button>
 
                 <button
                   onClick={() => {
