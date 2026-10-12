@@ -232,6 +232,9 @@ function PropertySection({ property, onEndLease }) {
                 <th className="py-2 px-3 text-right whitespace-nowrap">
                   Prepayment
                 </th>
+                <th className="py-2 px-3 text-right whitespace-nowrap">
+                  Reduces owed
+                </th>
                 <th className="py-2 px-4" />
               </tr>
             </thead>
@@ -255,6 +258,18 @@ function PropertySection({ property, onEndLease }) {
                     title="Tenant-wide prepayment balance"
                   >
                     {formatCurrencyUGX(l.prepayment)}
+                  </td>
+                  <td
+                    className="py-2 px-3 text-right whitespace-nowrap"
+                    title="Ending this lease voids its unpaid future invoices, reducing what the landlord is owed by this amount (assumes ending today). Voiding current unpaid invoices during termination increases it."
+                  >
+                    {Number(l.owed_reduction || 0) > 0 ? (
+                      <span className="text-amber-700">
+                        −{formatCurrencyUGX(l.owed_reduction)}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="py-2 px-4 text-right whitespace-nowrap">
                     {/* Also on decommissioned properties: their leases still
