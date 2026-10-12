@@ -155,6 +155,22 @@ export function useEndLandlordLeases() {
   });
 }
 
+// Close a landlord: the gated close in end-leases, which also pays out any
+// positive balance per property before marking the landlord ended.
+export function useCloseLandlord() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ landlordId, payload }) =>
+      postJson(`/api/landlords/${landlordId}/end-leases`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["landlords"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["accounting"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
+  });
+}
+
 export function useLandlordTerminationSummary(landlordId, enabled = true) {
   return useQuery({
     queryKey: ["landlords", landlordId, "termination-summary"],

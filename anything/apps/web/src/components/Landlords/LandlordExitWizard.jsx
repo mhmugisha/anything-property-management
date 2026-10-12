@@ -10,7 +10,7 @@ import {
   Info,
 } from "lucide-react";
 import { useState } from "react";
-import { useLandlordExitSummary } from "@/hooks/useLandlords";
+import { useCloseLandlord, useLandlordExitSummary } from "@/hooks/useLandlords";
 import { useDecommissionProperty } from "@/hooks/useProperties";
 import TerminationModal from "@/components/Tenants/TerminationModal";
 import { formatCurrencyUGX } from "@/utils/formatCurrency";
@@ -26,10 +26,26 @@ const STEP_LABELS = {
   properties: "Decommission",
   close: "Settle & close",
 };
-// Steps whose actions exist (inline on the overview).
-const AVAILABLE_STEPS = ["leases", "properties"];
+// Steps whose actions exist (inline on the overview). Settle & close only
+// once the landlord is ready to close.
+function availableSteps(exit) {
+  return exit?.can_close === true
+    ? ["leases", "properties", "close"]
+    : ["leases", "properties"];
+}
 
-function StepPills({ stepIndex }) {
+// Local date as yyyy-mm-dd.
+function todayYMD() {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+// Same half-cent rule as the close gate's isSettled.
+const SETTLED_EPSILON = 0.005;
+
+function StepPills({ stepIndex, available }) {
   return (
     <div className="flex flex-wrap items-center gap-2 px-5 pt-4">
       {STEPS.map((s, i) => (
@@ -38,7 +54,7 @@ function StepPills({ stepIndex }) {
             className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium ${
               i === stepIndex
                 ? "bg-[#0B1F3A] text-white"
-                : AVAILABLE_STEPS.includes(s)
+                : available.includes(s)
                   ? "border border-[#0B1F3A] text-[#0B1F3A]"
                   : "bg-gray-100 text-slate-400"
             }`}
@@ -49,7 +65,7 @@ function StepPills({ stepIndex }) {
             className={`text-xs ${
               i === stepIndex
                 ? "text-[#0B1F3A] font-medium"
-                : AVAILABLE_STEPS.includes(s)
+                : available.includes(s)
                   ? "text-[#0B1F3A]"
                   : "text-slate-400"
             }`}
@@ -319,8 +335,117 @@ function PropertySection({
   );
 }
 
+function SettleClosePanel({
+  exit,
+  landlordName,
+  status,
+  assetAccounts,
+  closeDate,
+  onCloseDateChange,
+  payFromAccountId,
+  onPayFromChange,
+  isPending,
+  closeError,
+  onPayAndClose,
+  onCloseLandlord,
+}) {
+  const net = Number(exit.net_due || 0);
+  // The gate already rules out a negative balance, so "owed" means positive.
+  const owed = net >= SETTLED_EPSILON;
+  const owedProperties = (exit.properties || []).filter(
+    (p) => Number(p.net_due || 0) > 0,
+  );
+
+  return (
+    <div className="rounded-xl border border-[#0B1F3A]/20 p-4 space-y-3">
+      <div className="text-sm font-semibold text-slate-800">
+        Settle &amp; close
+      </div>
+      {status === "ended" ? (
+        <div className="text-sm text-slate-600">This landlord is closed.</div>
+      ) : (
+        <>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">
+              Close date
+            </label>
+            <input
+              type="date"
+              value={closeDate}
+              max={todayYMD()}
+              onChange={(e) => onCloseDateChange(e.target.value)}
+              className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm"
+            />
+          </div>
+          {owed ? (
+            <>
+              <p className="text-sm text-slate-700">
+                {`Exela owes ${landlordName} ${formatCurrencyUGX(net)}. This is paid in full, then the landlord is closed.`}
+              </p>
+              {owedProperties.length > 0 && (
+                <ul className="text-xs text-slate-600 space-y-0.5">
+                  {owedProperties.map((p) => (
+                    <li key={p.property_id}>
+                      {`${p.property_name}: ${formatCurrencyUGX(p.net_due)}`}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">
+                  Pay from
+                </label>
+                <select
+                  value={payFromAccountId}
+                  onChange={(e) => onPayFromChange(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm bg-white"
+                >
+                  <option value="">Select account…</option>
+                  {(assetAccounts || []).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {`${a.account_code} — ${a.account_name}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={onPayAndClose}
+                disabled={!payFromAccountId || isPending}
+                className="px-4 py-2 rounded-lg bg-[#0B1F3A] hover:bg-[#08172c] text-white text-sm font-medium disabled:opacity-50"
+              >
+                {isPending
+                  ? "Closing…"
+                  : `Pay ${formatCurrencyUGX(net)} & close landlord`}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-slate-700">
+                {`Nothing is owed. Closing will mark ${landlordName} as ended.`}
+              </p>
+              <button
+                type="button"
+                onClick={onCloseLandlord}
+                disabled={isPending}
+                className="px-4 py-2 rounded-lg bg-[#0B1F3A] hover:bg-[#08172c] text-white text-sm font-medium disabled:opacity-50"
+              >
+                {isPending ? "Closing…" : "Close landlord"}
+              </button>
+            </>
+          )}
+          {closeError && (
+            <div className="text-xs text-red-600">{closeError}</div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function Overview({
   exit,
+  settlePanel,
   onEndLease,
   onDecommission,
   decommissioningId,
@@ -376,6 +501,8 @@ function Overview({
 
       <ReadinessChecklist exit={exit} />
 
+      {exit.can_close === true && settlePanel}
+
       <div className="space-y-3">
         <div className="text-sm font-semibold text-slate-800">Properties</div>
         {(exit.active_leases_count || 0) > 0 && (
@@ -413,8 +540,9 @@ function Overview({
 export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
   // No saved progress: every open (and every refresh) reads live state.
   const summaryQuery = useLandlordExitSummary(landlordId, true);
-  const exit = summaryQuery.data?.exit || null;
-  const status = summaryQuery.data?.landlord?.status;
+  const summaryData = summaryQuery.data;
+  const exit = summaryData?.exit || null;
+  const status = summaryData?.landlord?.status;
   const stepIndex = 0;
   // The lease being ended: { tenant_id, lease_id, tenant_name, ... }.
   const [endingLease, setEndingLease] = useState(null);
@@ -446,6 +574,51 @@ export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
         summaryQuery.refetch();
       },
     });
+  }
+
+  const closeMutation = useCloseLandlord();
+  const [closeDate, setCloseDate] = useState(todayYMD);
+  const [payFromAccountId, setPayFromAccountId] = useState("");
+  const [closeError, setCloseError] = useState(null);
+
+  function runClose(payload) {
+    setCloseError(null);
+    closeMutation.mutate(
+      { landlordId, payload },
+      {
+        onSuccess: () => summaryQuery.refetch(),
+        onError: (e) =>
+          setCloseError(e?.message || "Could not close this landlord."),
+      },
+    );
+  }
+
+  function onPayAndClose() {
+    const net = Number(exit?.net_due || 0);
+    if (
+      !window.confirm(
+        `This will pay ${formatCurrencyUGX(net)} to ${landlordName} and permanently mark them as ended. Continue?`,
+      )
+    )
+      return;
+    runClose({
+      termination_date: closeDate,
+      balance_settlement: {
+        payout_amount: net,
+        payout_account_id: Number(payFromAccountId),
+        transaction_date: closeDate,
+      },
+    });
+  }
+
+  function onCloseLandlord() {
+    if (
+      !window.confirm(
+        `This will permanently mark ${landlordName} as ended. Continue?`,
+      )
+    )
+      return;
+    runClose({ termination_date: closeDate, balance_settlement: null });
   }
 
   const updatedAt = summaryQuery.dataUpdatedAt
@@ -494,7 +667,7 @@ export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
             </div>
           </div>
 
-          <StepPills stepIndex={stepIndex} />
+          <StepPills stepIndex={stepIndex} available={availableSteps(exit)} />
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-5 py-4 min-h-[200px]">
@@ -509,6 +682,22 @@ export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
             ) : (
               <Overview
                 exit={exit}
+                settlePanel={
+                  <SettleClosePanel
+                    exit={exit}
+                    landlordName={landlordName}
+                    status={status}
+                    assetAccounts={summaryData?.asset_accounts}
+                    closeDate={closeDate}
+                    onCloseDateChange={setCloseDate}
+                    payFromAccountId={payFromAccountId}
+                    onPayFromChange={setPayFromAccountId}
+                    isPending={closeMutation.isPending}
+                    closeError={closeError}
+                    onPayAndClose={onPayAndClose}
+                    onCloseLandlord={onCloseLandlord}
+                  />
+                }
                 onEndLease={(l) => setEndingLease(l)}
                 onDecommission={onDecommission}
                 decommissioningId={decommissioningId}
