@@ -10,6 +10,7 @@ import {
   Receipt,
   FileText,
   CalendarClock,
+  Scale,
   X,
 } from "lucide-react";
 import useUser from "@/utils/useUser";
@@ -305,11 +306,17 @@ export default function Dashboard() {
                   icon={<Wallet className="w-4 h-4" />}
                   onClick={() => setUndepositedOpen(true)}
                 />
-                <BalanceTile
-                  title="Salary & Office Expenses"
-                  value={formatCurrency(salaryOfficeExpensesThisMonth)}
-                  icon={<Receipt className="w-4 h-4" />}
-                />
+                {/* Accounting admins get the ledger reconciliation tile in
+                    this slot; everyone else keeps Salary & Office Expenses. */}
+                {glRecon ? (
+                  <LedgerReconTile recon={glRecon} />
+                ) : (
+                  <BalanceTile
+                    title="Salary & Office Expenses"
+                    value={formatCurrency(salaryOfficeExpensesThisMonth)}
+                    icon={<Receipt className="w-4 h-4" />}
+                  />
+                )}
               </div>
 
               <div className="mt-3 text-xs text-slate-500">
@@ -406,39 +413,6 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-
-          {/* 4) Ledger reconciliation (admins only) */}
-          {glRecon && (
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-800">
-                  Ledger reconciliation
-                </div>
-                <a
-                  href="/reports?report=landlord-gl-reconciliation"
-                  className="text-sm font-medium text-violet-600 hover:text-violet-700"
-                >
-                  View details →
-                </a>
-              </div>
-              {Math.abs(Number(glRecon.gap || 0)) < 1 ? (
-                <div className="mt-2 text-lg font-semibold text-green-700">
-                  In balance
-                </div>
-              ) : (
-                <div className="mt-2 text-lg font-semibold text-amber-700">
-                  {formatCurrencyUGX(glRecon.gap)}{" "}
-                  <span className="text-sm font-normal">
-                    unreconciled (GL − source)
-                  </span>
-                </div>
-              )}
-              <div className="mt-1 flex flex-wrap gap-x-4 text-xs text-slate-500">
-                <span>GL 2100 {formatCurrencyUGX(glRecon.gl_2100)}</span>
-                <span>Source {formatCurrencyUGX(glRecon.source_due)}</span>
-              </div>
-            </div>
-          )}
 
           {/* Quick links */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
@@ -589,6 +563,44 @@ function KpiCard({ title, value, suffix, valueClassName }) {
         <div className={`mt-2 text-2xl font-semibold ${valueClass}`}>
           {valueText}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Compact GL 2100 vs source tile, same footprint as BalanceTile. Read-only.
+function LedgerReconTile({ recon }) {
+  const inBalance = Math.abs(Number(recon.gap || 0)) < 1;
+  return (
+    <div className="relative rounded-xl border border-gray-100 bg-gray-50 p-3 flex items-center justify-center">
+      <div className="text-center">
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          Ledger reconciliation
+        </div>
+        {inBalance ? (
+          <div className="mt-2 text-2xl font-semibold text-green-700">
+            In balance
+          </div>
+        ) : (
+          <div className="mt-2 text-amber-700">
+            <span className="text-2xl font-semibold">
+              {formatCurrencyUGX(recon.gap)}
+            </span>{" "}
+            <span className="text-xs">unreconciled</span>
+          </div>
+        )}
+        <div className="mt-1 text-[11px] text-slate-500">
+          {`GL 2100 ${formatCurrencyUGX(recon.gl_2100)} / Source ${formatCurrencyUGX(recon.source_due)}`}
+        </div>
+        <a
+          href="/reports?report=landlord-gl-reconciliation"
+          className="mt-1 inline-block text-xs font-medium text-violet-600 hover:text-violet-700"
+        >
+          View details →
+        </a>
+      </div>
+      <div className="absolute top-3 right-3 text-slate-400">
+        <Scale className="w-4 h-4" />
       </div>
     </div>
   );
