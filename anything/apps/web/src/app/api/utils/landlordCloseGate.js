@@ -20,7 +20,8 @@ export function landlordOwedMessage(netDue) {
  * the two can't disagree.
  *
  * A positive net due is not a blocker: the close payout settles it. A negative
- * one (the landlord owes the agency) is, until collection/write-off exists.
+ * one (the landlord owes the agency) is, until it is collected or written off
+ * per property (settle-negative).
  *
  * @returns {{ can_close: boolean, close_blockers: string[],
  *   close_blocker_codes: string[] }}
@@ -55,7 +56,7 @@ export function evaluateLandlordCloseGate({
   if (net < 0 && !isSettled(net)) {
     codes.push("negative_balance");
     messages.push(
-      `Landlord owes Exela ${formatUGX(net)} — collection/write-off is not yet available (gate 3).`,
+      `Landlord owes Exela ${formatUGX(net)} — collect it or write it off before closing.`,
     );
   }
 
