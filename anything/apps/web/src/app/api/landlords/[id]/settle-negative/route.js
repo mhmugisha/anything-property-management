@@ -17,12 +17,12 @@ const MODES = {
   collect: {
     sourceType: "landlord_collection",
     action: "landlord.collect",
-    defaultReason: "Collection from landlord",
+    describe: (who) => `Collection from landlord ${who}`,
   },
   writeoff: {
     sourceType: "landlord_writeoff",
     action: "landlord.writeoff",
-    defaultReason: "Write-off (bad debt)",
+    describe: (who) => `Write-off (bad debt) — ${who}`,
   },
 };
 
@@ -49,13 +49,13 @@ export async function POST(request, { params }) {
 
     // 1. Landlord and property.
     const [landlord] = await sql`
-      SELECT id FROM landlords WHERE id = ${landlordId} LIMIT 1
+      SELECT id, full_name FROM landlords WHERE id = ${landlordId} LIMIT 1
     `;
     if (!landlord) {
       return Response.json({ error: "Landlord not found" }, { status: 404 });
     }
     const [propRow] = propertyId
-      ? await sql`SELECT landlord_id FROM properties WHERE id = ${propertyId} LIMIT 1`
+      ? await sql`SELECT landlord_id, property_name FROM properties WHERE id = ${propertyId} LIMIT 1`
       : [];
     if (!propRow || Number(propRow.landlord_id) !== landlordId) {
       return Response.json(
@@ -149,7 +149,12 @@ export async function POST(request, { params }) {
       debitAccountId = acct5300;
     }
 
-    const reason = reasonInput || mode.defaultReason;
+    // Posting description, also the adjustment reason: names the landlord and
+    // property so the journal is readable. The statement labels these rows by
+    // source_type, so it is unaffected.
+    const reason =
+      mode.describe(`${landlord.full_name} (${propRow.property_name})`) +
+      (reasonInput ? ` — ${reasonInput}` : "");
     const today = new Date().toISOString().slice(0, 10);
 
     // Duplicate-submit guard, same as recordLandlordPayout: an identical
