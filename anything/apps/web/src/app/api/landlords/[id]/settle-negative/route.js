@@ -152,6 +152,28 @@ export async function POST(request, { params }) {
     const reason = reasonInput || mode.defaultReason;
     const today = new Date().toISOString().slice(0, 10);
 
+    // Duplicate-submit guard, same as recordLandlordPayout: an identical
+    // settle recorded within the last 60 seconds is rejected.
+    const dupeRows = await sql`
+      SELECT id FROM landlord_balance_adjustments
+      WHERE landlord_id = ${landlordId}
+        AND property_id = ${propertyId}
+        AND source_type = ${mode.sourceType}
+        AND amount = ${amount}
+        AND COALESCE(is_deleted, false) = false
+        AND created_at >= NOW() - INTERVAL '60 seconds'
+      LIMIT 1
+    `;
+    if (dupeRows?.length > 0) {
+      return Response.json(
+        {
+          error:
+            "Duplicate settlement detected — wait a moment and re-check the balance.",
+        },
+        { status: 409 },
+      );
+    }
+
     // One statement so the GL posting and the adjustment commit together.
     // The adjustment is positive: it raises the (negative) due toward zero.
     const [txnRow] = await sql`
