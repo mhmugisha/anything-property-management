@@ -10,9 +10,14 @@ import {
   Info,
 } from "lucide-react";
 import { useState } from "react";
-import { useCloseLandlord, useLandlordExitSummary } from "@/hooks/useLandlords";
+import {
+  useCloseLandlord,
+  useLandlordExitSummary,
+  useSettleLandlordNegative,
+} from "@/hooks/useLandlords";
 import { useDecommissionProperty } from "@/hooks/useProperties";
 import TerminationModal from "@/components/Tenants/TerminationModal";
+import { MoneyInput } from "@/components/MoneyInput";
 import { formatCurrencyUGX } from "@/utils/formatCurrency";
 
 // Landlord exit, one level above property decommission: end every lease,
@@ -128,7 +133,7 @@ function ReadinessChecklist({ exit, isEnded }) {
       <ChecklistItem
         state="blocked"
         title={`Landlord owes Exela ${formatCurrencyUGX(Math.abs(net))} UGX`}
-        detail="Collecting or writing off a landlord's debt is not yet supported, so this landlord can't be closed yet."
+        detail="Collect it or write it off on each property below that owes Exela."
       />
     );
   } else if (net > 0) {
@@ -198,12 +203,172 @@ function ReadinessChecklist({ exit, isEnded }) {
   );
 }
 
+// A property whose landlord owes Exela: collect the shortfall into cash/bank
+// or write it off to bad debt. Keyed on the shortfall by the caller, so the
+// amount defaults reset after a partial settle.
+function OwesExelaPanel({
+  property,
+  landlordName,
+  assetAccounts,
+  onSettle,
+  isSettling,
+  settleError,
+}) {
+  const shortfall = Math.abs(Number(property.net_due || 0));
+  // Whole UGX, never above the shortfall.
+  const defaultAmount = String(Math.floor(shortfall + SETTLED_EPSILON));
+  const [form, setForm] = useState(null); // null | "collect" | "writeoff"
+  const [amount, setAmount] = useState(defaultAmount);
+  const [accountId, setAccountId] = useState("");
+  const [reason, setReason] = useState("");
+
+  const amt = Number(amount || 0);
+  const amountOk = amt > 0 && amt <= shortfall + SETTLED_EPSILON;
+
+  function openForm(next) {
+    setForm(form === next ? null : next);
+    setAmount(defaultAmount);
+  }
+
+  function onCollect() {
+    onSettle(property, {
+      mode: "collect",
+      amount: amt,
+      account_id: Number(accountId),
+    });
+  }
+
+  function onWriteOff() {
+    if (
+      !window.confirm(
+        `Write off ${formatCurrencyUGX(amt)} owed by ${landlordName} on ${property.property_name} to Bad Debt? This records an expense.`,
+      )
+    )
+      return;
+    onSettle(property, {
+      mode: "writeoff",
+      amount: amt,
+      reason: reason.trim(),
+    });
+  }
+
+  const tabClass = (active) =>
+    `px-2.5 py-1 rounded-lg text-xs font-medium ${
+      active
+        ? "bg-[#0B1F3A] text-white"
+        : "border border-[#0B1F3A] text-[#0B1F3A] hover:bg-gray-50"
+    }`;
+
+  return (
+    <div className="mx-4 mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 space-y-2">
+      <p className="text-sm text-rose-800">
+        {`This property owes Exela ${formatCurrencyUGX(shortfall)}. Collect it or write it off to close.`}
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => openForm("collect")}
+          disabled={isSettling}
+          className={tabClass(form === "collect")}
+        >
+          Collect
+        </button>
+        <button
+          type="button"
+          onClick={() => openForm("writeoff")}
+          disabled={isSettling}
+          className={tabClass(form === "writeoff")}
+        >
+          Write off
+        </button>
+      </div>
+      {form && (
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Amount</label>
+            <MoneyInput
+              value={amount}
+              onChange={setAmount}
+              disabled={isSettling}
+              className="w-36 px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm outline-none"
+            />
+          </div>
+          {form === "collect" ? (
+            <>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">
+                  Received into
+                </label>
+                <select
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  disabled={isSettling}
+                  className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm bg-white"
+                >
+                  <option value="">Select account…</option>
+                  {(assetAccounts || []).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {`${a.account_code} — ${a.account_name}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={onCollect}
+                disabled={isSettling || !amountOk || !accountId}
+                className="px-3 py-1.5 rounded-lg bg-[#0B1F3A] hover:bg-[#08172c] text-white text-sm font-medium disabled:opacity-50"
+              >
+                {isSettling ? "Recording…" : "Record collection"}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="flex-1 min-w-[12rem]">
+                <label className="block text-xs text-slate-500 mb-1">
+                  Reason
+                </label>
+                <input
+                  type="text"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  disabled={isSettling}
+                  className="w-full px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={onWriteOff}
+                disabled={isSettling || !amountOk || !reason.trim()}
+                className="px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-sm font-medium disabled:opacity-50"
+              >
+                {isSettling ? "Writing off…" : "Write off"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {form && amount && !amountOk && (
+        <div className="text-xs text-red-600">
+          {`Enter an amount up to ${formatCurrencyUGX(shortfall)}.`}
+        </div>
+      )}
+      {settleError && <div className="text-xs text-red-600">{settleError}</div>}
+    </div>
+  );
+}
+
 function PropertySection({
   property,
+  landlordName,
+  assetAccounts,
   onEndLease,
   onDecommission,
   decommissioningId,
   decommissionError,
+  onSettle,
+  settlingId,
+  settleError,
 }) {
   const leases = property.active_leases || [];
   const net = Number(property.net_due || 0);
@@ -255,6 +420,19 @@ function PropertySection({
         <div className="px-4 pt-2 text-xs text-red-600">
           {decommissionError.msg}
         </div>
+      )}
+      {net < -SETTLED_EPSILON && (
+        <OwesExelaPanel
+          key={net}
+          property={property}
+          landlordName={landlordName}
+          assetAccounts={assetAccounts}
+          onSettle={onSettle}
+          isSettling={settlingId === property.property_id}
+          settleError={
+            settleError?.id === property.property_id ? settleError.msg : null
+          }
+        />
       )}
       {leases.length === 0 ? (
         <div className="px-4 py-3 text-sm text-slate-500">
@@ -448,10 +626,15 @@ function Overview({
   exit,
   isEnded,
   settlePanel,
+  landlordName,
+  assetAccounts,
   onEndLease,
   onDecommission,
   decommissioningId,
   decommissionError,
+  onSettle,
+  settlingId,
+  settleError,
 }) {
   const net = Number(exit.net_due || 0);
   // Live properties first (they still need work), then decommissioned ones.
@@ -526,10 +709,15 @@ function Overview({
             <PropertySection
               key={p.property_id}
               property={p}
+              landlordName={landlordName}
+              assetAccounts={assetAccounts}
               onEndLease={onEndLease}
               onDecommission={onDecommission}
               decommissioningId={decommissioningId}
               decommissionError={decommissionError}
+              onSettle={onSettle}
+              settlingId={settlingId}
+              settleError={settleError}
             />
           ))
         )}
@@ -576,6 +764,36 @@ export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
         summaryQuery.refetch();
       },
     });
+  }
+
+  const settleMutation = useSettleLandlordNegative();
+  const [settlingId, setSettlingId] = useState(null);
+  // { id, msg } for the property whose collect / write-off failed.
+  const [settleError, setSettleError] = useState(null);
+
+  function onSettle(property, payload) {
+    setSettleError(null);
+    setSettlingId(property.property_id);
+    settleMutation.mutate(
+      {
+        landlordId,
+        payload: { property_id: property.property_id, ...payload },
+      },
+      {
+        onSuccess: () => {
+          setSettlingId(null);
+          summaryQuery.refetch();
+        },
+        onError: (e) => {
+          setSettleError({
+            id: property.property_id,
+            msg: e?.message || "Could not settle this property's balance.",
+          });
+          setSettlingId(null);
+          summaryQuery.refetch();
+        },
+      },
+    );
   }
 
   const closeMutation = useCloseLandlord();
@@ -701,10 +919,15 @@ export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
                     onCloseLandlord={onCloseLandlord}
                   />
                 }
+                landlordName={landlordName}
+                assetAccounts={summaryData?.asset_accounts}
                 onEndLease={(l) => setEndingLease(l)}
                 onDecommission={onDecommission}
                 decommissioningId={decommissioningId}
                 decommissionError={decommissionError}
+                onSettle={onSettle}
+                settlingId={settlingId}
+                settleError={settleError}
               />
             )}
           </div>

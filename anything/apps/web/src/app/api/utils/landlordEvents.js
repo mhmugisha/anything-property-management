@@ -162,7 +162,7 @@ export async function buildLandlordEvents(landlordId, { propertyId } = {}) {
     sql`
         SELECT id, property_id,
                COALESCE(effective_date, created_at::date) AS event_date,
-               COALESCE(reason, '') AS reason, amount
+               COALESCE(reason, '') AS reason, amount, source_type
         FROM landlord_balance_adjustments
         WHERE landlord_id = ${landlordId}
           AND COALESCE(is_deleted, false) = false
@@ -260,6 +260,14 @@ export async function buildLandlordEvents(landlordId, { propertyId } = {}) {
   }
 
   // Balance adjustments are signed: + credits the landlord, − debits them.
+  // Collections and write-offs (settling a negative balance) get their own
+  // label; the amount and sign are unchanged.
+  const adjustmentLabel = (r) =>
+    r.source_type === "landlord_collection"
+      ? "Collection from landlord"
+      : r.source_type === "landlord_writeoff"
+        ? "Write-off (bad debt)"
+        : `Balance adjustment - ${r.reason || `#${r.id}`}`;
   for (const r of adjustmentRows || []) {
     const pid = pidOf(r);
     if (propertyId && pid !== propertyId) continue;
@@ -270,7 +278,7 @@ export async function buildLandlordEvents(landlordId, { propertyId } = {}) {
       id: `adjustment-${Number(r.id)}`,
       date,
       property_id: pid,
-      description: `Balance adjustment - ${r.reason || `#${r.id}`}`,
+      description: adjustmentLabel(r),
       source_type: "balance_adjustment",
       debit: amount < 0 ? -amount : 0,
       credit: amount > 0 ? amount : 0,

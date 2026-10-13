@@ -155,6 +155,22 @@ export function useCloseLandlord() {
   });
 }
 
+// Settle a property's negative balance (the landlord owes the agency) by
+// collecting it into cash/bank or writing it off to bad debt.
+export function useSettleLandlordNegative() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ landlordId, payload }) =>
+      postJson(`/api/landlords/${landlordId}/settle-negative`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["landlords"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["accounting"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
+  });
+}
+
 export function useDeleteLandlord() {
   const qc = useQueryClient();
   return useMutation({
