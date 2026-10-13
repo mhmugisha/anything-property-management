@@ -22,6 +22,8 @@ export default function ReportsSidebar() {
   const staffQuery = useStaffProfile(!userLoading && !!user);
   const permissions = staffQuery.data?.permissions || {};
   const canViewReports = permissions.reports === true;
+  const isAccountingAdmin =
+    permissions.accounting === true && staffQuery.data?.role_name === "Admin";
   const allowedList = Array.isArray(permissions.reports_allowed)
     ? permissions.reports_allowed.map(String)
     : [];
@@ -94,6 +96,14 @@ export default function ReportsSidebar() {
       icon: DollarSign,
     },
     {
+      // Admin-only, same gate as its API.
+      title: "GL 2100 Reconciliation",
+      href: "/reports?report=landlord-gl-reconciliation",
+      key: "landlord-gl-reconciliation",
+      adminOnly: true,
+      icon: GitCompare,
+    },
+    {
       title: "All Tenants",
       href: "/reports?report=all-tenants",
       key: "all-tenants",
@@ -118,6 +128,7 @@ export default function ReportsSidebar() {
   ];
 
   const visibleReports = reports.filter((r) => {
+    if (r.adminOnly && !isAccountingAdmin) return false;
     if (canViewReports) return true;
     if (r.external) return false;
     return r.key && allowedList.includes(r.key);

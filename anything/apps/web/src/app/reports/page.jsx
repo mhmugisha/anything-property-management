@@ -23,6 +23,7 @@ import { PaymentStatusReport } from "@/components/Reports/PaymentStatusReport";
 import { ConsolidatedBalancesDueReport } from "@/components/Reports/ConsolidatedBalancesDueReport";
 import { AllLandlordsBalancesReport } from "@/components/Reports/AllLandlordsBalancesReport";
 import { AllTenantsReport } from "@/components/Reports/AllTenantsReport";
+import { LandlordGlReconciliationReport } from "@/components/Reports/LandlordGlReconciliationReport";
 
 export default function ReportsPage() {
   const [reportType, setReportType] = useState("");
@@ -41,11 +42,13 @@ export default function ReportsPage() {
   const permissions = staffQuery.data?.permissions || {};
   const canViewReports = permissions.reports === true;
   const canManagePayments = permissions.payments === true;
+  // GL 2100 reconciliation: same gate as its API (accounting + Admin).
+  const canViewGlRecon =
+    permissions.accounting === true && staffQuery.data?.role_name === "Admin";
   const reportsAllowedList = Array.isArray(permissions.reports_allowed)
     ? permissions.reports_allowed.map(String)
     : [];
-  const canAccessAnyReport =
-    canViewReports || reportsAllowedList.length > 0;
+  const canAccessAnyReport = canViewReports || reportsAllowedList.length > 0;
   const isReportAllowed = (key) =>
     canViewReports || (!!key && reportsAllowedList.includes(String(key)));
 
@@ -116,6 +119,15 @@ export default function ReportsPage() {
       <AccessDenied
         title="Reports"
         message="You don't have access to reports."
+      />
+    );
+  }
+
+  if (reportType === "landlord-gl-reconciliation" && !canViewGlRecon) {
+    return (
+      <AccessDenied
+        title="GL 2100 Reconciliation"
+        message="Admin access required to view the GL 2100 reconciliation."
       />
     );
   }
@@ -215,6 +227,12 @@ export default function ReportsPage() {
             userLoading={userLoading}
             user={user}
             canViewReports={canViewReports}
+          />
+        );
+      case "landlord-gl-reconciliation":
+        return (
+          <LandlordGlReconciliationReport
+            enabled={!userLoading && !!user && canViewGlRecon}
           />
         );
       default:
