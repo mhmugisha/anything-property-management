@@ -29,19 +29,8 @@ export async function GET(request, { params }) {
       return Response.json({ error: "Landlord not found" }, { status: 404 });
     }
 
-    // One read-only exit preview; the legacy fields below are derived from it
-    // so the Close Landlord modal and the exit flow can't drift apart.
+    // One read-only exit preview, read by the Landlord Exit wizard.
     const exit = await getLandlordExitSummary(landlordId);
-
-    const activeLeaseTenants = exit.properties.flatMap((p) =>
-      p.active_leases.map((l) => ({
-        lease_id: l.lease_id,
-        tenant_id: l.tenant_id,
-        tenant_name: l.tenant_name,
-        property_name: p.property_name,
-        unit_number: l.unit_number,
-      })),
-    );
 
     // Cash on Hand / Bank for the payout and collect dropdowns. Always sent:
     // a property can owe Exela (collect) while leases are still active.
@@ -59,32 +48,6 @@ export async function GET(request, { params }) {
       account_name: a.account_name,
     }));
 
-    if (activeLeaseTenants.length > 0) {
-      return Response.json({
-        landlord: {
-          landlord_id: Number(landlord.id),
-          full_name: landlord.full_name,
-          phone: landlord.phone,
-          status: landlord.status,
-        },
-        blocked: true,
-        active_lease_count: activeLeaseTenants.length,
-        active_tenants: activeLeaseTenants,
-        message: `This landlord still has ${activeLeaseTenants.length} active tenant lease(s). Please terminate all tenant leases before closing this landlord.`,
-        asset_accounts: assetAccounts,
-        exit,
-      });
-    }
-
-    // Due to this landlord: getDueToLandlordsBalance (source tables) for each
-    // of their properties, summed. The 2100 ledger is out of sync and not used.
-    const dueByProperty = exit.properties.map((p) => ({
-      property_id: p.property_id,
-      property_name: p.property_name,
-      due: p.net_due,
-    }));
-    const dueToLandlordsBalance = exit.net_due;
-
     return Response.json({
       landlord: {
         landlord_id: Number(landlord.id),
@@ -92,11 +55,6 @@ export async function GET(request, { params }) {
         phone: landlord.phone,
         status: landlord.status,
       },
-      blocked: false,
-      active_lease_count: 0,
-      active_tenants: [],
-      due_to_landlords_balance: dueToLandlordsBalance,
-      due_by_property: dueByProperty,
       asset_accounts: assetAccounts,
       exit,
     });
