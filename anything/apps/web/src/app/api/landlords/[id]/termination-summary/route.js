@@ -43,6 +43,22 @@ export async function GET(request, { params }) {
       })),
     );
 
+    // Cash on Hand / Bank for the payout and collect dropdowns. Always sent:
+    // a property can owe Exela (collect) while leases are still active.
+    const assetAccountRows = await sql`
+      SELECT id, account_code, account_name
+      FROM chart_of_accounts
+      WHERE account_type = 'Asset'
+        AND account_code IN ('1110', '1120')
+        AND COALESCE(is_active, true) = true
+      ORDER BY account_code ASC
+    `;
+    const assetAccounts = (assetAccountRows || []).map((a) => ({
+      id: Number(a.id),
+      account_code: a.account_code,
+      account_name: a.account_name,
+    }));
+
     if (activeLeaseTenants.length > 0) {
       return Response.json({
         landlord: {
@@ -55,6 +71,7 @@ export async function GET(request, { params }) {
         active_lease_count: activeLeaseTenants.length,
         active_tenants: activeLeaseTenants,
         message: `This landlord still has ${activeLeaseTenants.length} active tenant lease(s). Please terminate all tenant leases before closing this landlord.`,
+        asset_accounts: assetAccounts,
         exit,
       });
     }
@@ -68,16 +85,6 @@ export async function GET(request, { params }) {
     }));
     const dueToLandlordsBalance = exit.net_due;
 
-    // Asset accounts for payout dropdown (Cash on Hand, Bank)
-    const assetAccounts = await sql`
-      SELECT id, account_code, account_name
-      FROM chart_of_accounts
-      WHERE account_type = 'Asset'
-        AND account_code IN ('1110', '1120')
-        AND COALESCE(is_active, true) = true
-      ORDER BY account_code ASC
-    `;
-
     return Response.json({
       landlord: {
         landlord_id: Number(landlord.id),
@@ -90,11 +97,7 @@ export async function GET(request, { params }) {
       active_tenants: [],
       due_to_landlords_balance: dueToLandlordsBalance,
       due_by_property: dueByProperty,
-      asset_accounts: (assetAccounts || []).map((a) => ({
-        id: Number(a.id),
-        account_code: a.account_code,
-        account_name: a.account_name,
-      })),
+      asset_accounts: assetAccounts,
       exit,
     });
   } catch (error) {
