@@ -22,6 +22,7 @@ import Sidebar from "@/components/Shell/Sidebar";
 import DashboardSidebar from "@/components/Shell/DashboardSidebar";
 import MobileMenu from "@/components/Shell/MobileMenu";
 import QuickLinkTile from "@/components/QuickLinkTile";
+import { formatCurrencyUGX } from "@/utils/formatCurrency";
 
 // OPTIMIZATION: Lazy load charts to reduce initial bundle size
 const DashboardCharts = lazy(
@@ -84,12 +85,7 @@ export default function Dashboard() {
     if (staffProfile?.role_name === "Portfolio Manager") {
       window.location.href = "/reports?report=manager-arrears";
     }
-  }, [
-    userLoading,
-    user,
-    staffProfileQuery.isSuccess,
-    staffProfile?.role_name,
-  ]);
+  }, [userLoading, user, staffProfileQuery.isSuccess, staffProfile?.role_name]);
 
   if (loading) {
     return (
@@ -161,6 +157,11 @@ export default function Dashboard() {
   });
 
   const landlordBalances = stats?.landlordBalances || [];
+  // Accounting admins only; the stats route returns null for everyone else.
+  const canSeeGlRecon =
+    staffProfile?.role_name === "Admin" &&
+    staffProfile?.permissions?.accounting === true;
+  const glRecon = canSeeGlRecon ? stats?.glReconciliation || null : null;
   const undepositedFundsLines = undepositedLinesQuery.data || [];
   const undepositedLinesLoading = undepositedLinesQuery.isLoading;
   const undepositedLinesError = undepositedLinesQuery.isError
@@ -405,6 +406,39 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+
+          {/* 4) Ledger reconciliation (admins only) */}
+          {glRecon && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold text-slate-800">
+                  Ledger reconciliation
+                </div>
+                <a
+                  href="/reports?report=landlord-gl-reconciliation"
+                  className="text-sm font-medium text-violet-600 hover:text-violet-700"
+                >
+                  View details →
+                </a>
+              </div>
+              {Math.abs(Number(glRecon.gap || 0)) < 1 ? (
+                <div className="mt-2 text-lg font-semibold text-green-700">
+                  In balance
+                </div>
+              ) : (
+                <div className="mt-2 text-lg font-semibold text-amber-700">
+                  {formatCurrencyUGX(glRecon.gap)}{" "}
+                  <span className="text-sm font-normal">
+                    unreconciled (GL − source)
+                  </span>
+                </div>
+              )}
+              <div className="mt-1 flex flex-wrap gap-x-4 text-xs text-slate-500">
+                <span>GL 2100 {formatCurrencyUGX(glRecon.gl_2100)}</span>
+                <span>Source {formatCurrencyUGX(glRecon.source_due)}</span>
+              </div>
+            </div>
+          )}
 
           {/* Quick links */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">

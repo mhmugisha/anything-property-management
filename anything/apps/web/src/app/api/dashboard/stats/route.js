@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { hasPermission, requirePermission } from "@/app/api/utils/staff";
 import { getDueToLandlordsByProperty } from "@/app/api/utils/accounting";
 
 async function getAccountIdsByCodes(codes) {
@@ -404,6 +404,7 @@ export async function GET(request) {
       "1130",
       "5160",
       "5210",
+      "2100",
     ]);
 
     const cashId = codeToId["1110"] || null;
@@ -411,17 +412,25 @@ export async function GET(request) {
     const undepositedFundsId = codeToId["1130"] || null;
     const salariesId = codeToId["5160"] || null;
     const officeExpensesId = codeToId["5210"] || null;
+    const acct2100Id = codeToId["2100"] || null;
 
-    const [balances, salaryOfficeExpensesThisMonth] = await Promise.all([
-      getAccountBalancesByIds([cashId, bankId, undepositedFundsId]),
+    // Ledger reconciliation card: accounting admins only, same gate as the
+    // GL 2100 reconciliation report. Everyone else gets null.
+    const canSeeGlRecon =
+      perm.staff?.role_name === "Admin" &&
+      hasPermission(perm.permissions, "accounting");
 
-      // Salary + Office Expenses (this month)
-      (async () => {
-        const expenseIds = [salariesId, officeExpensesId].filter(Boolean);
-        if (expenseIds.length === 0) return 0;
+    const [balances, salaryOfficeExpensesThisMonth, gl2100Balance] =
+      await Promise.all([
+        getAccountBalancesByIds([cashId, bankId, undepositedFundsId]),
 
-        const expRows = await sql(
-          `
+        // Salary + Office Expenses (this month)
+        (async () => {
+          const expenseIds = [salariesId, officeExpensesId].filter(Boolean);
+          if (expenseIds.length === 0) return 0;
+
+          const expRows = await sql(
+            `
             SELECT COALESCE(SUM(t.amount), 0) AS total
             FROM transactions t
             WHERE COALESCE(t.is_deleted,false) = false
@@ -430,11 +439,29 @@ export async function GET(request) {
               AND t.transaction_date <= $2::date
               AND t.debit_account_id = ANY($3)
           `,
-          [monthStart, todayYmd, expenseIds],
-        );
-        return Number(expRows?.[0]?.total || 0);
-      })(),
-    ]);
+            [monthStart, todayYmd, expenseIds],
+          );
+          return Number(expRows?.[0]?.total || 0);
+        })(),
+
+        // GL 2100 balance on the report's basis (trial balance: not deleted,
+        // approved only; credit − debit). The ::int form nets a row with 2100
+        // on both sides to zero.
+        (async () => {
+          if (!canSeeGlRecon || !acct2100Id) return null;
+          const [row] = await sql`
+          SELECT COALESCE(SUM(
+            (t.credit_account_id = ${acct2100Id})::int * t.amount
+              - (t.debit_account_id = ${acct2100Id})::int * t.amount
+          ), 0)::numeric AS total
+          FROM transactions t
+          WHERE (t.debit_account_id = ${acct2100Id} OR t.credit_account_id = ${acct2100Id})
+            AND COALESCE(t.is_deleted, false) = false
+            AND COALESCE(t.approval_status, 'approved') = 'approved'
+        `;
+          return Number(row?.total || 0);
+        })(),
+      ]);
 
     const cashBalance = Number(balances[String(cashId)] || 0);
     const bankBalance = Number(balances[String(bankId)] || 0);
@@ -450,6 +477,17 @@ export async function GET(request) {
       (sum, r) => sum + r.due,
       0,
     );
+
+    // GL 2100 vs source, totals only. Same figures as the report's totals.
+    const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+    const glReconciliation =
+      gl2100Balance === null
+        ? null
+        : {
+            gl_2100: round2(gl2100Balance),
+            source_due: round2(amountDueToLandlords),
+            gap: round2(gl2100Balance - amountDueToLandlords),
+          };
 
     // Net due per landlord: the same per-property dues, summed by landlord.
     const dueByLandlord = new Map();
@@ -543,6 +581,7 @@ export async function GET(request) {
         netProfit,
       },
       landlordBalances,
+      glReconciliation,
     });
   } catch (error) {
     console.error("Error fetching dashboard stats:", error);
