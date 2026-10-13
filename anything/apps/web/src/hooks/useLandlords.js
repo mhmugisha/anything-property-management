@@ -185,7 +185,7 @@ export function useDeleteLandlord() {
 
 // Landlord exit preview (termination-summary, incl. its `exit` object). Always
 // read live: the exit wizard has no saved progress, the data is the state.
-// Same key as the Close Landlord modal's summary, so they refresh together.
+// Keyed under ["landlords"], so the close and settle mutations refresh it.
 export function useLandlordExitSummary(landlordId, enabled) {
   return useQuery({
     queryKey: ["landlords", landlordId, "termination-summary"],

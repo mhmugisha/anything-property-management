@@ -21,9 +21,10 @@ import { MoneyInput } from "@/components/MoneyInput";
 import { formatCurrencyUGX } from "@/utils/formatCurrency";
 
 // Landlord exit, one level above property decommission: end every lease,
-// decommission every property, settle the balance, close. This chunk is the
-// overview, with End lease on each lease row (step 2); steps 3 and 4 are
-// shown but not yet available.
+// decommission every property, settle the balance, close. Everything runs
+// inline on the overview: End lease on each lease row, Decommission and
+// Collect / Write off on each property card, and the Settle & close panel
+// once the landlord can close.
 const STEPS = ["overview", "leases", "properties", "close"];
 const STEP_LABELS = {
   overview: "Overview",
