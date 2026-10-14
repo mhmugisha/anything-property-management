@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
+import { buildLandlordEvents, toDateStr } from "@/app/api/utils/landlordEvents";
 
 function toNumber(value) {
   const n = Number(value);
@@ -25,6 +26,36 @@ function sumByCurrency(rows, field) {
     map.set(currency, prev + amt);
   }
   return map;
+}
+
+// Opening and closing balance for one landlord + property over [from, to],
+// partitioned exactly as reports/landlord-statement does it, from the same
+// buildLandlordEvents source. Also returns the period's payouts and balance
+// adjustments, which the note's rent/deduction detail does not list.
+async function statementBalances(landlordId, propertyId, from, to) {
+  const { events } = await buildLandlordEvents(landlordId, { propertyId });
+
+  let openingBalance = 0;
+  if (from) {
+    for (const e of events) {
+      if (e.date < from) openingBalance += e.credit - e.debit;
+    }
+  }
+
+  let balance = openingBalance;
+  let payouts = 0;
+  let adjustments = 0;
+  for (const e of events) {
+    if (from && e.date < from) continue;
+    if (to && e.date > to) continue;
+    balance += e.credit - e.debit;
+    if (e.source_type === "landlord_payout") payouts += e.debit;
+    if (e.source_type === "balance_adjustment") {
+      adjustments += e.credit - e.debit;
+    }
+  }
+
+  return { openingBalance, closingBalance: balance, payouts, adjustments };
 }
 
 // Helper to get month name from number
@@ -141,11 +172,15 @@ export async function GET(request) {
     const currentYM = nowDate.getFullYear() * 100 + (nowDate.getMonth() + 1);
     const isSinglePastMonth = from && to && fromYM === toYM && fromYM !== currentYM;
 
+    // A saved snapshot is only the historical record of a payout made for that
+    // month ("Paid: X on date"). It never drives the payable, which is always
+    // computed live below.
+    let paymentRecord = null;
     if (isSinglePastMonth) {
       const snMonth = Number(from.split("-")[1]);
       const snYear = Number(from.split("-")[0]);
       const snapshotRows = await sql`
-        SELECT * FROM landlord_payment_notes
+        SELECT payout_date, amount_paid FROM landlord_payment_notes
         WHERE landlord_id = ${landlordId}
           AND property_id = ${propertyId}
           AND month = ${snMonth}
@@ -154,19 +189,10 @@ export async function GET(request) {
       `;
       const snapshot = snapshotRows?.[0] || null;
       if (snapshot) {
-        return Response.json({
-          snapshot: true,
+        paymentRecord = {
           payout_date: snapshot.payout_date,
-          gross_rent: Number(snapshot.gross_rent || 0),
-          management_fee: Number(snapshot.management_fee || 0),
-          deductions: snapshot.deductions || [],
-          maintenance: snapshot.maintenance || [],
-          net_payable: Number(snapshot.net_payable || 0),
           amount_paid: Number(snapshot.amount_paid || 0),
-          landlord,
-          property,
-          filters: { from: from || null, to: to || null },
-        });
+        };
       }
     }
 
@@ -407,6 +433,60 @@ export async function GET(request) {
       });
     }
 
+    // Payable totals come from the Statement's balance, not the detail above.
+    // The detail credits arrears when recovered; the Statement (like the rest
+    // of the app) credits them once when billed, so they are reconciled out.
+    const stmt = await statementBalances(
+      landlordId,
+      propertyId,
+      toDateStr(from || null),
+      toDateStr(to || null),
+    );
+    const ugxTotals = totals.find((t) => t.currency === "UGX") || null;
+    const detailNet = Number(ugxTotals?.net_payable || 0);
+    const recoveredUGX = Number(ugxTotals?.recovered_arrears || 0);
+    const periodMovement = stmt.closingBalance - stmt.openingBalance;
+    const otherDifferences = round2(
+      periodMovement -
+        (detailNet - recoveredUGX - stmt.payouts + stmt.adjustments),
+    );
+
+    const reconciling = [
+      {
+        key: "recovered_arrears",
+        label: "Recovered arrears (already credited when billed)",
+        amount: -recoveredUGX,
+      },
+      {
+        key: "payouts",
+        label: "Payouts already recorded this period",
+        amount: -stmt.payouts,
+      },
+      {
+        key: "adjustments",
+        label: "Balance adjustments this period",
+        amount: stmt.adjustments,
+      },
+      {
+        key: "other",
+        label: "Other differences vs statement",
+        amount: otherDifferences,
+      },
+    ].filter((r) => Math.abs(r.amount) >= 0.005);
+
+    const closing = stmt.closingBalance;
+    const payable = {
+      currency: "UGX",
+      detail_net: detailNet,
+      reconciling,
+      period_movement: periodMovement,
+      balance_brought_forward: stmt.openingBalance,
+      closing_balance: closing,
+      // Never a negative payout: a net overpayment is carried forward instead.
+      net_payable: closing > 0 ? closing : 0,
+      carried_overpayment: closing < 0 ? -closing : 0,
+    };
+
     return Response.json({
       landlord,
       property,
@@ -415,6 +495,8 @@ export async function GET(request) {
       recovered_arrears: recoveredArrears,
       deductions: allDeductions,
       totals,
+      payable,
+      payment_record: paymentRecord,
     });
   } catch (error) {
     console.error("GET /api/reports/payment-note error", error);
