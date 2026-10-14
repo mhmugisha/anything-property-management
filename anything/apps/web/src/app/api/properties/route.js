@@ -19,6 +19,20 @@ function normalizeFeeType(value) {
   return "percent";
 }
 
+// Current calendar month in the given IANA timezone. The server may run in
+// UTC while operations are in Africa/Kampala (UTC+3), so the last hours of
+// the local month can still be the prior UTC month.
+function getCurrentMonthYearInTimezone(timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(new Date());
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  return { month, year };
+}
+
 export async function GET(request) {
   try {
     const perm = await requirePermission(request, "properties");
@@ -37,6 +51,24 @@ export async function GET(request) {
     const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
     // ?archived=1 also returns archived (decommissioned) properties.
     const includeArchived = url.searchParams.get("archived") === "1";
+
+    // Recovery period: ?month=1-12&year=YYYY, defaulting to the current
+    // Kampala calendar month for whichever param is omitted.
+    const current = getCurrentMonthYearInTimezone("Africa/Kampala");
+    const monthParam = (url.searchParams.get("month") || "").trim();
+    const yearParam = (url.searchParams.get("year") || "").trim();
+    const recoveryMonth = monthParam ? Number(monthParam) : current.month;
+    const recoveryYear = yearParam ? Number(yearParam) : current.year;
+    if (
+      !Number.isInteger(recoveryMonth) ||
+      recoveryMonth < 1 ||
+      recoveryMonth > 12 ||
+      !Number.isInteger(recoveryYear) ||
+      recoveryYear < 2000 ||
+      recoveryYear > 2100
+    ) {
+      return Response.json({ error: "Invalid month/year" }, { status: 400 });
+    }
 
     const where = includeArchived
       ? []
@@ -65,22 +97,107 @@ export async function GET(request) {
     const limitPos = values.length;
     values.push(offset);
     const offsetPos = values.length;
+    values.push(recoveryMonth);
+    const monthPos = values.length;
+    values.push(recoveryYear);
+    const yearPos = values.length;
 
+    // `base` is the original list query, unchanged; the KPI CTEs are
+    // aggregated once over just those property ids and LEFT JOINed on.
+    //
+    // rent_roll: contracted monthly income — the sum of each unit's current
+    // active lease rent (one lease per unit). Vacant units, and any unit
+    // without a current active lease, contribute nothing; units.monthly_rent_ugx
+    // is deliberately not used.
+    //
+    // recovery: all non-void, non-deleted, approved invoices for the month,
+    // INCLUDING those on ended leases — this intentionally differs from
+    // reports/manager-comparison, which only counts currently active leases.
     const query = `
-      SELECT id, property_name, address, property_type, total_units,
-             management_fee_type, management_fee_percent, management_fee_fixed_amount,
-             notes, landlord_id, assigned_officer_id, created_by, created_at,
-             COALESCE(is_deleted, false) AS is_archived
-      FROM properties
-      ${whereSql}
-      ORDER BY created_at DESC
-      LIMIT $${limitPos}
-      OFFSET $${offsetPos}
+      WITH base AS (
+        SELECT id, property_name, address, property_type, total_units,
+               management_fee_type, management_fee_percent, management_fee_fixed_amount,
+               notes, landlord_id, assigned_officer_id, created_by, created_at,
+               COALESCE(is_deleted, false) AS is_archived
+        FROM properties
+        ${whereSql}
+        ORDER BY created_at DESC
+        LIMIT $${limitPos}
+        OFFSET $${offsetPos}
+      ),
+      unit_kpis AS (
+        SELECT
+          u.property_id,
+          COUNT(*) FILTER (WHERE u.status = 'occupied')::int AS occupied_units,
+          COALESCE(SUM(al.monthly_rent), 0) AS rent_roll
+        FROM units u
+        LEFT JOIN LATERAL (
+          SELECT le.monthly_rent
+          FROM leases le
+          WHERE le.unit_id = u.id
+            AND le.status = 'active'
+            AND le.start_date <= CURRENT_DATE
+            AND le.end_date >= CURRENT_DATE
+          ORDER BY le.start_date DESC
+          LIMIT 1
+        ) al ON true
+        WHERE u.property_id IN (SELECT id FROM base)
+        GROUP BY u.property_id
+      ),
+      recovery AS (
+        SELECT
+          i.property_id,
+          COALESCE(SUM(i.amount), 0)      AS billed,
+          COALESCE(SUM(i.paid_amount), 0) AS collected
+        FROM invoices i
+        WHERE i.property_id IN (SELECT id FROM base)
+          AND i.invoice_month = $${monthPos}
+          AND i.invoice_year = $${yearPos}
+          AND i.status <> 'void'
+          AND COALESCE(i.is_deleted, false) = false
+          AND COALESCE(i.approval_status, 'approved') = 'approved'
+        GROUP BY i.property_id
+      )
+      SELECT
+        b.*,
+        CASE
+          WHEN l.id IS NULL THEN NULL
+          ELSE CONCAT_WS(' ', NULLIF(l.title, ''), l.full_name)
+        END AS landlord_name,
+        so.full_name AS manager_name,
+        COALESCE(uk.occupied_units, 0) AS occupied_units,
+        COALESCE(uk.rent_roll, 0) AS rent_roll,
+        COALESCE(r.billed, 0) AS recovery_billed,
+        COALESCE(r.collected, 0) AS recovery_collected,
+        CASE
+          WHEN COALESCE(r.billed, 0) = 0 THEN NULL
+          ELSE ROUND(r.collected / r.billed * 100)::int
+        END AS recovery_pct
+      FROM base b
+      LEFT JOIN landlords l ON l.id = b.landlord_id
+      LEFT JOIN staff_users so ON so.id = b.assigned_officer_id
+      LEFT JOIN unit_kpis uk ON uk.property_id = b.id
+      LEFT JOIN recovery r ON r.property_id = b.id
+      ORDER BY b.created_at DESC
     `;
 
-    const properties = await sql(query, values);
+    const rows = await sql(query, values);
 
-    return Response.json({ properties, limit, offset });
+    // Postgres numerics arrive as strings; return the new money KPIs as numbers.
+    const properties = rows.map((r) => ({
+      ...r,
+      rent_roll: Number(r.rent_roll),
+      recovery_billed: Number(r.recovery_billed),
+      recovery_collected: Number(r.recovery_collected),
+    }));
+
+    return Response.json({
+      properties,
+      limit,
+      offset,
+      recovery_month: recoveryMonth,
+      recovery_year: recoveryYear,
+    });
   } catch (error) {
     console.error("GET /api/properties error", error);
     return Response.json(
