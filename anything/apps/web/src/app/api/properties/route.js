@@ -105,8 +105,10 @@ export async function GET(request) {
     // `base` is the original list query, unchanged; the KPI CTEs are
     // aggregated once over just those property ids and LEFT JOINed on.
     //
-    // rent_roll: each unit's monthly_rent_ugx, falling back to its active
-    // lease rent (same fallback as reports/rent-roll).
+    // rent_roll: contracted monthly income — the sum of each unit's current
+    // active lease rent (one lease per unit). Vacant units, and any unit
+    // without a current active lease, contribute nothing; units.monthly_rent_ugx
+    // is deliberately not used.
     //
     // recovery: all non-void, non-deleted, approved invoices for the month,
     // INCLUDING those on ended leases — this intentionally differs from
@@ -127,7 +129,7 @@ export async function GET(request) {
         SELECT
           u.property_id,
           COUNT(*) FILTER (WHERE u.status = 'occupied')::int AS occupied_units,
-          COALESCE(SUM(COALESCE(NULLIF(u.monthly_rent_ugx, 0), al.monthly_rent, 0)), 0) AS rent_roll
+          COALESCE(SUM(al.monthly_rent), 0) AS rent_roll
         FROM units u
         LEFT JOIN LATERAL (
           SELECT le.monthly_rent
