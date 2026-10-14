@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { getManagerScope } from "@/app/api/utils/managerScope";
 
 export async function GET(request, { params: { propertyId } }) {
   try {
@@ -11,6 +12,12 @@ export async function GET(request, { params: { propertyId } }) {
     const pid = parseInt(propertyId, 10);
     if (!Number.isFinite(pid)) {
       return Response.json({ error: "Invalid propertyId" }, { status: 400 });
+    }
+
+    // Portfolio Managers may only load units of properties assigned to them.
+    const scope = await getManagerScope(perm);
+    if (scope.scoped && !scope.propertyIds.includes(pid)) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Include the current active tenant (if any) for each unit.

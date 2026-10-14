@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { getManagerScope } from "@/app/api/utils/managerScope";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -26,6 +27,12 @@ export async function GET(request, { params: { id } }) {
     const propertyId = parseInt(id, 10);
     if (!Number.isFinite(propertyId)) {
       return Response.json({ error: "Invalid id" }, { status: 400 });
+    }
+
+    // Portfolio Managers may only load properties assigned to them.
+    const scope = await getManagerScope(perm);
+    if (scope.scoped && !scope.propertyIds.includes(propertyId)) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const rows = await sql`
