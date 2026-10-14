@@ -165,16 +165,16 @@ export default function LandlordsPage() {
 
   const lastAutoPayoutAmountRef = useRef(null);
 
-  // Pre-fill with the all-time due for this property — the exact figure the
-  // payout overpay check caps at — not the date-windowed closing balance.
+  // Pre-fill with the Payment Note's Net payable: the Statement closing
+  // balance for the same landlord + property + period (never negative).
   useEffect(() => {
-    const raw = statementQuery.data?.due_to_landlord;
+    const raw = statementQuery.data?.summary?.closing_balance;
     if (raw === null || raw === undefined) return;
 
-    const allTimeDue = Number(raw);
-    if (!Number.isFinite(allTimeDue)) return;
+    const closing = Number(raw);
+    if (!Number.isFinite(closing)) return;
 
-    const due = Math.max(0, allTimeDue);
+    const due = Math.max(0, closing);
     const dueText = String(due);
 
     const shouldAutofill =
