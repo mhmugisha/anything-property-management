@@ -5,8 +5,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import useUser from "@/utils/useUser";
 import useUpload from "@/utils/useUpload";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
+import { ArrowLeft } from "lucide-react";
 import {
-  useProperties,
+  usePropertiesWithKpis,
   usePropertyDetail,
   useCreateProperty,
   useUpdateProperty,
@@ -24,12 +25,23 @@ import {
 import AppHeader from "@/components/Shell/AppHeader";
 import MobileMenu from "@/components/Shell/MobileMenu";
 import Sidebar from "@/components/Shell/Sidebar";
-import PropertiesSidebar from "@/components/Shell/PropertiesSidebar";
 import AccessDenied from "@/components/Shell/AccessDenied";
 import { PropertyDetails } from "@/components/Properties/PropertyDetails";
+import { PropertiesOverview } from "@/components/Properties/PropertiesOverview";
 import { UnitFormModal } from "@/components/Properties/UnitFormModal";
 import { DecommissionModal } from "@/components/Properties/DecommissionModal";
 import { fetchJson } from "@/utils/api";
+
+const VIEW_STORAGE_KEY = "properties.view";
+
+function readStoredView() {
+  try {
+    const v = window.localStorage.getItem(VIEW_STORAGE_KEY);
+    return v === "table" ? "table" : "cards";
+  } catch {
+    return "cards";
+  }
+}
 
 const INITIAL_PROPERTY_FORM = {
   landlord_id: "",
@@ -58,7 +70,7 @@ export default function PropertiesPage() {
   const [upload, uploadState] = useUpload();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [search, setSearch] = useState("");
+  const [view, setView] = useState("cards");
   const [selectedPropertyId, setSelectedPropertyId] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [decommissionOpen, setDecommissionOpen] = useState(false);
@@ -81,14 +93,27 @@ export default function PropertiesPage() {
   const canManageProperties =
     staffQuery.data?.permissions?.properties === true || false;
 
-  // Fetch ALL properties (sidebar filters client-side)
-  const propertiesQuery = useProperties(
-    "",
+  // Restore the remembered Cards/Table choice after mount (client only).
+  useEffect(() => {
+    setView(readStoredView());
+  }, []);
+
+  const onViewChange = useCallback((next) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // Storage unavailable (private mode etc.) — the choice just won't persist.
+    }
+  }, []);
+
+  // Fetch ALL properties with KPIs (the overview filters client-side)
+  const propertiesQuery = usePropertiesWithKpis(
     !userLoading && !!user && canManageProperties,
     { includeArchived: showArchived },
   );
 
-  const properties = propertiesQuery.data || [];
+  const properties = propertiesQuery.data?.properties || [];
 
   const selectedProperty = useMemo(() => {
     const pid = selectedPropertyId;
@@ -498,6 +523,13 @@ export default function PropertiesPage() {
     setEditingProperty(false);
   }, []);
 
+  const handleBackToList = useCallback(() => {
+    setSelectedPropertyId(null);
+    setShowCreateProperty(false);
+    setEditingProperty(false);
+    setPropertyForm(INITIAL_PROPERTY_FORM);
+  }, []);
+
   const isLoadingScreen = userLoading || staffQuery.isLoading;
 
   if (isLoadingScreen) {
@@ -555,55 +587,63 @@ export default function PropertiesPage() {
         active="properties"
       />
 
-      <Sidebar active="properties">
-        <PropertiesSidebar
-          properties={properties}
-          isLoading={propertiesQuery.isLoading}
-          search={search}
-          onSearchChange={setSearch}
-          selectedPropertyId={selectedPropertyId}
-          onSelectProperty={handleSelectProperty}
-          onCreateProperty={onOpenCreateProperty}
-          showArchived={showArchived}
-          onShowArchivedChange={setShowArchived}
-        />
-      </Sidebar>
+      <Sidebar active="properties" />
 
       <main className="pt-32 md:pl-56">
         <div className="max-w-[90%] mx-auto p-4 md:p-6">
           {showCreateProperty || editingProperty || propertyForDetails ? (
-            <PropertyDetails
-              property={propertyForDetails}
-              propertyForm={propertyForm}
-              onPropertyFormChange={setPropertyForm}
-              isEditingProperty={editingProperty}
-              isCreatingProperty={showCreateProperty}
-              onEditProperty={onOpenEditProperty}
-              onCancelProperty={onCancelPropertyEditOrCreate}
-              onSaveProperty={onSaveProperty}
-              isSavingProperty={isSavingProperty}
-              onDeleteProperty={onDeleteProperty}
-              isDeletingProperty={deletePropertyMutation.isPending}
-              onDecommissionProperty={() => setDecommissionOpen(true)}
-              onReactivateProperty={onReactivateProperty}
-              isReactivatingProperty={reactivatePropertyMutation.isPending}
-              propertyError={
-                createPropertyMutation.error || updatePropertyMutation.error
-              }
-              landlordOptions={landlordOptions}
-              officerOptions={officerOptions}
-              units={units}
-              onCreateUnit={onOpenCreateUnit}
-              onEditUnit={onOpenEditUnit}
-              onDeleteUnit={onDeleteUnit}
-              unitsLoading={unitsQuery.isLoading}
-              unitsError={unitsQuery.error}
-              properties={properties}
-            />
-          ) : (
-            <div className="bg-white rounded-2xl p-10 shadow-sm border border-dashed border-gray-200 text-center text-slate-500">
-              Select a property from the sidebar, or add a new one.
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={handleBackToList}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-sm text-slate-700"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to properties
+              </button>
+              <PropertyDetails
+                property={propertyForDetails}
+                propertyForm={propertyForm}
+                onPropertyFormChange={setPropertyForm}
+                isEditingProperty={editingProperty}
+                isCreatingProperty={showCreateProperty}
+                onEditProperty={onOpenEditProperty}
+                onCancelProperty={onCancelPropertyEditOrCreate}
+                onSaveProperty={onSaveProperty}
+                isSavingProperty={isSavingProperty}
+                onDeleteProperty={onDeleteProperty}
+                isDeletingProperty={deletePropertyMutation.isPending}
+                onDecommissionProperty={() => setDecommissionOpen(true)}
+                onReactivateProperty={onReactivateProperty}
+                isReactivatingProperty={reactivatePropertyMutation.isPending}
+                propertyError={
+                  createPropertyMutation.error || updatePropertyMutation.error
+                }
+                landlordOptions={landlordOptions}
+                officerOptions={officerOptions}
+                units={units}
+                onCreateUnit={onOpenCreateUnit}
+                onEditUnit={onOpenEditUnit}
+                onDeleteUnit={onDeleteUnit}
+                unitsLoading={unitsQuery.isLoading}
+                unitsError={unitsQuery.error}
+                properties={properties}
+              />
             </div>
+          ) : (
+            <PropertiesOverview
+              properties={properties}
+              isLoading={propertiesQuery.isLoading}
+              error={propertiesQuery.error}
+              recoveryMonth={propertiesQuery.data?.recoveryMonth}
+              recoveryYear={propertiesQuery.data?.recoveryYear}
+              showArchived={showArchived}
+              onShowArchivedChange={setShowArchived}
+              view={view}
+              onViewChange={onViewChange}
+              onOpenProperty={handleSelectProperty}
+              onCreateProperty={onOpenCreateProperty}
+            />
           )}
         </div>
 
