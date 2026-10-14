@@ -20,6 +20,30 @@ export function useProperties(
   });
 }
 
+// Full list with per-property KPIs plus the recovery period they cover.
+// Shares the ["properties"] key prefix so existing invalidations refresh it.
+// limit=200 is the server-side maximum (the API clamps anything higher).
+export function usePropertiesWithKpis(
+  enabled,
+  { includeArchived = false, limit = 200 } = {},
+) {
+  return useQuery({
+    queryKey: ["properties", { includeArchived, limit, withKpis: true }],
+    queryFn: async () => {
+      const qs = new URLSearchParams();
+      qs.set("limit", String(limit));
+      if (includeArchived) qs.set("archived", "1");
+      const data = await fetchJson(`/api/properties?${qs.toString()}`);
+      return {
+        properties: data.properties || [],
+        recoveryMonth: data.recovery_month ?? null,
+        recoveryYear: data.recovery_year ?? null,
+      };
+    },
+    enabled,
+  });
+}
+
 export function usePropertyDetail(propertyId, enabled) {
   return useQuery({
     queryKey: ["property", propertyId],
