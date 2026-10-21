@@ -31,8 +31,7 @@ export default function DepositFundsPage() {
   const undepositedQuery = useQuery({
     queryKey: ["accounting", "undepositedFunds"],
     queryFn: async () => {
-      const data = await fetchJson("/api/accounting/undeposited-funds");
-      return data.payments || [];
+      return fetchJson("/api/accounting/undeposited-funds");
     },
     enabled: !userLoading && !!user && canUseAccounting,
   });
@@ -54,7 +53,7 @@ export default function DepositFundsPage() {
 
   const [selected, setSelected] = useState(() => new Set());
 
-  const payments = undepositedQuery.data || [];
+  const payments = undepositedQuery.data?.payments || [];
   const depositAccounts = depositAccountsQuery.data || [];
 
   const paymentCountText = useMemo(() => {
@@ -120,17 +119,13 @@ export default function DepositFundsPage() {
     return formatCurrencyUGX(selectedTotal);
   }, [selectedTotal]);
 
-  const undepositedTotal = useMemo(() => {
-    let total = 0;
-    for (const p of payments) {
-      total += Number(p.amount || 0);
-    }
-    return total;
-  }, [payments]);
-
-  const undepositedTotalText = useMemo(() => {
-    return formatCurrencyUGX(undepositedTotal);
-  }, [undepositedTotal]);
+  // Server totals (uncapped). Headline = GL 1130 balance, same function as
+  // the dashboard Undeposited card.
+  const glBalance1130 = Number(undepositedQuery.data?.glBalance1130 || 0);
+  const depositableTotal = Number(undepositedQuery.data?.depositableTotal || 0);
+  const depositableCount = Number(undepositedQuery.data?.depositableCount || 0);
+  const notDepositableTotal = glBalance1130 - depositableTotal;
+  const isListCapped = payments.length < depositableCount;
 
   const depositMutation = useMutation({
     mutationFn: async () => {
@@ -338,11 +333,40 @@ export default function DepositFundsPage() {
               <div className="md:w-[260px]">
                 <Field label="Total undeposited (UGX)">
                   <input
-                    value={undepositedTotalText}
+                    value={formatCurrencyUGX(glBalance1130)}
                     readOnly
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 outline-none"
                   />
                 </Field>
+                <div className="mt-2 space-y-1 text-xs text-slate-600">
+                  <div className="flex justify-between gap-3">
+                    <span>
+                      Depositable now ({depositableCount} receipt
+                      {depositableCount === 1 ? "" : "s"})
+                    </span>
+                    <span className="font-medium text-slate-800">
+                      {formatCurrencyUGX(depositableTotal)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span>
+                      Not depositable
+                      <span className="block text-[11px] text-slate-500">
+                        already-posted corrections &amp; cleanups (no cash to
+                        bank)
+                      </span>
+                    </span>
+                    <span className="font-medium text-slate-800">
+                      {formatCurrencyUGX(notDepositableTotal)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-gray-200 pt-1">
+                    <span>= GL balance</span>
+                    <span className="font-semibold text-slate-800">
+                      {formatCurrencyUGX(glBalance1130)}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -358,7 +382,11 @@ export default function DepositFundsPage() {
               <h2 className="text-lg font-semibold text-slate-800">
                 Undeposited funds
               </h2>
-              <div className="text-sm text-slate-500">{paymentCountText}</div>
+              <div className="text-sm text-slate-500">
+                {isListCapped
+                  ? `showing oldest ${payments.length} of ${depositableCount}`
+                  : paymentCountText}
+              </div>
             </div>
 
             {undepositedQuery.isLoading ? (

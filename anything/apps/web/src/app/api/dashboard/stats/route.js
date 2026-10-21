@@ -1,6 +1,9 @@
 import sql from "@/app/api/utils/sql";
 import { hasPermission, requirePermission } from "@/app/api/utils/staff";
-import { getDueToLandlordsByProperty } from "@/app/api/utils/accounting";
+import {
+  getAccountBalancesByIds,
+  getDueToLandlordsByProperty,
+} from "@/app/api/utils/accounting";
 
 async function getAccountIdsByCodes(codes) {
   if (!Array.isArray(codes) || codes.length === 0) return {};
@@ -11,36 +14,6 @@ async function getAccountIdsByCodes(codes) {
   const map = {};
   for (const r of rows || []) {
     map[String(r.account_code)] = Number(r.id);
-  }
-  return map;
-}
-
-async function getAccountBalancesByIds(accountIds) {
-  const ids = (accountIds || []).filter(Boolean);
-  if (ids.length === 0) return {};
-
-  const rows = await sql(
-    `
-      SELECT account_id, SUM(amount)::numeric AS balance
-      FROM (
-        SELECT debit_account_id AS account_id, amount
-        FROM transactions
-        WHERE debit_account_id = ANY($1)
-          AND COALESCE(is_deleted,false) = false
-        UNION ALL
-        SELECT credit_account_id AS account_id, -amount
-        FROM transactions
-        WHERE credit_account_id = ANY($1)
-          AND COALESCE(is_deleted,false) = false
-      ) t
-      GROUP BY account_id
-    `,
-    [ids],
-  );
-
-  const map = {};
-  for (const r of rows || []) {
-    map[String(r.account_id)] = Number(r.balance || 0);
   }
   return map;
 }
