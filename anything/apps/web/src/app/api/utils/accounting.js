@@ -34,6 +34,39 @@ export async function getAccountIdByCode(accountCode) {
   return rows?.[0]?.id ? Number(rows[0].id) : null;
 }
 
+// GL balance per account (debits − credits, non-deleted rows, no approval
+// filter). Shared by the dashboard cards and the Deposit Funds page so the
+// two Undeposited (1130) figures can never drift.
+export async function getAccountBalancesByIds(accountIds) {
+  const ids = (accountIds || []).filter(Boolean);
+  if (ids.length === 0) return {};
+
+  const rows = await sql(
+    `
+      SELECT account_id, SUM(amount)::numeric AS balance
+      FROM (
+        SELECT debit_account_id AS account_id, amount
+        FROM transactions
+        WHERE debit_account_id = ANY($1)
+          AND COALESCE(is_deleted,false) = false
+        UNION ALL
+        SELECT credit_account_id AS account_id, -amount
+        FROM transactions
+        WHERE credit_account_id = ANY($1)
+          AND COALESCE(is_deleted,false) = false
+      ) t
+      GROUP BY account_id
+    `,
+    [ids],
+  );
+
+  const map = {};
+  for (const r of rows || []) {
+    map[String(r.account_id)] = Number(r.balance || 0);
+  }
+  return map;
+}
+
 export async function getAccountCode(accountId) {
   const id = toNumber(accountId);
   if (!id) return null;
