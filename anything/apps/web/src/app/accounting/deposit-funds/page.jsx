@@ -124,7 +124,7 @@ export default function DepositFundsPage() {
   const glBalance1130 = Number(undepositedQuery.data?.glBalance1130 || 0);
   const depositableTotal = Number(undepositedQuery.data?.depositableTotal || 0);
   const depositableCount = Number(undepositedQuery.data?.depositableCount || 0);
-  const notDepositableTotal = glBalance1130 - depositableTotal;
+  const ledgerAdjustmentsTotal = glBalance1130 - depositableTotal;
   const isListCapped = payments.length < depositableCount;
 
   const depositMutation = useMutation({
@@ -350,14 +350,15 @@ export default function DepositFundsPage() {
                   </div>
                   <div className="flex justify-between gap-3">
                     <span>
-                      Not depositable
+                      Non-cash ledger adjustments
                       <span className="block text-[11px] text-slate-500">
-                        already-posted corrections &amp; cleanups (no cash to
-                        bank)
+                        Net of corrections and the orphaned-credit cleanup
+                        posted to this account — carries no bankable cash; can
+                        be positive or negative.
                       </span>
                     </span>
                     <span className="font-medium text-slate-800">
-                      {formatCurrencyUGX(notDepositableTotal)}
+                      {formatCurrencyUGX(ledgerAdjustmentsTotal)}
                     </span>
                   </div>
                   <div className="flex justify-between gap-3 border-t border-gray-200 pt-1">
