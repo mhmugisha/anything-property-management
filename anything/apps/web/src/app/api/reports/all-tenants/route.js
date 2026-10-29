@@ -1,6 +1,10 @@
 import sql from "@/app/api/utils/sql";
+import { requirePermission } from "@/app/api/utils/staff";
 
 export async function GET(request) {
+  const perm = await requirePermission(request, "reports");
+  if (!perm.ok) return Response.json(perm.body, { status: perm.status });
+
   try {
     const { searchParams } = new URL(request.url);
     const landlordId = searchParams.get("landlordId");

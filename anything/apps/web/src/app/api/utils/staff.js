@@ -83,6 +83,50 @@ export async function requirePermission(request, key) {
   return { ok: true, status: 200, body: null, staff, permissions, ipAddress };
 }
 
+/**
+ * Passes only if the caller is an active staff user whose role is "Admin".
+ * Admin is identified by role_name, not by a permissions key.
+ */
+export async function requireAdmin(request) {
+  const { session, staff, permissions, ipAddress } =
+    await getStaffContext(request);
+
+  if (!session) {
+    return {
+      ok: false,
+      status: 401,
+      body: { error: "Unauthorized" },
+      staff: null,
+      permissions: null,
+      ipAddress,
+    };
+  }
+
+  if (!staff || staff.is_active === false) {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: "Staff profile not set up" },
+      staff: null,
+      permissions: null,
+      ipAddress,
+    };
+  }
+
+  if (staff.role_name !== "Admin") {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: "Forbidden" },
+      staff,
+      permissions,
+      ipAddress,
+    };
+  }
+
+  return { ok: true, status: 200, body: null, staff, permissions, ipAddress };
+}
+
 function getReportsAllowed(permissions) {
   if (!permissions || typeof permissions !== "object") return [];
   const list = permissions.reports_allowed;

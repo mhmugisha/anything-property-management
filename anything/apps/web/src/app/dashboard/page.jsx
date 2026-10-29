@@ -73,7 +73,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!userLoading && user && staffProfileQuery.isSuccess && !staffProfile) {
-      window.location.href = "/onboarding";
+      window.location.href = "/no-access";
     }
   }, [userLoading, user, staffProfileQuery.isSuccess, staffProfile]);
 

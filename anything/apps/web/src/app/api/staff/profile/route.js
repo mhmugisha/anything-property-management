@@ -42,45 +42,8 @@ export async function GET() {
     `;
 
     if (staff.length === 0) {
-      // Bootstrap behavior:
-      // If this is the first person to sign in (no staff users yet),
-      // automatically create them as an Admin so they can use the app
-      // without getting stuck on onboarding.
-      const staffCountRows =
-        await sql`SELECT COUNT(*)::int AS count FROM staff_users`;
-      const staffCount = Number(staffCountRows?.[0]?.count || 0);
-
-      if (staffCount === 0) {
-        const adminRoleRows = await sql`
-          SELECT id
-          FROM user_roles
-          WHERE role_name = 'Admin'
-          LIMIT 1
-        `;
-
-        const adminRoleId = adminRoleRows?.[0]?.id || null;
-        const fullName = session.user.name || userEmail;
-
-        if (adminRoleId) {
-          await sql`
-            INSERT INTO staff_users (email, full_name, role_id, is_active)
-            VALUES (${userEmail}, ${fullName}, ${adminRoleId}, true)
-          `;
-
-          const bootstrapped = await sql`
-            SELECT s.*, r.role_name, r.permissions
-            FROM staff_users s
-            LEFT JOIN user_roles r ON s.role_id = r.id
-            WHERE s.email = ${userEmail}
-            LIMIT 1
-          `;
-
-          return Response.json({
-            staff: ensureAdminPermissions(bootstrapped?.[0]) || null,
-          });
-        }
-      }
-
+      // No staff profile. Staff are created only by an admin via
+      // POST /api/staff/users; this route never creates one.
       return Response.json({ staff: null });
     }
 

@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { getStaffContext, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 import { hash } from "argon2";
 
 function isValidEmail(email) {
@@ -8,42 +8,6 @@ function isValidEmail(email) {
   if (!e) return false;
   // basic sanity check
   return e.includes("@") && e.includes(".");
-}
-
-async function requireAdmin(request) {
-  const { session, staff, ipAddress } = await getStaffContext(request);
-
-  if (!session) {
-    return {
-      ok: false,
-      status: 401,
-      body: { error: "Unauthorized" },
-      staff: null,
-      ipAddress,
-    };
-  }
-
-  if (!staff || staff.is_active === false) {
-    return {
-      ok: false,
-      status: 403,
-      body: { error: "Staff profile not set up" },
-      staff: null,
-      ipAddress,
-    };
-  }
-
-  if (staff.role_name !== "Admin") {
-    return {
-      ok: false,
-      status: 403,
-      body: { error: "Forbidden" },
-      staff,
-      ipAddress,
-    };
-  }
-
-  return { ok: true, status: 200, body: null, staff, ipAddress };
 }
 
 export async function GET(request) {
