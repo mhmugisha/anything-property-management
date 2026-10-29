@@ -1,43 +1,10 @@
 import sql from "@/app/api/utils/sql";
-import { getStaffContext, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 
-async function requireAdmin(request) {
-  const { session, staff, ipAddress } = await getStaffContext(request);
+export async function GET(request) {
+  const perm = await requireAdmin(request);
+  if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
-  if (!session) {
-    return {
-      ok: false,
-      status: 401,
-      body: { error: "Unauthorized" },
-      staff: null,
-      ipAddress,
-    };
-  }
-
-  if (!staff || staff.is_active === false) {
-    return {
-      ok: false,
-      status: 403,
-      body: { error: "Staff profile not set up" },
-      staff: null,
-      ipAddress,
-    };
-  }
-
-  if (staff.role_name !== "Admin") {
-    return {
-      ok: false,
-      status: 403,
-      body: { error: "Forbidden" },
-      staff,
-      ipAddress,
-    };
-  }
-
-  return { ok: true, status: 200, body: null, staff, ipAddress };
-}
-
-export async function GET() {
   try {
     const roles = await sql`
       SELECT id, role_name, permissions 

@@ -459,7 +459,7 @@ export function Layout({ children }: { children: ReactNode }) {
       payroll: 'Payroll',
       settings: 'Settings',
       profile: 'Profile',
-      onboarding: 'Onboarding',
+      'no-access': 'No Access',
     };
     const subTitleMap: Record<string, string> = {
       'accounting/deposit-funds': 'Deposit Funds',

@@ -31,7 +31,7 @@ export default function SettingsPage() {
   const isAdmin = staffQuery.data?.role_name === "Admin";
   const enabled = !userLoading && !!user && !!staffQuery.data;
 
-  const rolesHook = useSettingsRoles({ enabled });
+  const rolesHook = useSettingsRoles({ enabled: enabled && isAdmin });
   const usersHook = useSettingsUsers({ enabled, isAdmin });
 
   const handleCreateUser = () => {
@@ -136,7 +136,7 @@ export default function SettingsPage() {
   }
 
   if (!staffQuery.data) {
-    if (typeof window !== "undefined") window.location.href = "/onboarding";
+    if (typeof window !== "undefined") window.location.href = "/no-access";
     return null;
   }
 

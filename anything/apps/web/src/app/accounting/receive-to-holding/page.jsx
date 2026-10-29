@@ -150,7 +150,7 @@ export default function ReceiveToHoldingPage() {
   }
 
   if (!staffQuery.data) {
-    if (typeof window !== "undefined") window.location.href = "/onboarding";
+    if (typeof window !== "undefined") window.location.href = "/no-access";
     return null;
   }
 

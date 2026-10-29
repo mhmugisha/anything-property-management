@@ -94,7 +94,7 @@ export default function PromisesDuePage() {
 
   if (!staffQuery.data) {
     if (typeof window !== "undefined") {
-      window.location.href = "/onboarding";
+      window.location.href = "/no-access";
     }
     return null;
   }

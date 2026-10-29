@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { auth } from "@/auth";
+import { requireAdmin } from "@/app/api/utils/staff";
 
 /**
  * One-time migration endpoint to enforce UGX-only currency
@@ -10,14 +10,11 @@ import { auth } from "@/auth";
  * 4. Runs in a transaction (all or nothing)
  */
 export async function POST(request) {
-  try {
-    // Require authentication
-    const session = await auth();
-    if (!session?.user?.id) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const perm = await requireAdmin(request);
+  if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
-    console.log(`[CURRENCY MIGRATION] Started by user ${session.user.email}`);
+  try {
+    console.log(`[CURRENCY MIGRATION] Started by user ${perm.staff.email}`);
 
     // Run migration in a transaction
     const results = await sql.transaction([
@@ -144,7 +141,7 @@ export async function POST(request) {
     const migrationSummary = {
       success: true,
       timestamp: new Date().toISOString(),
-      executedBy: session.user.email,
+      executedBy: perm.staff.email,
       beforeState,
       updatedRecords,
       constraintsAdded: constraints,
