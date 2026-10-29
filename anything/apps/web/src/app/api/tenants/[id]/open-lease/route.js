@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 
 function nextMonthStart() {
   // First day of next month (billing starts next cycle)
@@ -12,7 +12,8 @@ function ymd(d) {
 }
 
 export async function POST(request, { params: { id } }) {
-  const perm = await requirePermission(request, "tenants");
+  // Admin only: creating a live lease is never self-service for non-admins.
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

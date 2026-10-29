@@ -19,7 +19,7 @@ export async function GET(request) {
       landlordDeductions,
       landlordRows,
       propertyRows,
-      tenantRows,
+      tenantSubmissionRows,
     ] = await Promise.all([
       sql`
         SELECT p.*, s.full_name AS created_by_name, t.full_name AS tenant_name,
@@ -89,18 +89,37 @@ export async function GET(request) {
         WHERE p.approval_status = 'pending'
         ORDER BY p.created_at DESC
       `,
+      // New tenants submitted by non-admins. Nothing exists in tenants/leases
+      // until approval; unit_available re-runs the overlap test live.
       sql`
-        SELECT t.*, s.full_name AS created_by_name
-        FROM tenants t
-        LEFT JOIN staff_users s ON s.id = t.created_by
-        WHERE t.approval_status = 'pending'
-        ORDER BY t.created_at DESC
+        SELECT ts.*,
+               s.full_name AS created_by_name,
+               u.unit_number,
+               p.id AS property_id,
+               p.property_name,
+               l.full_name AS landlord_name,
+               (
+                 COALESCE(p.is_deleted, false) = false
+                 AND NOT EXISTS (
+                   SELECT 1 FROM leases ol
+                   WHERE ol.unit_id = ts.unit_id
+                     AND ol.status = 'active'
+                     AND ol.start_date <= ts.end_date
+                     AND ol.end_date >= ts.start_date
+                 )
+               ) AS unit_available
+        FROM tenant_submissions ts
+        LEFT JOIN staff_users s ON s.id = ts.requested_by
+        LEFT JOIN units u ON u.id = ts.unit_id
+        LEFT JOIN properties p ON p.id = u.property_id
+        LEFT JOIN landlords l ON l.id = p.landlord_id
+        ORDER BY ts.requested_at DESC
       `,
     ]);
 
     const landlords = landlordRows || [];
     const properties = propertyRows || [];
-    const tenants = tenantRows || [];
+    const tenantSubmissions = tenantSubmissionRows || [];
 
     return Response.json({
       payments,
@@ -110,7 +129,7 @@ export async function GET(request) {
       landlordDeductions,
       landlords,
       properties,
-      tenants,
+      tenantSubmissions,
     });
   } catch (error) {
     console.error('GET /api/approvals error', error);

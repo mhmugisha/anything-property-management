@@ -39,6 +39,8 @@ export function TenantDetails({
   isArchived,
   canEndLease,
   canOpenLease,
+  canCreateLease,
+  showLeaseSection,
   onArchive,
   onReactivate,
   onEndLease,
@@ -52,6 +54,7 @@ export function TenantDetails({
   actionError,
   actionSuccess,
   saveWarning,
+  submittedNotice,
 }) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [displayedWarning, setDisplayedWarning] = useState(null);
@@ -177,7 +180,7 @@ export function TenantDetails({
                       <Ban className="w-4 h-4" />
                       {endLeaseLabel}
                     </button>
-                  ) : (
+                  ) : canCreateLease ? (
                     <button
                       onClick={() => {
                         onOpenLease();
@@ -195,7 +198,7 @@ export function TenantDetails({
                       <DoorOpen className="w-4 h-4" />
                       {openLeaseLabel}
                     </button>
-                  )}
+                  ) : null}
 
                   <button
                     onClick={() => {
@@ -232,6 +235,12 @@ export function TenantDetails({
         </div>
       ) : null}
 
+      {submittedNotice ? (
+        <div className="mt-4 rounded-lg bg-sky-50 border border-sky-200 p-3 text-sm text-sky-800">
+          {submittedNotice}
+        </div>
+      ) : null}
+
       {displayedWarning ? (
         <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
           {displayedWarning}
@@ -242,7 +251,7 @@ export function TenantDetails({
         <div className="mt-4">
           <TenantForm tenantForm={tenantForm} onChange={onTenantFormChange} />
 
-          {isCreating || isEditing ? (
+          {showLeaseSection ? (
             <div className="mt-6 rounded-2xl border border-gray-100 bg-gray-50 p-4">
               <h3 className="text-sm font-semibold text-slate-800 mb-2">
                 Assign tenant to a unit

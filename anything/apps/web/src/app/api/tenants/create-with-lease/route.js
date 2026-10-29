@@ -1,9 +1,12 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
-import { ensureInvoicesForLease } from "@/app/api/utils/invoices";
-import { getAccountIdByCode } from "@/app/api/utils/accounting";
 import { getApprovalFields } from "@/app/api/utils/approval";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
+import { materializeTenantWithLease } from "@/app/api/utils/tenants/materializeTenantWithLease";
+import {
+  ensureInvoicesForNewLease,
+  safeErrorMessage,
+} from "@/app/api/utils/tenants/leaseInvoices";
 
 const OPEN_ENDED_END_DATE = "2099-12-31";
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
@@ -15,35 +18,9 @@ function toNumber(value) {
   return n;
 }
 
-// NEW: return a safe, human-readable error message to the UI.
-function safeErrorMessage(error) {
-  if (!error) return "Unknown error";
-
-  const msg = typeof error.message === "string" ? error.message : String(error);
-
-  // If this is a Postgres error, include the code/detail (still safe for staff UI).
-  const code = typeof error.code === "string" ? error.code : null;
-  const detail = typeof error.detail === "string" ? error.detail : null;
-
-  let out = msg;
-  if (code) out = `${out} (code: ${code})`;
-  if (detail) out = `${out} - ${detail}`;
-
-  // Prevent extremely long responses.
-  if (out.length > 600) {
-    out = out.slice(0, 600) + "…";
-  }
-
-  return out;
-}
-
 export async function POST(request) {
   const perm = await requirePermission(request, "tenants");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
-
-  let createdTenantId = null;
-  let createdLeaseId = null;
-  let updatedUnitId = null;
 
   try {
     const body = await request.json();
@@ -149,144 +126,109 @@ export async function POST(request) {
       );
     }
 
-    // Create tenant first
-    const approval = getApprovalFields(perm.staff);
-    const tenantRows = await sql`
-      INSERT INTO tenants (title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, approval_status, approved_by, approved_at)
-      VALUES (${title}, ${fullName}, ${phone}, ${email}, ${nationalId}, ${emergencyContact}, ${emergencyPhone}, ${status}, ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at})
-      RETURNING id, title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, created_at
-    `;
+    // Non-admin: hold the whole request in tenant_submissions. No tenant,
+    // lease, unit change, deposit or invoice exists until an admin approves.
+    if (perm.staff.role_name !== "Admin") {
+      const pendingClash = await sql`
+        SELECT id FROM tenant_submissions
+        WHERE unit_id = ${unitId}
+          AND start_date <= ${endDate}::date
+          AND end_date >= ${startDate}::date
+        LIMIT 1
+      `;
 
-    const tenant = tenantRows?.[0] || null;
-    createdTenantId = tenant?.id || null;
-
-    if (!createdTenantId) {
-      return Response.json(
-        { error: "Failed to create tenant" },
-        { status: 500 },
-      );
-    }
-
-    // Create lease and mark unit occupied
-    const leaseRows = await sql`
-      INSERT INTO leases (
-        unit_id, tenant_id, start_date, end_date, monthly_rent, currency,
-        deposit_amount, deposit_paid, billing_day, auto_renew, status, created_by
-      )
-      VALUES (
-        ${unitId}, ${createdTenantId}, ${startDate}::date, ${endDate}::date, ${monthlyRent}, ${currency},
-        ${depositAmount}, 0, ${billingDay}, ${autoRenew}, 'active', ${perm.staff.id}
-      )
-      RETURNING *
-    `;
-
-    const lease = leaseRows?.[0] || null;
-    createdLeaseId = lease?.id || null;
-
-    if (!createdLeaseId) {
-      return Response.json(
-        { error: "Failed to create lease" },
-        { status: 500 },
-      );
-    }
-
-    await sql`UPDATE units SET status = 'occupied' WHERE id = ${unitId}`;
-    updatedUnitId = unitId;
-
-    // NEW: Post security deposit accounting transaction if deposit_amount > 0
-    if (depositAmount && depositAmount > 0) {
-      try {
-        const undepositedFundsId = await getAccountIdByCode("1130");
-        const tenantDepositsPayableId = await getAccountIdByCode("2200");
-
-        if (undepositedFundsId && tenantDepositsPayableId) {
-          const depositDescription = `Security deposit - ${fullName}`;
-          const todayYmd = new Date().toISOString().slice(0, 10);
-
-          await sql`
-            INSERT INTO transactions (
-              transaction_date, description, reference_number,
-              debit_account_id, credit_account_id,
-              amount, currency,
-              created_by,
-              property_id,
-              source_type, source_id
-            )
-            VALUES (
-              ${todayYmd}::date, ${depositDescription}, ${`SD-${createdLeaseId}`},
-              ${undepositedFundsId}, ${tenantDepositsPayableId},
-              ${depositAmount}, ${currency},
-              ${perm.staff.id},
-              ${unit.property_id},
-              'security_deposit', ${createdLeaseId}
-            )
-          `;
-        }
-      } catch (depositError) {
-        console.error(
-          "Failed to post security deposit transaction; continuing",
-          depositError,
+      if (pendingClash.length > 0) {
+        return Response.json(
+          {
+            error:
+              "Another tenant submission for this unit and date range is already awaiting approval",
+          },
+          { status: 409 },
         );
-        // Non-critical: don't fail the whole tenant creation
       }
+
+      const submissionRows = await sql`
+        INSERT INTO tenant_submissions (
+          title, full_name, phone, email, national_id, emergency_contact, emergency_phone,
+          unit_id, start_date, end_date, monthly_rent, currency,
+          deposit_amount, billing_day, auto_renew, requested_by
+        )
+        VALUES (
+          ${title}, ${fullName}, ${phone}, ${email}, ${nationalId}, ${emergencyContact}, ${emergencyPhone},
+          ${unitId}, ${startDate}::date, ${endDate}::date, ${monthlyRent}, ${currency},
+          ${depositAmount}, ${billingDay}, ${autoRenew}, ${perm.staff.id}
+        )
+        RETURNING *
+      `;
+
+      const submission = submissionRows?.[0] || null;
+
+      try {
+        await writeAuditLog({
+          staffId: perm.staff.id,
+          action: "tenant_submission.create",
+          entityType: "tenant_submission",
+          entityId: submission?.id || null,
+          oldValues: null,
+          newValues: submission,
+          ipAddress: perm.ipAddress,
+        });
+      } catch (e) {
+        console.error("Failed to write audit log for tenant_submission.create", e);
+      }
+
+      notifyAllAdminsAsync({
+        title: "New Tenant Pending Approval",
+        message: `New tenant ${fullName} for ${unit.property_name || "property"} unit ${unit.unit_number || ""} is pending approval. Submitted by ${perm.staff.full_name || "Staff"}`,
+        type: "tenant",
+        reference_id: submission?.id,
+        reference_type: "tenant_submission",
+      });
+
+      return Response.json({ submission, pending: true }, { status: 201 });
     }
 
-    // Ensure invoices exist immediately.
-    // IMPORTANT: Tenant creation should not fail if invoice generation fails, but we SHOULD surface this
-    // clearly so staff can act quickly.
-    let invoiceWarning = null;
-    let invoiceInsertedCount = null;
+    // Admin: create tenant + lease + unit occupancy + deposit atomically.
+    const created = await materializeTenantWithLease({
+      values: {
+        title,
+        full_name: fullName,
+        phone,
+        email,
+        national_id: nationalId,
+        emergency_contact: emergencyContact,
+        emergency_phone: emergencyPhone,
+        unit_id: unitId,
+        start_date: startDate,
+        end_date: endDate,
+        monthly_rent: monthlyRent,
+        currency,
+        deposit_amount: depositAmount,
+        billing_day: billingDay,
+        auto_renew: autoRenew,
+        created_by: perm.staff.id,
+      },
+      tenantStatus: status,
+      approval: getApprovalFields(perm.staff),
+      unitId,
+    });
 
-    const isStartDateLikelyInPastOrCurrent = (() => {
-      try {
-        const sd = new Date(`${startDate}T00:00:00Z`);
-        if (Number.isNaN(sd.getTime())) return false;
-        const currentMonthStart = new Date();
-        currentMonthStart.setDate(1);
-        currentMonthStart.setHours(0, 0, 0, 0);
-        return sd.getTime() <= currentMonthStart.getTime();
-      } catch {
-        return false;
-      }
-    })();
-
-    try {
-      invoiceInsertedCount = await ensureInvoicesForLease(createdLeaseId);
-
-      // If we expected at least one invoice but got none, flag it.
-      if (
-        isStartDateLikelyInPastOrCurrent &&
-        Number(invoiceInsertedCount || 0) === 0
-      ) {
-        invoiceWarning =
-          "No invoices were generated for this lease. This can happen if invoice generation was skipped or the lease/property setup blocks billing.";
-      }
-    } catch (e) {
-      console.error(
-        "ensureInvoicesForLease failed during tenant creation; retrying once",
-        e,
+    if (!created) {
+      // The unit was let (or its property archived) since validation above.
+      return Response.json(
+        {
+          error:
+            "This unit already has an active lease in the selected date range",
+        },
+        { status: 409 },
       );
-
-      // quick one-time retry (helps with transient locks)
-      try {
-        await new Promise((r) => setTimeout(r, 200));
-        invoiceInsertedCount = await ensureInvoicesForLease(createdLeaseId);
-
-        if (
-          isStartDateLikelyInPastOrCurrent &&
-          Number(invoiceInsertedCount || 0) === 0
-        ) {
-          invoiceWarning =
-            "No invoices were generated for this lease. This can happen if invoice generation was skipped or the lease/property setup blocks billing.";
-        }
-      } catch (e2) {
-        console.error(
-          "ensureInvoicesForLease failed during tenant creation; continuing",
-          e2,
-        );
-        invoiceWarning = safeErrorMessage(e2);
-      }
     }
+
+    const { tenant, lease } = created;
+
+    // Tenant creation must not fail on invoicing; problems become a warning.
+    const { invoiceInsertedCount, invoiceWarning } =
+      await ensureInvoicesForNewLease(lease.id, startDate);
 
     // Audit logs are best-effort
     try {
@@ -317,16 +259,6 @@ export async function POST(request) {
       console.error("Failed to write audit log for lease.create", e);
     }
 
-    if (approval.approval_status === "pending") {
-      notifyAllAdminsAsync({
-        title: "New Tenant Pending Approval",
-        message: `New tenant ${fullName} with lease has been created and is pending approval. Added by ${perm.staff.full_name || "Staff"}`,
-        type: "tenant",
-        reference_id: tenant?.id,
-        reference_type: "tenant",
-      });
-    }
-
     return Response.json({
       tenant,
       lease,
@@ -344,31 +276,8 @@ export async function POST(request) {
   } catch (error) {
     console.error("POST /api/tenants/create-with-lease error", error);
 
-    // Best-effort cleanup if tenant/lease were created but later steps failed.
-    try {
-      if (updatedUnitId) {
-        await sql`UPDATE units SET status = 'vacant' WHERE id = ${updatedUnitId}`;
-      }
-    } catch (cleanupError) {
-      console.error("Cleanup failed for unit", cleanupError);
-    }
-
-    try {
-      if (createdLeaseId) {
-        await sql`DELETE FROM leases WHERE id = ${createdLeaseId}`;
-      }
-    } catch (cleanupError) {
-      console.error("Cleanup failed for lease", cleanupError);
-    }
-
-    try {
-      if (createdTenantId) {
-        await sql`DELETE FROM tenants WHERE id = ${createdTenantId}`;
-      }
-    } catch (cleanupError) {
-      console.error("Cleanup failed for tenant", cleanupError);
-    }
-
+    // Tenant, lease, unit and deposit are written in one statement, so a
+    // failure leaves nothing behind to clean up.
     return Response.json(
       {
         error: `Failed to create tenant and assign unit: ${safeErrorMessage(error)}`,

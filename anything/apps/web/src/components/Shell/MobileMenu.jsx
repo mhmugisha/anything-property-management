@@ -13,13 +13,15 @@ import {
   User,
   Settings,
   Briefcase,
+  ClipboardCheck,
 } from "lucide-react";
 
 import useUser from "@/utils/useUser";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
+import { usePendingApprovalsCount } from "@/hooks/usePendingApprovalsCount";
 import ExelaLogo from "@/components/ExelaLogo";
 
-function MobileLink({ href, active, icon, label }) {
+function MobileLink({ href, active, icon, label, badge = 0 }) {
   const base = "flex items-center px-4 py-3 rounded-lg transition-colors";
 
   const classes = active
@@ -30,6 +32,11 @@ function MobileLink({ href, active, icon, label }) {
     <a href={href} className={classes}>
       <span className="w-5 h-5 mr-3">{icon}</span>
       {label}
+      {badge > 0 && (
+        <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-xs font-bold">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </a>
   );
 }
@@ -40,6 +47,10 @@ export default function MobileMenu({ isOpen, onClose, active }) {
   const isAdmin = staffQuery.data?.role_name === "Admin";
   const isPortfolioManager =
     staffQuery.data?.role_name === "Portfolio Manager";
+  const pendingApprovals = usePendingApprovalsCount(
+    isAdmin,
+    !userLoading && !!user,
+  );
 
   if (!isOpen) return null;
 
@@ -114,6 +125,15 @@ export default function MobileMenu({ isOpen, onClose, active }) {
                 icon={<Wrench className="w-5 h-5" />}
                 label="Maintenance"
               />
+              {isAdmin ? (
+                <MobileLink
+                  href="/approvals"
+                  active={active === "approvals"}
+                  icon={<ClipboardCheck className="w-5 h-5" />}
+                  label="Pending Approvals"
+                  badge={pendingApprovals}
+                />
+              ) : null}
               {isAdmin ? (
                 <MobileLink
                   href="/settings"
