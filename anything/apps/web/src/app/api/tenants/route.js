@@ -1,7 +1,10 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import {
+  requireAdmin,
+  requirePermission,
+  writeAuditLog,
+} from "@/app/api/utils/staff";
 import { getApprovalFields } from "@/app/api/utils/approval";
-import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 
@@ -151,7 +154,9 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const perm = await requirePermission(request, "tenants");
+  // Admin only: non-admins submit new tenants via create-with-lease, which
+  // holds them in tenant_submissions until an admin approves.
+  const perm = await requireAdmin(request);
   if (!perm.ok) {
     return Response.json(perm.body, { status: perm.status });
   }
@@ -182,8 +187,8 @@ export async function POST(request) {
 
     const approval = getApprovalFields(perm.staff);
     const rows = await sql`
-      INSERT INTO tenants (title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, approval_status, approved_by, approved_at)
-      VALUES (${title}, ${fullName}, ${phone}, ${email}, ${nationalId}, ${emergencyContact}, ${emergencyPhone}, ${status}, ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at})
+      INSERT INTO tenants (title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, approval_status, approved_by, approved_at, created_by)
+      VALUES (${title}, ${fullName}, ${phone}, ${email}, ${nationalId}, ${emergencyContact}, ${emergencyPhone}, ${status}, ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}, ${perm.staff.id})
       RETURNING id, title, full_name, phone, email, national_id, emergency_contact, emergency_phone, status, created_at
     `;
 
@@ -198,16 +203,6 @@ export async function POST(request) {
       newValues: tenant,
       ipAddress: perm.ipAddress,
     });
-
-    if (approval.approval_status === "pending") {
-      notifyAllAdminsAsync({
-        title: "New Tenant Pending Approval",
-        message: `New tenant ${fullName} has been created and is pending approval. Added by ${perm.staff.full_name || "Staff"}`,
-        type: "tenant",
-        reference_id: tenant?.id,
-        reference_type: "tenant",
-      });
-    }
 
     return Response.json({ tenant });
   } catch (error) {

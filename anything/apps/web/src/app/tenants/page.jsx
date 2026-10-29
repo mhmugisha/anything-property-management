@@ -169,6 +169,9 @@ export default function TenantsPage() {
   }, []);
 
   const canManageTenants = staffQuery.data?.permissions?.tenants === true;
+  // Only admins create live leases outside the new-tenant flow (assign a unit
+  // on edit, Open Lease). Non-admins' new tenants go to approval instead.
+  const isAdmin = staffQuery.data?.role_name === "Admin";
 
   const landlordIdFilter =
     selectedLandlordId && String(selectedLandlordId) !== ALL_VALUE
@@ -344,6 +347,10 @@ export default function TenantsPage() {
     landlordPropertiesForForm,
   );
 
+  const submittedNotice = createTenantWithLeaseMutation.data?.pending
+    ? "Submitted for approval. The tenant will appear once an admin approves it."
+    : null;
+
   const saveWarning =
     createTenantWithLeaseMutation.data?.warning ||
     (createTenantWithLeaseMutation.data?.invoiceInsertedCount === 0
@@ -369,7 +376,7 @@ export default function TenantsPage() {
     createTenantWithLeaseMutation,
     updateTenantMutation,
     updateLeaseMutation,
-    createLeaseMutation,
+    createLeaseMutation: isAdmin ? createLeaseMutation : null,
     tenantForm,
     leaseForm,
     isCreating,
@@ -889,6 +896,10 @@ export default function TenantsPage() {
               isArchived={isArchivedTenant}
               canEndLease={canEndLease}
               canOpenLease={canOpenLease}
+              canCreateLease={isAdmin}
+              showLeaseSection={
+                isCreating || (isEditing && (!!activeLease || isAdmin))
+              }
               onArchive={onArchiveTenant}
               onReactivate={onActivateTenant}
               onEndLease={onEndLease}
@@ -902,6 +913,7 @@ export default function TenantsPage() {
               actionError={actionError}
               actionSuccess={actionSuccess}
               saveWarning={saveWarning}
+              submittedNotice={submittedNotice}
             />
 
             {!isCreating && !isEditing && selectedTenant ? (

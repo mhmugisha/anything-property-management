@@ -1,8 +1,14 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { createNotification } from "@/app/api/utils/notifications";
+import {
+  approveTenantSubmission,
+  rejectTenantSubmission,
+} from "@/app/api/utils/tenants/tenantSubmissions";
 
-const ALLOWED_TYPES = ['payments', 'invoices', 'transactions', 'tenant_deductions', 'landlord_deductions', 'landlords', 'properties', 'tenants'];
+// New tenants are approved via 'tenant_submissions' (handled separately below),
+// never by flipping tenants.approval_status.
+const ALLOWED_TYPES = ['payments', 'invoices', 'transactions', 'tenant_deductions', 'landlord_deductions', 'landlords', 'properties', 'tenant_submissions'];
 
 export async function POST(request, { params }) {
   const perm = await requirePermission(request, "accounting");
@@ -25,6 +31,20 @@ export async function POST(request, { params }) {
 
   if (!['approve', 'reject'].includes(action)) {
     return Response.json({ error: 'action must be approve or reject' }, { status: 400 });
+  }
+
+  // Tenant submissions live outside the live tables: approve creates the
+  // tenant + financials from the submission, reject deletes it.
+  if (type === 'tenant_submissions') {
+    try {
+      const result = action === 'approve'
+        ? await approveTenantSubmission({ submissionId: entryId, perm })
+        : await rejectTenantSubmission({ submissionId: entryId, reason: rejectedReason, perm });
+      return Response.json(result.body, { status: result.status });
+    } catch (error) {
+      console.error(`POST /api/approvals/${type}/${id} error`, error);
+      return Response.json({ error: 'Failed to process approval' }, { status: 500 });
+    }
   }
 
   try {
@@ -170,7 +190,7 @@ export async function POST(request, { params }) {
         console.log(`Rejected invoices ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}`);
       }
 
-      else if (['landlords', 'properties', 'tenants'].includes(type)) {
+      else if (['landlords', 'properties'].includes(type)) {
         // Warn if related financial records already exist (rejection at this stage is unexpected)
         let relatedWarning = null;
         if (type === 'landlords') {
@@ -178,9 +198,6 @@ export async function POST(request, { params }) {
           if (rel?.length > 0) relatedWarning = 'has active properties';
         } else if (type === 'properties') {
           const rel = await sql`SELECT 1 FROM leases WHERE property_id = ${entryId} LIMIT 1`;
-          if (rel?.length > 0) relatedWarning = 'has leases';
-        } else if (type === 'tenants') {
-          const rel = await sql`SELECT 1 FROM leases WHERE tenant_id = ${entryId} LIMIT 1`;
           if (rel?.length > 0) relatedWarning = 'has leases';
         }
         if (relatedWarning) {
@@ -224,7 +241,6 @@ export async function POST(request, { params }) {
         landlord_deductions: `Your landlord deduction of UGX ${Number(entry.amount || 0).toLocaleString()} (${entry.description || ''}) has not been approved. Please contact admin.`,
         landlords: `The landlord '${entry.full_name || ''}' you added has not been approved. Please contact admin.`,
         properties: `The property '${entry.property_name || ''}' you added has not been approved. Please contact admin.`,
-        tenants: `The tenant '${entry.full_name || ''}' you added has not been approved. Please contact admin.`,
       };
 
       const message = messageMap[type];

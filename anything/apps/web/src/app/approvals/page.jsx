@@ -33,7 +33,7 @@ const TYPE_LABELS = {
   landlordDeductions: "Landlord Deductions",
   landlords: "Landlords",
   properties: "Properties",
-  tenants: "Tenants",
+  tenantSubmissions: "New Tenants",
 };
 
 const TYPE_API_KEYS = {
@@ -44,7 +44,7 @@ const TYPE_API_KEYS = {
   landlordDeductions: "landlord_deductions",
   landlords: "landlords",
   properties: "properties",
-  tenants: "tenants",
+  tenantSubmissions: "tenant_submissions",
 };
 
 function formatAmount(amount, currency) {
@@ -207,13 +207,41 @@ function EntityCard({ entry, typeKey, onApprove, onReject, isPending }) {
       entry.landlord_name && `Landlord: ${entry.landlord_name}`,
       `Fee: ${feeDisplay}`,
     ].filter(Boolean);
-  } else if (typeKey === "tenants") {
-    title = entry.full_name || "—";
+  } else if (typeKey === "tenantSubmissions") {
+    title = `${entry.title ? `${entry.title} ` : ""}${entry.full_name || "—"}`;
+    const startDate = String(entry.start_date || "").slice(0, 10);
+    const endDate = String(entry.end_date || "").slice(0, 10);
+    const leaseTerm =
+      endDate && !endDate.startsWith("2099")
+        ? `${startDate} to ${endDate}`
+        : `from ${startDate} (open-ended)`;
     details = [
       entry.phone && `Phone: ${entry.phone}`,
       entry.email && `Email: ${entry.email}`,
+      entry.national_id && `National ID: ${entry.national_id}`,
+      entry.emergency_contact &&
+        `Emergency: ${entry.emergency_contact}${
+          entry.emergency_phone ? ` (${entry.emergency_phone})` : ""
+        }`,
+      `Unit: ${entry.property_name || "—"} – ${entry.unit_number || "—"}${
+        entry.landlord_name ? ` (${entry.landlord_name})` : ""
+      }`,
+      `Rent: ${formatAmount(entry.monthly_rent, entry.currency)} / month`,
+      `Lease: ${leaseTerm}, billing day ${entry.billing_day || 1}${
+        entry.auto_renew ? ", auto-renew" : ""
+      }`,
+      `Deposit: ${
+        Number(entry.deposit_amount || 0) > 0
+          ? formatAmount(entry.deposit_amount, entry.currency)
+          : "none"
+      }`,
+      entry.requested_at &&
+        `Submitted: ${String(entry.requested_at).slice(0, 10)}`,
     ].filter(Boolean);
   }
+
+  const unitTaken =
+    typeKey === "tenantSubmissions" && entry.unit_available === false;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
@@ -229,6 +257,13 @@ function EntityCard({ entry, typeKey, onApprove, onReject, isPending }) {
       <div className="text-xs text-slate-500">
         Created by: <span className="font-medium text-slate-700">{createdBy}</span>
       </div>
+
+      {unitTaken && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+          This unit is no longer available for these dates. Approving will fail;
+          reject the submission or ask for a different unit.
+        </div>
+      )}
 
       {showRejectInput ? (
         <div className="space-y-2">
@@ -346,7 +381,7 @@ export default function ApprovalsPage() {
   const landlordDeductions = data.landlordDeductions || [];
   const landlords = data.landlords || [];
   const properties = data.properties || [];
-  const tenants = data.tenants || [];
+  const tenantSubmissions = data.tenantSubmissions || [];
 
   const totalPending =
     payments.length +
@@ -356,7 +391,7 @@ export default function ApprovalsPage() {
     landlordDeductions.length +
     landlords.length +
     properties.length +
-    tenants.length;
+    tenantSubmissions.length;
 
   return (
     <div className="min-h-screen bg-slate-200 font-inter">
@@ -469,11 +504,11 @@ export default function ApprovalsPage() {
                 CardComponent={EntityCard}
               />
               <SectionGroup
-                label={TYPE_LABELS.tenants}
-                entries={tenants}
-                typeKey="tenants"
-                onApprove={handleApprove(TYPE_API_KEYS.tenants)}
-                onReject={handleReject(TYPE_API_KEYS.tenants)}
+                label={TYPE_LABELS.tenantSubmissions}
+                entries={tenantSubmissions}
+                typeKey="tenantSubmissions"
+                onApprove={handleApprove(TYPE_API_KEYS.tenantSubmissions)}
+                onReject={handleReject(TYPE_API_KEYS.tenantSubmissions)}
                 isPending={approvalMutation.isPending}
                 CardComponent={EntityCard}
               />

@@ -1,5 +1,9 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import {
+  requireAdmin,
+  requirePermission,
+  writeAuditLog,
+} from "@/app/api/utils/staff";
 import { ensureInvoicesForLease } from "@/app/api/utils/invoices";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
@@ -14,7 +18,8 @@ function toNumber(value) {
 }
 
 export async function POST(request) {
-  const perm = await requirePermission(request, "tenants");
+  // Admin only: creating a live lease is never self-service for non-admins.
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
