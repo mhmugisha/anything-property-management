@@ -7,9 +7,14 @@ import {
   RefreshCw,
   AlertCircle,
 } from "lucide-react";
+import { useCanRecordPayments } from "@/hooks/useCanRecordPayments";
 
 export default function PaymentsSidebar() {
-  const menuItems = [
+  const canRecordPayments = useCanRecordPayments();
+
+  // recordOnly entries lead only to a recording page; hide them unless the
+  // staff profile has loaded and grants payments_receive.
+  const allItems = [
     {
       title: "Payments",
       href: "/payments",
@@ -18,16 +23,19 @@ export default function PaymentsSidebar() {
     {
       title: "Pay on Account",
       href: "/payments/payment-on-account",
+      recordOnly: true,
       icon: Wallet,
     },
     {
       title: "Pay Invoice",
       href: "/payments/pay-invoice",
+      recordOnly: true,
       icon: DollarSign,
     },
     {
       title: "Auto Apply",
       href: "/payments/auto-apply",
+      recordOnly: true,
       icon: RefreshCw,
     },
     {
@@ -36,6 +44,9 @@ export default function PaymentsSidebar() {
       icon: AlertCircle,
     },
   ];
+  const menuItems = allItems.filter(
+    (item) => !item.recordOnly || canRecordPayments,
+  );
 
   return (
     <div className="flex flex-col h-full">

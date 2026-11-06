@@ -7,8 +7,10 @@ import DatePopoverInput from "@/components/DatePopoverInput";
 import { formatDate } from "@/utils/formatters";
 import { downloadCsv } from "@/utils/downloadCsv";
 import { formatCurrencyUGX } from "@/utils/formatCurrency";
+import { useCanRecordPayments } from "@/hooks/useCanRecordPayments";
 
 export function TenantReadOnlyView({ selectedTenant }) {
+  const canRecordPayments = useCanRecordPayments();
   const printRef = useRef(null);
   const autoRangeAppliedRef = useRef(null);
   const [from, setFrom] = useState(() => {
@@ -647,13 +649,15 @@ export function TenantReadOnlyView({ selectedTenant }) {
               <Download className="w-4 h-4" />
               Export to Excel
             </button>
-            <a
-              href="/payments/payment-on-account"
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-            >
-              <DollarSign className="w-4 h-4" />
-              Pay on Account
-            </a>
+            {canRecordPayments ? (
+              <a
+                href="/payments/payment-on-account"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              >
+                <DollarSign className="w-4 h-4" />
+                Pay on Account
+              </a>
+            ) : null}
             <button
               type="button"
               onClick={() => openPrintView(true)}

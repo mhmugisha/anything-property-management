@@ -14,6 +14,7 @@ import DatePopoverInput from "@/components/DatePopoverInput";
 import { formatDate } from "@/utils/formatters";
 import { formatCurrencyUGX } from "@/utils/formatCurrency";
 import { useTenantLookup } from "@/hooks/usePaymentLookups";
+import { NoRecordPermissionNote } from "@/components/Payments/NoRecordPermissionNote";
 
 function todayYmd() {
   return new Date().toISOString().slice(0, 10);
@@ -23,6 +24,8 @@ export default function AllocatePaymentPage() {
   const { data: user, loading: userLoading } = useUser();
   const staffQuery = useStaffProfile(!userLoading && !!user);
   const canUseAccounting = staffQuery.data?.permissions?.accounting === true;
+  const canRecordPayments =
+    staffQuery.data?.permissions?.payments_receive === true;
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeEntry, setActiveEntry] = useState(null);
@@ -168,6 +171,8 @@ export default function AllocatePaymentPage() {
             </p>
           </div>
 
+          {!canRecordPayments ? <NoRecordPermissionNote /> : null}
+
           {successMessage ? (
             <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700 font-medium">
               {successMessage}
@@ -226,13 +231,15 @@ export default function AllocatePaymentPage() {
                         </td>
                         <td className="py-2 pr-3 text-right">
                           <div className="inline-flex gap-1.5 justify-end">
-                            <button
-                              type="button"
-                              onClick={() => setActiveEntry(e)}
-                              className="px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-xs"
-                            >
-                              Allocate
-                            </button>
+                            {canRecordPayments ? (
+                              <button
+                                type="button"
+                                onClick={() => setActiveEntry(e)}
+                                className="px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-xs"
+                              >
+                                Allocate
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               onClick={() => {
@@ -266,7 +273,7 @@ export default function AllocatePaymentPage() {
         </div>
       </main>
 
-      {activeEntry ? (
+      {activeEntry && canRecordPayments ? (
         <AllocateModal
           entry={activeEntry}
           tenants={tenantsQuery.data || []}

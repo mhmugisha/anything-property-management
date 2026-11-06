@@ -13,6 +13,7 @@ import { usePaymentFilters } from "@/hooks/usePaymentFilters";
 import { useInvoicePaymentForm } from "@/hooks/useInvoicePaymentForm";
 import { useTenantLookup, useDueInvoices } from "@/hooks/usePaymentLookups";
 import { InvoicePaymentForm } from "@/components/Payments/InvoicePaymentForm";
+import { NoRecordPermissionNote } from "@/components/Payments/NoRecordPermissionNote";
 
 export default function PayInvoicePage() {
   const { data: user, loading: userLoading } = useUser();
@@ -22,6 +23,8 @@ export default function PayInvoicePage() {
   const [successMessage, setSuccessMessage] = useState("");
 
   const canManagePayments = staffQuery.data?.permissions?.payments === true;
+  const canRecordPayments =
+    staffQuery.data?.permissions?.payments_receive === true;
 
   const filters = usePaymentFilters();
 
@@ -140,20 +143,24 @@ export default function PayInvoicePage() {
             </div>
           ) : null}
 
-          <div className="max-w-[960px] mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <InvoicePaymentForm
-              form={invoiceForm}
-              tenants={allTenants}
-              dueInvoices={tenantDueInvoices}
-              tenantsLoading={invTenantLookupQuery.isLoading}
-              invoicesLoading={tenantDueInvoicesQuery.isLoading}
-              onSubmit={onSubmitInvoicePayment}
-              onCancel={handleCancel}
-              isSaving={isSaving}
-              error={createError}
-              onClearError={handleClearError}
-            />
-          </div>
+          {canRecordPayments ? (
+            <div className="max-w-[960px] mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <InvoicePaymentForm
+                form={invoiceForm}
+                tenants={allTenants}
+                dueInvoices={tenantDueInvoices}
+                tenantsLoading={invTenantLookupQuery.isLoading}
+                invoicesLoading={tenantDueInvoicesQuery.isLoading}
+                onSubmit={onSubmitInvoicePayment}
+                onCancel={handleCancel}
+                isSaving={isSaving}
+                error={createError}
+                onClearError={handleClearError}
+              />
+            </div>
+          ) : (
+            <NoRecordPermissionNote className="max-w-[960px] mx-auto" />
+          )}
         </div>
       </main>
     </div>

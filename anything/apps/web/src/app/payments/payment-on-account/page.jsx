@@ -13,6 +13,7 @@ import { usePaymentFilters } from "@/hooks/usePaymentFilters";
 import { useUpfrontPaymentForm } from "@/hooks/useUpfrontPaymentForm";
 import { useTenantLookup } from "@/hooks/usePaymentLookups";
 import { UpfrontPaymentForm } from "@/components/Payments/UpfrontPaymentForm";
+import { NoRecordPermissionNote } from "@/components/Payments/NoRecordPermissionNote";
 
 export default function AdvancePaymentPage() {
   const { data: user, loading: userLoading } = useUser();
@@ -22,6 +23,8 @@ export default function AdvancePaymentPage() {
   const [successMessage, setSuccessMessage] = useState("");
 
   const canManagePayments = staffQuery.data?.permissions?.payments === true;
+  const canRecordPayments =
+    staffQuery.data?.permissions?.payments_receive === true;
 
   const filters = usePaymentFilters();
 
@@ -124,18 +127,22 @@ export default function AdvancePaymentPage() {
             </div>
           ) : null}
 
-          <div className="max-w-[960px] mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <UpfrontPaymentForm
-              form={upfrontForm}
-              tenants={allTenants}
-              tenantsLoading={upfTenantLookupQuery.isLoading}
-              onSubmit={onSubmitUpfrontPayment}
-              onCancel={handleCancel}
-              isSaving={isSaving}
-              error={createError}
-              onClearError={handleClearError}
-            />
-          </div>
+          {canRecordPayments ? (
+            <div className="max-w-[960px] mx-auto bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <UpfrontPaymentForm
+                form={upfrontForm}
+                tenants={allTenants}
+                tenantsLoading={upfTenantLookupQuery.isLoading}
+                onSubmit={onSubmitUpfrontPayment}
+                onCancel={handleCancel}
+                isSaving={isSaving}
+                error={createError}
+                onClearError={handleClearError}
+              />
+            </div>
+          ) : (
+            <NoRecordPermissionNote className="max-w-[960px] mx-auto" />
+          )}
         </div>
       </main>
     </div>

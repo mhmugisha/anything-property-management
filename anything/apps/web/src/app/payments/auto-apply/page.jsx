@@ -8,6 +8,7 @@ import Sidebar from "@/components/Shell/Sidebar";
 import MobileMenu from "@/components/Shell/MobileMenu";
 import PaymentsSidebar from "@/components/Shell/PaymentsSidebar";
 import AccessDenied from "@/components/Shell/AccessDenied";
+import { NoRecordPermissionNote } from "@/components/Payments/NoRecordPermissionNote";
 import {
   RefreshCw,
   AlertCircle,
@@ -29,6 +30,8 @@ export default function AutoApplyPage() {
   const [error, setError] = useState(null);
 
   const canManagePayments = staffQuery.data?.permissions?.payments === true;
+  const canRecordPayments =
+    staffQuery.data?.permissions?.payments_receive === true;
 
   const isLoading = userLoading || staffQuery.isLoading;
 
@@ -189,8 +192,12 @@ export default function AutoApplyPage() {
             </div>
           </div>
 
+          {!canRecordPayments ? (
+            <NoRecordPermissionNote className="mb-6" />
+          ) : null}
+
           {/* Apply All Button */}
-          {tenants.length > 0 && (
+          {canRecordPayments && tenants.length > 0 && (
             <div className="bg-gradient-to-r from-sky-50 to-blue-50 border border-sky-200 rounded-lg p-6 mb-6">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
@@ -286,9 +293,11 @@ export default function AutoApplyPage() {
               <h3 className="font-semibold text-slate-800">
                 Tenants with Unapplied Payments ({filteredTenants.length})
               </h3>
-              <p className="text-sm text-slate-600 mt-1">
-                Click "Apply" to allocate payments to open invoices
-              </p>
+              {canRecordPayments ? (
+                <p className="text-sm text-slate-600 mt-1">
+                  Click "Apply" to allocate payments to open invoices
+                </p>
+              ) : null}
             </div>
 
             {isLoadingTenants ? (
@@ -349,20 +358,22 @@ export default function AutoApplyPage() {
                           </div>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleAutoApply(tenant.tenantId)}
-                        disabled={isProcessing}
-                        className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2 flex-shrink-0"
-                      >
-                        {isProcessing ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            Applying...
-                          </>
-                        ) : (
-                          "Apply"
-                        )}
-                      </button>
+                      {canRecordPayments ? (
+                        <button
+                          onClick={() => handleAutoApply(tenant.tenantId)}
+                          disabled={isProcessing}
+                          className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2 flex-shrink-0"
+                        >
+                          {isProcessing ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              Applying...
+                            </>
+                          ) : (
+                            "Apply"
+                          )}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 ))}
