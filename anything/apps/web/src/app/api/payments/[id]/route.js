@@ -40,7 +40,7 @@ export async function GET(request, { params: { id } }) {
 }
 
 export async function PUT(request, { params: { id } }) {
-  const perm = await requirePermission(request, "payments");
+  const perm = await requirePermission(request, "payments_receive");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
@@ -353,7 +353,7 @@ export async function PUT(request, { params: { id } }) {
 }
 
 export async function DELETE(request, { params: { id } }) {
-  const perm = await requirePermission(request, "payments");
+  const perm = await requirePermission(request, "payments_receive");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

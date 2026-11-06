@@ -5,7 +5,7 @@ import { autoApplyAdvancePaymentsToOpenInvoices } from "@/app/api/utils/payments
  * POST: Apply all unapplied payments to open invoices for all tenants
  */
 export async function POST(request) {
-  const perm = await requirePermission(request, "payments");
+  const perm = await requirePermission(request, "payments_receive");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

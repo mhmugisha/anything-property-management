@@ -6,6 +6,7 @@ export const PERMISSION_DEFS = [
   { key: "properties", label: "Landlords & Properties" },
   { key: "tenants", label: "Tenants" },
   { key: "payments", label: "Payments" },
+  { key: "payments_receive", label: "Record payments" },
   { key: "reports", label: "Reports" },
   { key: "accounting", label: "Accounting" },
   { key: "payroll", label: "Payroll" },
