@@ -26,6 +26,8 @@ export default function AccountStatementPage({ params }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const canUseAccounting = staffQuery.data?.permissions?.accounting === true;
+  const canRecordPayments =
+    staffQuery.data?.permissions?.payments_receive === true;
 
   const now = useMemo(() => new Date(), []);
   const defaultFrom = useMemo(() => {
@@ -381,7 +383,7 @@ export default function AccountStatementPage({ params }) {
         kind = "manual";
       } else if (sourceType === "payment") {
         const isReceipt = t.debit > 0;
-        kind = isReceipt ? "payment" : null;
+        kind = isReceipt && canRecordPayments ? "payment" : null;
       } else if (sourceType === "landlord_payout") {
         kind = "landlord_payout";
       } else if (sourceType === "landlord_deduction") {
@@ -397,7 +399,7 @@ export default function AccountStatementPage({ params }) {
 
       return { ...t, _editKind: kind };
     });
-  }, [rows, isEditableAccount]);
+  }, [rows, isEditableAccount, canRecordPayments]);
 
   if (isLoading) {
     return (

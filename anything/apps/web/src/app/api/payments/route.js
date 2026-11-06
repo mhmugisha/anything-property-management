@@ -97,7 +97,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const perm = await requirePermission(request, "payments");
+  const perm = await requirePermission(request, "payments_receive");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

@@ -1,23 +1,35 @@
 import sql from "@/app/api/utils/sql";
 import { auth } from "@/auth";
 
-// Admin users should have all permissions
+const ADMIN_PERMISSION_KEYS = [
+  "dashboard",
+  "properties",
+  "tenants",
+  "payments",
+  "payments_receive",
+  "reports",
+  "accounting",
+  "payroll",
+  "maintenance",
+];
+
+// Admin users should have all permissions. Start from the role's stored
+// permissions so keys not listed above (future permissions) are passed
+// through rather than silently dropped, then force the known keys on.
 function ensureAdminPermissions(staff) {
   if (!staff) return staff;
 
   if (staff.role_name === "Admin") {
+    const stored =
+      staff.permissions && typeof staff.permissions === "object"
+        ? staff.permissions
+        : {};
+    const forced = {};
+    for (const key of ADMIN_PERMISSION_KEYS) forced[key] = true;
+
     return {
       ...staff,
-      permissions: {
-        dashboard: true,
-        properties: true,
-        tenants: true,
-        payments: true,
-        reports: true,
-        accounting: true,
-        payroll: true,
-        maintenance: true,
-      },
+      permissions: { ...stored, ...forced },
     };
   }
 

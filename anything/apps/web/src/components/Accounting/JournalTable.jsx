@@ -6,6 +6,7 @@ import { deleteJson, fetchJson, putJson } from "@/utils/api";
 import DatePopoverInput from "@/components/DatePopoverInput";
 import { formatDate } from "@/utils/formatters";
 import Pagination from "@/components/Pagination";
+import { useCanRecordPayments } from "@/hooks/useCanRecordPayments";
 
 function toYmd(value) {
   if (!value) return "";
@@ -29,6 +30,7 @@ export function JournalTable({
   isAdmin,
 }) {
   const queryClient = useQueryClient();
+  const canRecordPayments = useCanRecordPayments();
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 14;
@@ -389,9 +391,10 @@ export function JournalTable({
       if (sourceType === "manual") {
         kind = "manual";
       } else if (sourceType === "payment") {
-        // Only show actions on the receipt row, not the commission row.
+        // Only show actions on the receipt row, not the commission row,
+        // and only to staff who can record payments.
         const isReceipt = String(t.debit_code) === "1130";
-        kind = isReceipt ? "payment" : null;
+        kind = isReceipt && canRecordPayments ? "payment" : null;
       } else if (sourceType === "landlord_payout") {
         kind = "landlord_payout";
       } else if (sourceType === "landlord_deduction") {
@@ -402,7 +405,7 @@ export function JournalTable({
 
       return { ...t, _editKind: kind, _isDeposit: false };
     });
-  }, [transactions]);
+  }, [transactions, canRecordPayments]);
 
   const paginatedRows = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
