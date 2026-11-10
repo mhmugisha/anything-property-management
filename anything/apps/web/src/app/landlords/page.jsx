@@ -463,6 +463,7 @@ export default function LandlordsPage() {
           landlordId={selected.id}
           landlordName={selected.full_name}
           onClose={() => setShowExitWizard(false)}
+          isAdmin={staffQuery.data?.role_name === "Admin"}
         />
       )}
     </div>

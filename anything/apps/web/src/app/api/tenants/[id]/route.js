@@ -1,5 +1,9 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import {
+  requireAdmin,
+  requirePermission,
+  writeAuditLog,
+} from "@/app/api/utils/staff";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 
@@ -76,8 +80,13 @@ export async function PUT(request, { params: { id } }) {
       typeof body?.emergency_phone === "string"
         ? body.emergency_phone.trim()
         : undefined;
+    // Only an Admin may change tenant status. For anyone else a sent status
+    // is ignored (not rejected), so contact edits still save.
+    const isAdmin = perm.staff?.role_name === "Admin";
     const status =
-      typeof body?.status === "string" ? body.status.trim() : undefined;
+      isAdmin && typeof body?.status === "string"
+        ? body.status.trim()
+        : undefined;
 
     const next = {
       title: title !== undefined ? title : existing.title,
@@ -138,7 +147,7 @@ export async function PUT(request, { params: { id } }) {
 }
 
 export async function DELETE(request, { params: { id } }) {
-  const perm = await requirePermission(request, "tenants");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

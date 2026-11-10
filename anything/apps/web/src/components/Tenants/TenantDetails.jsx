@@ -40,6 +40,7 @@ export function TenantDetails({
   canEndLease,
   canOpenLease,
   canCreateLease,
+  isAdmin = false,
   showLeaseSection,
   onArchive,
   onReactivate,
@@ -150,7 +151,9 @@ export function TenantDetails({
               Edit
             </button>
 
-            {/* More dropdown button */}
+            {/* More dropdown: End Lease, Open Lease and Delete are all
+                admin-only, so non-admins get no menu at all. */}
+            {isAdmin ? (
             <div className="relative" ref={moreMenuRef}>
               <button
                 onClick={() => setShowMoreMenu(!showMoreMenu)}
@@ -219,6 +222,7 @@ export function TenantDetails({
                 </div>
               )}
             </div>
+            ) : null}
           </div>
         ) : null}
       </div>

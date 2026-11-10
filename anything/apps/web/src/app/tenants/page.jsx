@@ -375,7 +375,8 @@ export default function TenantsPage() {
     setLeaseForm,
     createTenantWithLeaseMutation,
     updateTenantMutation,
-    updateLeaseMutation,
+    // Lease edits and creation are admin-only (PUT/POST /api/leases).
+    updateLeaseMutation: isAdmin ? updateLeaseMutation : null,
     createLeaseMutation: isAdmin ? createLeaseMutation : null,
     tenantForm,
     leaseForm,
@@ -897,8 +898,9 @@ export default function TenantsPage() {
               canEndLease={canEndLease}
               canOpenLease={canOpenLease}
               canCreateLease={isAdmin}
+              isAdmin={isAdmin}
               showLeaseSection={
-                isCreating || (isEditing && (!!activeLease || isAdmin))
+                isCreating || (isEditing && isAdmin)
               }
               onArchive={onArchiveTenant}
               onReactivate={onActivateTenant}

@@ -111,13 +111,19 @@ function LeaseQueue({ leases, onEndLease }) {
                 </td>
                 <td className="py-2 px-3 text-right whitespace-nowrap">
                   <div className="inline-flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onEndLease(l)}
-                      className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-medium"
-                    >
-                      End lease
-                    </button>
+                    {onEndLease ? (
+                      <button
+                        type="button"
+                        onClick={() => onEndLease(l)}
+                        className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-medium"
+                      >
+                        End lease
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-500">
+                        Only an admin can end leases.
+                      </span>
+                    )}
                     <button
                       type="button"
                       disabled
@@ -159,7 +165,12 @@ function ConfirmStep({ propertyName }) {
   );
 }
 
-export function DecommissionModal({ property, onClose, onDecommissioned }) {
+export function DecommissionModal({
+  property,
+  onClose,
+  onDecommissioned,
+  isAdmin = false,
+}) {
   const queryClient = useQueryClient();
   const [stepIndex, setStepIndex] = useState(0);
   const [endingLease, setEndingLease] = useState(null);
@@ -235,7 +246,11 @@ export function DecommissionModal({ property, onClose, onDecommissioned }) {
                 This property is already archived.
               </div>
             ) : step === "leases" ? (
-              <LeaseQueue leases={leases} onEndLease={setEndingLease} />
+              <LeaseQueue
+                leases={leases}
+                // Ending a lease is admin-only; null shows a note instead.
+                onEndLease={isAdmin ? setEndingLease : null}
+              />
             ) : (
               <ConfirmStep propertyName={property.property_name} />
             )}

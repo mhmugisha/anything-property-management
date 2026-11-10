@@ -497,13 +497,19 @@ function PropertySection({
                   <td className="py-2 px-4 text-right whitespace-nowrap">
                     {/* Also on decommissioned properties: their leases still
                         have to end before the landlord can close. */}
-                    <button
-                      type="button"
-                      onClick={() => onEndLease(l)}
-                      className="px-2.5 py-1 rounded-lg bg-[#0B1F3A] hover:bg-[#08172c] text-white text-xs font-medium"
-                    >
-                      End lease
-                    </button>
+                    {onEndLease ? (
+                      <button
+                        type="button"
+                        onClick={() => onEndLease(l)}
+                        className="px-2.5 py-1 rounded-lg bg-[#0B1F3A] hover:bg-[#08172c] text-white text-xs font-medium"
+                      >
+                        End lease
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-500">
+                        Only an admin can end leases.
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -728,7 +734,12 @@ function Overview({
   );
 }
 
-export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
+export function LandlordExitWizard({
+  landlordId,
+  landlordName,
+  onClose,
+  isAdmin = false,
+}) {
   // No saved progress: every open (and every refresh) reads live state.
   const summaryQuery = useLandlordExitSummary(landlordId, true);
   const summaryData = summaryQuery.data;
@@ -922,7 +933,8 @@ export function LandlordExitWizard({ landlordId, landlordName, onClose }) {
                 }
                 landlordName={landlordName}
                 assetAccounts={summaryData?.asset_accounts}
-                onEndLease={(l) => setEndingLease(l)}
+                // Ending a lease is admin-only; null shows a note instead.
+                onEndLease={isAdmin ? (l) => setEndingLease(l) : null}
                 onDecommission={onDecommission}
                 decommissioningId={decommissioningId}
                 decommissionError={decommissionError}

@@ -669,6 +669,7 @@ export default function PropertiesPage() {
         {decommissionOpen && propertyForDetails && (
           <DecommissionModal
             property={propertyForDetails}
+            isAdmin={staffQuery.data?.role_name === "Admin"}
             onClose={() => setDecommissionOpen(false)}
             onDecommissioned={() => {
               setDecommissionOpen(false);
