@@ -1,6 +1,8 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getAccountIdByCode, ensureCanCreditAccount } from "@/app/api/utils/accounting";
+import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
+import { isPendingCompletion } from "@/app/api/utils/maintenance/completionApproval";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -43,6 +45,24 @@ export async function PUT(request, { params: { id } }) {
         { error: `Only an admin can ${what}.` },
         { status: 403 },
       );
+
+    // A completion awaiting cost approval is locked: non-admins can't change
+    // it, and an Admin approves/rejects it via /api/approvals first (only an
+    // Admin cancel is allowed, which posts nothing).
+    if (isPendingCompletion(existing)) {
+      if (!isAdmin) {
+        return Response.json(
+          { error: "This job is waiting for admin approval and can't be changed." },
+          { status: 403 },
+        );
+      }
+      if (body?.action !== "cancel") {
+        return Response.json(
+          { error: "Approve or reject the pending cost first." },
+          { status: 409 },
+        );
+      }
+    }
 
     // --- Action: close ---
     if (body?.action === "close") {
@@ -221,8 +241,101 @@ export async function PUT(request, { params: { id } }) {
     let finalCompletedCost = existing.completed_cost;
     let finalCompletedDate = existing.completed_date;
 
+    // Non-admin completion with a cost: save it for Admin approval and post
+    // nothing. The GL entry is written on approval (utils/maintenance/
+    // completionApproval.js), with the same accounts and amounts as below.
+    if (
+      !isAdmin &&
+      isNowCompleted &&
+      completedCost &&
+      paymentAccountId &&
+      chargeType
+    ) {
+      if (!["landlord", "company"].includes(chargeType)) {
+        return Response.json({ error: "Invalid charge type" }, { status: 400 });
+      }
+      if (!(Number(completedCost) > 0)) {
+        return Response.json({ error: "Cost must be greater than 0" }, { status: 400 });
+      }
+      const acctRows = await sql`
+        SELECT id FROM chart_of_accounts
+        WHERE id = ${paymentAccountId}
+          AND TRIM(account_type) = 'Asset'
+          AND COALESCE(is_active, true) = true
+        LIMIT 1
+      `;
+      if (!acctRows.length) {
+        return Response.json({ error: "Invalid payment account" }, { status: 400 });
+      }
+      if (chargeType === "landlord") {
+        if (!existing.property_id) {
+          return Response.json(
+            { error: "Maintenance request has no property — cannot charge to landlord" },
+            { status: 400 },
+          );
+        }
+        const propRows = await sql`
+          SELECT landlord_id FROM properties WHERE id = ${existing.property_id} LIMIT 1
+        `;
+        if (!toNumber(propRows?.[0]?.landlord_id)) {
+          return Response.json(
+            { error: "Property has no landlord configured" },
+            { status: 400 },
+          );
+        }
+      }
+
+      const txnDate = completedDate || new Date().toISOString().slice(0, 10);
+      const [result] = await sql`
+        UPDATE maintenance_requests
+        SET
+          title          = ${title !== undefined ? title : existing.title},
+          description    = ${description !== undefined ? description || null : existing.description},
+          category       = ${category !== undefined ? category || null : existing.category},
+          priority       = ${priority !== undefined ? priority : existing.priority},
+          status         = 'completed',
+          assigned_to    = ${assignedTo !== undefined ? assignedTo || null : existing.assigned_to},
+          cost           = ${cost !== undefined ? cost : existing.cost},
+          approval_required = ${approvalRequired},
+          completed_at   = ${completedAt},
+          charge_type    = ${chargeType},
+          payment_account_id = ${paymentAccountId},
+          transaction_id = NULL,
+          completed_cost = ${completedCost},
+          completed_date = ${txnDate}::date,
+          reference_number = ${referenceNumber}
+        WHERE id = ${reqId} AND status <> 'completed'
+        RETURNING *
+      `;
+      if (!result) {
+        return Response.json(
+          { error: "This job was already completed" },
+          { status: 409 },
+        );
+      }
+
+      await writeAuditLog({
+        staffId: perm.staff.id,
+        action: "maintenance.submit_completion",
+        entityType: "maintenance_request",
+        entityId: reqId,
+        oldValues: existing,
+        newValues: result,
+        ipAddress: perm.ipAddress,
+      });
+
+      notifyAllAdminsAsync({
+        title: "Maintenance cost awaiting approval",
+        message: `${perm.staff.full_name || "Staff"} completed '${existing.title || "maintenance job"}' with a cost of UGX ${Number(completedCost).toLocaleString()} (${chargeType}). Approve it on the Approvals page to post the expense.`,
+        type: "maintenance",
+        reference_id: reqId,
+        reference_type: "maintenance_request",
+      });
+
+      return Response.json({ request: result, pending_approval: true });
+    }
+
     if (isNowCompleted && completedCost && paymentAccountId && chargeType) {
-      if (!isAdmin) return adminOnly("post a maintenance expense");
       // Build GL description: include tenant name when available
       let glDescription;
       if (existing.tenant_id) {

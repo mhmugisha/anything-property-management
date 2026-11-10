@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { requirePayrollManage } from "@/app/api/utils/staff";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
 
 function toNumber(v) {
@@ -15,11 +15,8 @@ function parseDate(v) {
 }
 
 export async function PUT(request, { params }) {
-  const perm = await requirePermission(request, "payroll");
+  const perm = await requirePayrollManage(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
-  if (perm.staff.role_name !== "Admin") {
-    return Response.json({ error: "Admin only" }, { status: 403 });
-  }
 
   try {
     const runId = toNumber(params?.id);

@@ -24,9 +24,9 @@ const PAYROLL_TABS = [
   { key: "payslips",  label: "Payslips",  icon: FileText,   href: "/payroll?tab=payslips" },
 ];
 
-function PayrollDetailSidebar({ isAdmin = false }) {
-  // Runs and payslips show salaries: Admin-only.
-  const tabs = isAdmin
+function PayrollDetailSidebar({ canManage = false }) {
+  // Runs and payslips show salaries: payroll_manage only.
+  const tabs = canManage
     ? PAYROLL_TABS
     : PAYROLL_TABS.filter((t) => t.key !== "runs" && t.key !== "payslips");
   return (
@@ -68,7 +68,7 @@ function DetailRow({ label, value }) {
   );
 }
 
-function ViewDetailsPanel({ employee, onClose, isAdmin = false }) {
+function ViewDetailsPanel({ employee, onClose, canManage = false }) {
   const paymentDetails = (() => {
     if (employee.payment_method === "bank") {
       const parts = [employee.payment_bank_name, employee.payment_account_number].filter(Boolean);
@@ -126,7 +126,7 @@ function ViewDetailsPanel({ employee, onClose, isAdmin = false }) {
             </span>
           }
         />
-        {isAdmin ? (
+        {canManage ? (
           <DetailRow
             label="Current Salary"
             value={employee.current_salary ? fmt(employee.current_salary) + " / month" : null}
@@ -154,10 +154,12 @@ export default function EmployeeViewDetailsPage() {
   const { data: user, loading: userLoading } = useUser();
   const staffQuery = useStaffProfile(!userLoading && !!user);
   const canView = staffQuery.data?.permissions?.payroll === true;
-  // Salary, pay-out details, the pay statement, Terminate and Delete are
-  // Admin-only (the routes use requireAdmin / strip the fields).
+  // Terminate, Delete, Change Salary and pay-out edits are Admin-only.
+  // Salary, pay-out details and the pay statement need payroll_manage
+  // (Accountant + Admin). The routes enforce both.
   const isAdmin = staffQuery.data?.role_name === "Admin";
-  const homeMode = isAdmin ? "statement" : "details";
+  const canManage = staffQuery.data?.permissions?.payroll_manage === true;
+  const homeMode = canManage ? "statement" : "details";
 
   const employeesQuery = useEmployees(
     { status: "all" },
@@ -188,7 +190,7 @@ export default function EmployeeViewDetailsPage() {
 
   const isLoading = userLoading || staffQuery.isLoading;
   const shownMode =
-    mode === "statement" && !isAdmin ? "details" : mode || homeMode;
+    mode === "statement" && !canManage ? "details" : mode || homeMode;
 
   if (isLoading) {
     return (
@@ -246,7 +248,7 @@ export default function EmployeeViewDetailsPage() {
         active="payroll"
       />
       <Sidebar active="payroll">
-        <PayrollDetailSidebar isAdmin={isAdmin} />
+        <PayrollDetailSidebar canManage={canManage} />
       </Sidebar>
 
       <main className="pt-32 md:pl-56">
@@ -387,12 +389,12 @@ export default function EmployeeViewDetailsPage() {
               {shownMode === "details" && (
                 <ViewDetailsPanel
                   employee={employee}
-                  isAdmin={isAdmin}
+                  canManage={canManage}
                   onClose={() => setMode(homeMode)}
                 />
               )}
 
-              {shownMode === "statement" && isAdmin && (
+              {shownMode === "statement" && canManage && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                   <EmployeeStatement employeeId={employeeId} />
                 </div>

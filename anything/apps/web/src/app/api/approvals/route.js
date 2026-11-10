@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
+import { pendingCompletionWhere } from "@/app/api/utils/maintenance/completionApproval";
 
 // GET /api/approvals — fetch all pending entries (Admin only)
 export async function GET(request) {
@@ -20,6 +21,7 @@ export async function GET(request) {
       landlordRows,
       propertyRows,
       tenantSubmissionRows,
+      maintenanceCompletionRows,
     ] = await Promise.all([
       sql`
         SELECT p.*, s.full_name AS created_by_name, t.full_name AS tenant_name,
@@ -115,11 +117,35 @@ export async function GET(request) {
         LEFT JOIN landlords l ON l.id = p.landlord_id
         ORDER BY ts.requested_at DESC
       `,
+      // Maintenance jobs completed by non-admins with a cost: nothing is
+      // posted to the GL until approved (see utils/maintenance/completionApproval).
+      sql(`
+        SELECT m.*,
+               p.property_name,
+               u.unit_number,
+               t.full_name AS tenant_name,
+               coa.account_code AS payment_account_code,
+               coa.account_name AS payment_account_name,
+               (SELECT s.full_name FROM audit_logs al
+                  JOIN staff_users s ON s.id = al.user_id
+                 WHERE al.entity_type = 'maintenance_request'
+                   AND al.entity_id = m.id
+                   AND al.action = 'maintenance.submit_completion'
+                 ORDER BY al.id DESC LIMIT 1) AS created_by_name
+        FROM maintenance_requests m
+        LEFT JOIN properties p ON p.id = m.property_id
+        LEFT JOIN units u ON u.id = m.unit_id
+        LEFT JOIN tenants t ON t.id = m.tenant_id
+        LEFT JOIN chart_of_accounts coa ON coa.id = m.payment_account_id
+        WHERE ${pendingCompletionWhere("m")}
+        ORDER BY m.completed_at DESC NULLS LAST, m.id DESC
+      `, []),
     ]);
 
     const landlords = landlordRows || [];
     const properties = propertyRows || [];
     const tenantSubmissions = tenantSubmissionRows || [];
+    const maintenanceCompletions = maintenanceCompletionRows || [];
 
     return Response.json({
       payments,
@@ -130,6 +156,7 @@ export async function GET(request) {
       landlords,
       properties,
       tenantSubmissions,
+      maintenanceCompletions,
     });
   } catch (error) {
     console.error('GET /api/approvals error', error);

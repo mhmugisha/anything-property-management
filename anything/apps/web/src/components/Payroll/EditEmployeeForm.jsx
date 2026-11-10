@@ -187,10 +187,23 @@ export default function EditEmployeeForm({
           </FormField>
         ) : null}
         <FormField label="Status">
-          <Select value={form.status} onChange={(e) => set("status", e.target.value)}>
+          {/* Deactivating/reactivating is Admin-only (the API refuses a change). */}
+          <Select
+            value={form.status}
+            onChange={(e) => set("status", e.target.value)}
+            disabled={!isAdmin}
+          >
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
+            {form.status === "terminated" ? (
+              <option value="terminated">Terminated</option>
+            ) : null}
           </Select>
+          {!isAdmin ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Only an admin can change status.
+            </p>
+          ) : null}
         </FormField>
         {isAdmin ? (
           <PaymentDetailsFields method={form.payment_method} form={form} set={set} />

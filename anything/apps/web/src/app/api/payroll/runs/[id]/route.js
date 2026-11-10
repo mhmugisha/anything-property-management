@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requireAdmin, requirePermission } from "@/app/api/utils/staff";
+import { requireAdmin, requirePayrollManage } from "@/app/api/utils/staff";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -8,7 +8,7 @@ function toNumber(v) {
 }
 
 export async function GET(request, { params }) {
-  const perm = await requireAdmin(request);
+  const perm = await requirePayrollManage(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
@@ -88,11 +88,8 @@ export async function GET(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const perm = await requirePermission(request, "payroll");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
-  if (perm.staff.role_name !== "Admin") {
-    return Response.json({ error: "Admin only" }, { status: 403 });
-  }
 
   try {
     const runId = toNumber(params?.id);

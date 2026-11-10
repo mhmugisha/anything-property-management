@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requireAdmin } from "@/app/api/utils/staff";
+import { requirePayrollManage } from "@/app/api/utils/staff";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -13,7 +13,7 @@ const MONTH_NAMES = [
 ];
 
 export async function GET(request, { params }) {
-  const perm = await requireAdmin(request);
+  const perm = await requirePayrollManage(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

@@ -34,6 +34,7 @@ const TYPE_LABELS = {
   landlords: "Landlords",
   properties: "Properties",
   tenantSubmissions: "New Tenants",
+  maintenanceCompletions: "Maintenance Costs",
 };
 
 const TYPE_API_KEYS = {
@@ -45,6 +46,7 @@ const TYPE_API_KEYS = {
   landlords: "landlords",
   properties: "properties",
   tenantSubmissions: "tenant_submissions",
+  maintenanceCompletions: "maintenance_completions",
 };
 
 function formatAmount(amount, currency) {
@@ -238,6 +240,21 @@ function EntityCard({ entry, typeKey, onApprove, onReject, isPending }) {
       entry.requested_at &&
         `Submitted: ${String(entry.requested_at).slice(0, 10)}`,
     ].filter(Boolean);
+  } else if (typeKey === "maintenanceCompletions") {
+    title = entry.title || "—";
+    details = [
+      `Cost: ${formatAmount(entry.completed_cost, "UGX")}`,
+      `Charge to: ${entry.charge_type === "landlord" ? "Landlord" : "Company"}`,
+      entry.payment_account_code &&
+        `Paid from: ${entry.payment_account_code} ${entry.payment_account_name || ""}`.trim(),
+      entry.reference_number && `Reference: ${entry.reference_number}`,
+      entry.completed_date &&
+        `Date paid: ${String(entry.completed_date).slice(0, 10)}`,
+      `Where: ${entry.property_name || "—"}${entry.unit_number ? ` – ${entry.unit_number}` : ""}${
+        entry.tenant_name ? ` (${entry.tenant_name})` : ""
+      }`,
+      "Approving posts the expense to the ledger.",
+    ].filter(Boolean);
   }
 
   const unitTaken =
@@ -382,6 +399,7 @@ export default function ApprovalsPage() {
   const landlords = data.landlords || [];
   const properties = data.properties || [];
   const tenantSubmissions = data.tenantSubmissions || [];
+  const maintenanceCompletions = data.maintenanceCompletions || [];
 
   const totalPending =
     payments.length +
@@ -391,7 +409,8 @@ export default function ApprovalsPage() {
     landlordDeductions.length +
     landlords.length +
     properties.length +
-    tenantSubmissions.length;
+    tenantSubmissions.length +
+    maintenanceCompletions.length;
 
   return (
     <div className="min-h-screen bg-slate-200 font-inter">
@@ -509,6 +528,15 @@ export default function ApprovalsPage() {
                 typeKey="tenantSubmissions"
                 onApprove={handleApprove(TYPE_API_KEYS.tenantSubmissions)}
                 onReject={handleReject(TYPE_API_KEYS.tenantSubmissions)}
+                isPending={approvalMutation.isPending}
+                CardComponent={EntityCard}
+              />
+              <SectionGroup
+                label={TYPE_LABELS.maintenanceCompletions}
+                entries={maintenanceCompletions}
+                typeKey="maintenanceCompletions"
+                onApprove={handleApprove(TYPE_API_KEYS.maintenanceCompletions)}
+                onReject={handleReject(TYPE_API_KEYS.maintenanceCompletions)}
                 isPending={approvalMutation.isPending}
                 CardComponent={EntityCard}
               />

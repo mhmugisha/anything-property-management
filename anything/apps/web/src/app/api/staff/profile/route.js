@@ -10,6 +10,7 @@ const ADMIN_PERMISSION_KEYS = [
   "reports",
   "accounting",
   "payroll",
+  "payroll_manage",
   "maintenance",
 ];
 
