@@ -1,11 +1,11 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 
 // Archive a property once all its leases are cleared. Archived properties are
 // skipped by the invoice generator and can't take new leases; reactivate
 // reverses this.
 export async function POST(request, { params: { id } }) {
-  const perm = await requirePermission(request, "properties");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

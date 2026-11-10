@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { countActiveLeasesForLandlord } from "@/app/api/utils/landlordLeases";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
@@ -320,6 +320,23 @@ export async function PUT(request, { params }) {
       return Response.json({ error: "No valid fields" }, { status: 400 });
     }
 
+    // Changing the contract end date ends the landlord (now if past, or via
+    // the daily enforcement once it passes), so only an Admin may change it.
+    // The edit form sends end_date on every save; an unchanged value is fine.
+    if (endDate !== undefined && perm.staff?.role_name !== "Admin") {
+      const [{ changed }] = await sql`
+        SELECT ${endDate || null}::date IS DISTINCT FROM end_date AS changed
+        FROM landlords
+        WHERE id = ${id}
+      `;
+      if (changed) {
+        return Response.json(
+          { error: "Only an admin can change a landlord's end date." },
+          { status: 403 },
+        );
+      }
+    }
+
     // A past end date ends the landlord (see the status CASE above). That is
     // only allowed once no lease on their properties is active; leases are
     // ended one at a time through the tenant end-lease flow, never here.
@@ -366,7 +383,7 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const perm = await requirePermission(request, "properties");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

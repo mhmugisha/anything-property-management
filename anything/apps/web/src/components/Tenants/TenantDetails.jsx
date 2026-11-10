@@ -143,13 +143,16 @@ export function TenantDetails({
               View Details
             </button>
 
-            <button
-              onClick={onStartEdit}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-slate-700"
-            >
-              <Save className="w-4 h-4" />
-              Edit
-            </button>
+            {/* Tenant records are read-only for non-admins. */}
+            {isAdmin ? (
+              <button
+                onClick={onStartEdit}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-slate-700"
+              >
+                <Save className="w-4 h-4" />
+                Edit
+              </button>
+            ) : null}
 
             {/* More dropdown: End Lease, Open Lease and Delete are all
                 admin-only, so non-admins get no menu at all. */}

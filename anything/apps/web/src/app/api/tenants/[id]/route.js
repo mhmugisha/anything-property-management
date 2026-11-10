@@ -33,7 +33,7 @@ export async function GET(request, { params: { id } }) {
 }
 
 export async function PUT(request, { params: { id } }) {
-  const perm = await requirePermission(request, "tenants");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
@@ -80,13 +80,8 @@ export async function PUT(request, { params: { id } }) {
       typeof body?.emergency_phone === "string"
         ? body.emergency_phone.trim()
         : undefined;
-    // Only an Admin may change tenant status. For anyone else a sent status
-    // is ignored (not rejected), so contact edits still save.
-    const isAdmin = perm.staff?.role_name === "Admin";
     const status =
-      isAdmin && typeof body?.status === "string"
-        ? body.status.trim()
-        : undefined;
+      typeof body?.status === "string" ? body.status.trim() : undefined;
 
     const next = {
       title: title !== undefined ? title : existing.title,

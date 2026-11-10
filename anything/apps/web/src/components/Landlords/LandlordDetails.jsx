@@ -193,7 +193,9 @@ export function LandlordDetails({
             {toggleDetailsLabel}
           </button>
 
-          {/* More dropdown button */}
+          {/* More dropdown: Exit Landlord and Delete are admin-only; the
+              page passes null handlers to non-admins, so no menu then. */}
+          {onExitLandlord || onDelete ? (
           <div className="relative" ref={moreMenuRef}>
             <button
               onClick={() => setShowMoreMenu(!showMoreMenu)}
@@ -218,6 +220,7 @@ export function LandlordDetails({
                   </button>
                 )}
 
+                {onDelete && (
                 <button
                   onClick={() => {
                     onDelete();
@@ -229,9 +232,11 @@ export function LandlordDetails({
                   <Trash2 className="w-4 h-4" />
                   {deleteLabel}
                 </button>
+                )}
               </div>
             )}
           </div>
+          ) : null}
         </div>
       </div>
 

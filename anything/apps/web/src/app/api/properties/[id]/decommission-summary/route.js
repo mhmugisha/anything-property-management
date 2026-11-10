@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { requireAdmin } from "@/app/api/utils/staff";
 import {
   getLeaseDepositBalance,
   getTenantPrepaymentBalance,
@@ -8,7 +8,7 @@ import {
 // Preview for decommissioning a property: the active leases that must be
 // cleared (ended, later transferred) before the property can be archived.
 export async function GET(request, { params: { id } }) {
-  const perm = await requirePermission(request, "properties");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

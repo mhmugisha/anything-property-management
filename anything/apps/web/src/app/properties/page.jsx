@@ -92,6 +92,8 @@ export default function PropertiesPage() {
 
   const canManageProperties =
     staffQuery.data?.permissions?.properties === true || false;
+  // Decommissioning and deleting a property are admin-only (requireAdmin).
+  const isAdmin = staffQuery.data?.role_name === "Admin";
 
   // Restore the remembered Cards/Table choice after mount (client only).
   useEffect(() => {
@@ -611,9 +613,11 @@ export default function PropertiesPage() {
                 onCancelProperty={onCancelPropertyEditOrCreate}
                 onSaveProperty={onSaveProperty}
                 isSavingProperty={isSavingProperty}
-                onDeleteProperty={onDeleteProperty}
+                onDeleteProperty={isAdmin ? onDeleteProperty : null}
                 isDeletingProperty={deletePropertyMutation.isPending}
-                onDecommissionProperty={() => setDecommissionOpen(true)}
+                onDecommissionProperty={
+                  isAdmin ? () => setDecommissionOpen(true) : null
+                }
                 onReactivateProperty={onReactivateProperty}
                 isReactivatingProperty={reactivatePropertyMutation.isPending}
                 propertyError={
@@ -666,10 +670,10 @@ export default function PropertiesPage() {
           onClearError={onClearUnitFormError}
         />
 
-        {decommissionOpen && propertyForDetails && (
+        {decommissionOpen && propertyForDetails && isAdmin && (
           <DecommissionModal
             property={propertyForDetails}
-            isAdmin={staffQuery.data?.role_name === "Admin"}
+            isAdmin={isAdmin}
             onClose={() => setDecommissionOpen(false)}
             onDecommissioned={() => {
               setDecommissionOpen(false);
