@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
@@ -110,7 +110,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const perm = await requirePermission(request, "properties");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

@@ -50,7 +50,8 @@ export default function LandlordsPage() {
 
   const canView = staffQuery.data?.permissions?.properties === true;
   const canReports = staffQuery.data?.permissions?.reports === true;
-  // Exiting and deleting a landlord are admin-only (server uses requireAdmin).
+  // Creating, editing, reactivating, exiting and deleting a landlord are
+  // admin-only (server uses requireAdmin).
   const isAdmin = staffQuery.data?.role_name === "Admin";
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -390,7 +391,7 @@ export default function LandlordsPage() {
           onSearchChange={setSearch}
           selectedLandlordId={selectedId}
           onSelectLandlord={handleSelectLandlord}
-          onCreateNew={handleStartCreate}
+          onCreateNew={isAdmin ? handleStartCreate : null}
           showArchived={showArchived}
           onToggleShowArchived={setShowArchived}
         />
@@ -419,7 +420,7 @@ export default function LandlordsPage() {
                 propertiesLoading={propertiesQuery.isLoading}
                 selectedPropertyId={statementPropertyId}
                 onSelectProperty={setStatementPropertyId}
-                onEdit={handleStartEdit}
+                onEdit={isAdmin ? handleStartEdit : null}
                 payoutDate={payoutDate}
                 payoutAmount={payoutAmount}
                 payoutMethod={payoutMethod}
@@ -442,7 +443,7 @@ export default function LandlordsPage() {
                 statementSummary={statement?.summary}
                 canReports={canReports}
                 onArchive={onArchiveLandlord}
-                onReactivate={onReactivateLandlord}
+                onReactivate={isAdmin ? onReactivateLandlord : null}
                 onExitLandlord={isAdmin ? () => setShowExitWizard(true) : null}
                 onDelete={isAdmin ? onDeleteLandlord : null}
                 isArchiving={archiveLandlordMutation.isPending}

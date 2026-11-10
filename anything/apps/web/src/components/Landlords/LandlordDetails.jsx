@@ -175,14 +175,17 @@ export function LandlordDetails({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <button
-            onClick={onEdit}
-            disabled={actionsDisabled}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-slate-700 disabled:opacity-50"
-          >
-            <Save className="w-4 h-4" />
-            Edit
-          </button>
+          {/* Admin-only: the page passes no onEdit to non-admins. */}
+          {onEdit ? (
+            <button
+              onClick={onEdit}
+              disabled={actionsDisabled}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-slate-700 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              Edit
+            </button>
+          ) : null}
 
           <button
             onClick={() => setShowDetails((v) => !v)}

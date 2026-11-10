@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getManagerScope } from "@/app/api/utils/managerScope";
 
 export async function GET(request, { params: { propertyId } }) {
@@ -51,7 +51,7 @@ export async function GET(request, { params: { propertyId } }) {
 
 export async function POST(request, { params: { propertyId } }) {
   try {
-    const perm = await requirePermission(request, "properties");
+    const perm = await requireAdmin(request);
     if (!perm.ok) {
       return Response.json(perm.body, { status: perm.status });
     }

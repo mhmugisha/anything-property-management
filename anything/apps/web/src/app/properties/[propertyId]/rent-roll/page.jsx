@@ -103,9 +103,13 @@ export default function PropertyRentRollPage({ params }) {
           onSelectProperty={(id) => {
             window.location.href = `/properties`;
           }}
-          onCreateProperty={() => {
-            window.location.href = `/properties`;
-          }}
+          onCreateProperty={
+            staffQuery.data?.role_name === "Admin"
+              ? () => {
+                  window.location.href = `/properties`;
+                }
+              : null
+          }
         />
       </Sidebar>
 

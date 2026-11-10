@@ -92,7 +92,8 @@ export default function PropertiesPage() {
 
   const canManageProperties =
     staffQuery.data?.permissions?.properties === true || false;
-  // Decommissioning and deleting a property are admin-only (requireAdmin).
+  // Creating, editing, reactivating, decommissioning and deleting properties
+  // and units are admin-only (requireAdmin).
   const isAdmin = staffQuery.data?.role_name === "Admin";
 
   // Restore the remembered Cards/Table choice after mount (client only).
@@ -306,6 +307,7 @@ export default function PropertiesPage() {
     if (userLoading) return;
     if (!user) return;
     if (!canManageProperties) return;
+    if (!isAdmin) return; // ?newUnit=1 opens the admin-only unit form
     if (!selectedPropertyId) return;
 
     const sp = new URLSearchParams(window.location.search);
@@ -319,6 +321,7 @@ export default function PropertiesPage() {
     userLoading,
     user,
     canManageProperties,
+    isAdmin,
     selectedPropertyId,
     onOpenCreateUnit,
   ]);
@@ -609,7 +612,7 @@ export default function PropertiesPage() {
                 onPropertyFormChange={setPropertyForm}
                 isEditingProperty={editingProperty}
                 isCreatingProperty={showCreateProperty}
-                onEditProperty={onOpenEditProperty}
+                onEditProperty={isAdmin ? onOpenEditProperty : null}
                 onCancelProperty={onCancelPropertyEditOrCreate}
                 onSaveProperty={onSaveProperty}
                 isSavingProperty={isSavingProperty}
@@ -618,7 +621,7 @@ export default function PropertiesPage() {
                 onDecommissionProperty={
                   isAdmin ? () => setDecommissionOpen(true) : null
                 }
-                onReactivateProperty={onReactivateProperty}
+                onReactivateProperty={isAdmin ? onReactivateProperty : null}
                 isReactivatingProperty={reactivatePropertyMutation.isPending}
                 propertyError={
                   createPropertyMutation.error || updatePropertyMutation.error
@@ -626,9 +629,9 @@ export default function PropertiesPage() {
                 landlordOptions={landlordOptions}
                 officerOptions={officerOptions}
                 units={units}
-                onCreateUnit={onOpenCreateUnit}
-                onEditUnit={onOpenEditUnit}
-                onDeleteUnit={onDeleteUnit}
+                onCreateUnit={isAdmin ? onOpenCreateUnit : null}
+                onEditUnit={isAdmin ? onOpenEditUnit : null}
+                onDeleteUnit={isAdmin ? onDeleteUnit : null}
                 unitsLoading={unitsQuery.isLoading}
                 unitsError={unitsQuery.error}
                 properties={properties}
@@ -646,7 +649,7 @@ export default function PropertiesPage() {
               view={view}
               onViewChange={onViewChange}
               onOpenProperty={handleSelectProperty}
-              onCreateProperty={onOpenCreateProperty}
+              onCreateProperty={isAdmin ? onOpenCreateProperty : null}
             />
           )}
         </div>

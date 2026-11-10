@@ -525,14 +525,17 @@ export function PropertiesOverview({
             {viewButton("cards", LayoutGrid, "Cards")}
             {viewButton("table", TableIcon, "Table")}
           </div>
-          <button
-            type="button"
-            onClick={onCreateProperty}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c] text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Add property
-          </button>
+          {/* Admin-only: the page passes no onCreateProperty otherwise. */}
+          {onCreateProperty ? (
+            <button
+              type="button"
+              onClick={onCreateProperty}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0B1F3A] text-white hover:bg-[#08172c] text-sm font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              Add property
+            </button>
+          ) : null}
         </div>
       </div>
 
