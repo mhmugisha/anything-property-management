@@ -253,7 +253,11 @@ export function TenantDetails({
 
       {(isCreating || isEditing) && (
         <div className="mt-4">
-          <TenantForm tenantForm={tenantForm} onChange={onTenantFormChange} />
+          <TenantForm
+            tenantForm={tenantForm}
+            onChange={onTenantFormChange}
+            isAdmin={isAdmin}
+          />
 
           {showLeaseSection ? (
             <div className="mt-6 rounded-2xl border border-gray-100 bg-gray-50 p-4">

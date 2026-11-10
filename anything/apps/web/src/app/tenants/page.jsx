@@ -694,14 +694,19 @@ export default function TenantsPage() {
     !!leaseForm.start_date &&
     !!leaseForm.monthly_rent;
 
+  // Creating always shows the lease section; editing shows it to admins only.
+  const showLeaseSection = isCreating || (isEditing && isAdmin);
+
+  // Lease fields only count when the lease section is on screen.
   const canSaveTenantWhenEditing =
     !!tenantForm.full_name &&
     !!tenantForm.phone &&
-    !!leaseForm.landlord_id &&
-    !!leaseForm.property_id &&
-    !!leaseForm.unit_id &&
-    !!leaseForm.start_date &&
-    !!leaseForm.monthly_rent;
+    (!showLeaseSection ||
+      (!!leaseForm.landlord_id &&
+        !!leaseForm.property_id &&
+        !!leaseForm.unit_id &&
+        !!leaseForm.start_date &&
+        !!leaseForm.monthly_rent));
 
   const isReadOnly = !isCreating && !isEditing && !!selectedTenant;
   const isArchivedTenant = selectedTenant?.status === "archived";
@@ -899,9 +904,7 @@ export default function TenantsPage() {
               canOpenLease={canOpenLease}
               canCreateLease={isAdmin}
               isAdmin={isAdmin}
-              showLeaseSection={
-                isCreating || (isEditing && isAdmin)
-              }
+              showLeaseSection={showLeaseSection}
               onArchive={onArchiveTenant}
               onReactivate={onActivateTenant}
               onEndLease={onEndLease}
