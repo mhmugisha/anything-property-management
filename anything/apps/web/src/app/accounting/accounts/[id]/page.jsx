@@ -26,8 +26,9 @@ export default function AccountStatementPage({ params }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const canUseAccounting = staffQuery.data?.permissions?.accounting === true;
-  const canRecordPayments =
-    staffQuery.data?.permissions?.payments_receive === true;
+  // Editing and deleting posted entries (journals, payments, payouts,
+  // deductions, deposits) is Admin-only; the routes use requireAdmin.
+  const isAdmin = staffQuery.data?.role_name === "Admin";
 
   const now = useMemo(() => new Date(), []);
   const defaultFrom = useMemo(() => {
@@ -383,7 +384,7 @@ export default function AccountStatementPage({ params }) {
         kind = "manual";
       } else if (sourceType === "payment") {
         const isReceipt = t.debit > 0;
-        kind = isReceipt && canRecordPayments ? "payment" : null;
+        kind = isReceipt ? "payment" : null;
       } else if (sourceType === "landlord_payout") {
         kind = "landlord_payout";
       } else if (sourceType === "landlord_deduction") {
@@ -399,7 +400,7 @@ export default function AccountStatementPage({ params }) {
 
       return { ...t, _editKind: kind };
     });
-  }, [rows, isEditableAccount, canRecordPayments]);
+  }, [rows, isEditableAccount]);
 
   if (isLoading) {
     return (
@@ -528,7 +529,8 @@ export default function AccountStatementPage({ params }) {
                         : "—";
                       const balanceText = formatCurrencyUGX(r.balance);
 
-                      const canEdit = isEditableAccount && !!r._editKind;
+                      const canEdit =
+                        isAdmin && isEditableAccount && !!r._editKind;
 
                       return (
                         <tr key={r.id} className="border-b last:border-b-0">

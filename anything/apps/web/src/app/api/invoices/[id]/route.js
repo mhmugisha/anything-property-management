@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
 import {
   getInvoiceLiveApplied,
@@ -14,7 +14,7 @@ function toNumber(value) {
 }
 
 export async function DELETE(request, { params }) {
-  const perm = await requirePermission(request, "accounting");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

@@ -97,7 +97,12 @@ function fmtNum(n) {
   return Number(n || 0).toLocaleString("en-UG", { maximumFractionDigits: 0 });
 }
 
-export default function EditEmployeeForm({ employee, onClose, onSuccess }) {
+export default function EditEmployeeForm({
+  employee,
+  onClose,
+  onSuccess,
+  isAdmin = false,
+}) {
   const [showSalaryForm, setShowSalaryForm] = useState(false);
   const [form, setForm] = useState({
     full_name: employee.full_name || "",
@@ -131,11 +136,16 @@ export default function EditEmployeeForm({ employee, onClose, onSuccess }) {
       employee_type: form.employee_type,
       phone: form.phone.trim() || null,
       email: form.email.trim() || null,
-      payment_method: form.payment_method,
-      payment_bank_name: form.payment_bank_name.trim() || null,
-      payment_account_number: form.payment_account_number.trim() || null,
-      payment_account_name: form.payment_account_name.trim() || null,
-      payment_phone: form.payment_phone.trim() || null,
+      // Pay-out details are Admin-only; the API ignores them from anyone else.
+      ...(isAdmin
+        ? {
+            payment_method: form.payment_method,
+            payment_bank_name: form.payment_bank_name.trim() || null,
+            payment_account_number: form.payment_account_number.trim() || null,
+            payment_account_name: form.payment_account_name.trim() || null,
+            payment_phone: form.payment_phone.trim() || null,
+          }
+        : {}),
       status: form.status,
       notes: form.notes.trim() || null,
     };
@@ -167,20 +177,24 @@ export default function EditEmployeeForm({ employee, onClose, onSuccess }) {
         <FormField label="Email">
           <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="john@example.com" />
         </FormField>
-        <FormField label="Payment Method">
-          <Select value={form.payment_method} onChange={(e) => set("payment_method", e.target.value)}>
-            <option value="cash">Cash</option>
-            <option value="bank">Bank Transfer</option>
-            <option value="momo">Mobile Money</option>
-          </Select>
-        </FormField>
+        {isAdmin ? (
+          <FormField label="Payment Method">
+            <Select value={form.payment_method} onChange={(e) => set("payment_method", e.target.value)}>
+              <option value="cash">Cash</option>
+              <option value="bank">Bank Transfer</option>
+              <option value="momo">Mobile Money</option>
+            </Select>
+          </FormField>
+        ) : null}
         <FormField label="Status">
           <Select value={form.status} onChange={(e) => set("status", e.target.value)}>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </Select>
         </FormField>
-        <PaymentDetailsFields method={form.payment_method} form={form} set={set} />
+        {isAdmin ? (
+          <PaymentDetailsFields method={form.payment_method} form={form} set={set} />
+        ) : null}
         <FormField label="Notes">
           <textarea
             value={form.notes}
@@ -191,7 +205,8 @@ export default function EditEmployeeForm({ employee, onClose, onSuccess }) {
           />
         </FormField>
 
-        {/* Read-only salary — changes go through SalaryForm only */}
+        {/* Read-only salary — changes go through SalaryForm only (Admin). */}
+        {isAdmin ? (
         <div className="md:col-span-2">
           <FormField label="Current Salary (UGX)">
             <div className="flex items-center gap-3">
@@ -210,9 +225,10 @@ export default function EditEmployeeForm({ employee, onClose, onSuccess }) {
             </div>
           </FormField>
         </div>
+        ) : null}
       </div>
 
-      {showSalaryForm && (
+      {isAdmin && showSalaryForm && (
         <SalaryForm
           employeeId={employee.id}
           onClose={() => setShowSalaryForm(false)}

@@ -1,11 +1,11 @@
-import { requirePermission } from "@/app/api/utils/staff";
+import { requireAdmin } from "@/app/api/utils/staff";
 import { autoApplyAdvancePaymentsToOpenInvoices } from "@/app/api/utils/payments/autoApply";
 
 /**
  * POST: Apply all unapplied payments to open invoices for all tenants
  */
 export async function POST(request) {
-  const perm = await requirePermission(request, "payments_receive");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

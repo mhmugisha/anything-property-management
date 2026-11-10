@@ -1,5 +1,6 @@
 import { useDeleteInvoice } from "@/hooks/useDeleteInvoice";
 import { formatCurrencyUGX } from "@/utils/formatCurrencyUGX";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 function formatShortDate(iso) {
   if (!iso) return "—";
@@ -41,6 +42,8 @@ export default function InvoiceDeleteButton({
 }) {
   const { deleteInvoice, isDeleting, error, appliedPayments } =
     useDeleteInvoice();
+  // Deleting an invoice is Admin-only (DELETE /api/invoices/[id]).
+  const isAdmin = useIsAdmin();
 
   const handleDelete = async () => {
     const result = await deleteInvoice(invoiceId);
@@ -51,6 +54,8 @@ export default function InvoiceDeleteButton({
       }
     }
   };
+
+  if (!isAdmin) return null;
 
   return (
     <div className="inline-flex flex-col gap-1">

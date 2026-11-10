@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { discoverAccountingModel } from "@/app/api/utils/cil/discovery";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
 import { ensurePropertyAccrualLedgerViaCIL } from "@/app/api/utils/cil/propertyAccrualSync";
@@ -237,7 +237,7 @@ function normalizeDateOnly(value) {
 }
 
 export async function POST(request) {
-  const perm = await requirePermission(request, "accounting");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

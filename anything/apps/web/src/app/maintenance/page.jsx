@@ -216,7 +216,8 @@ export default function MaintenancePage() {
   const onConfirmComplete = useCallback(() => {
     if (!completionItem) return;
     const isEditingClosed = completionItem.status === "closed";
-    const hasCost = completedCost !== "" && Number(completedCost) > 0;
+    const hasCost =
+      isAdmin && completedCost !== "" && Number(completedCost) > 0;
     if (!referenceNumber.trim()) {
       setRefError("Reference number is required");
       return;
@@ -255,6 +256,7 @@ export default function MaintenancePage() {
     referenceNumber,
     updateMutation,
     closeCompletionModal,
+    isAdmin,
   ]);
 
   const onClose = useCallback(
@@ -608,6 +610,10 @@ export default function MaintenancePage() {
             </p>
 
             <div className="space-y-3">
+              {/* Posting a cost to the GL is Admin-only; non-admins only mark
+                  the request completed. */}
+              {isAdmin ? (
+                <>
               <Field label="Actual cost (UGX)">
                 <input
                   type="number"
@@ -658,6 +664,12 @@ export default function MaintenancePage() {
                 </select>
               </Field>
 
+                </>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Only an admin can record the cost and post the expense.
+                </p>
+              )}
               <Field label="Reference / Voucher # *">
                 <input
                   type="text"
@@ -912,7 +924,8 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, onEditClosed, on
         </div>
       ) : null}
 
-      {item.status === "closed" ? (
+      {/* Editing a closed request's cost is Admin-only. */}
+      {item.status === "closed" && isAdmin ? (
         <div className="mt-2 pt-2 border-t border-gray-100">
           <button
             disabled={isUpdating}

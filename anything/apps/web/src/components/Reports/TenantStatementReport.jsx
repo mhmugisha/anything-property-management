@@ -559,7 +559,7 @@ export function TenantStatementReport({
                         className="mt-2 text-xs text-slate-500"
                         data-no-print="true"
                       >
-                        You don't have permission to edit/delete payments.
+                        Only an admin can edit or delete payments.
                       </div>
                     ) : null}
                   </div>

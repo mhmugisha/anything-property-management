@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { requireAdmin } from "@/app/api/utils/staff";
 import { computeTerminationSettlement } from "@/app/api/utils/payroll/computeTerminationSettlement";
 
 function toNumber(v) {
@@ -9,7 +9,7 @@ function toNumber(v) {
 }
 
 export async function GET(request, { params }) {
-  const perm = await requirePermission(request, "payroll");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

@@ -24,6 +24,8 @@ export default function AllocatePaymentPage() {
   const { data: user, loading: userLoading } = useUser();
   const staffQuery = useStaffProfile(!userLoading && !!user);
   const canUseAccounting = staffQuery.data?.permissions?.accounting === true;
+  // Editing/deleting Holding entries is Admin-only (requireAdmin on the route).
+  const isAdmin = staffQuery.data?.role_name === "Admin";
   const canRecordPayments =
     staffQuery.data?.permissions?.payments_receive === true;
 
@@ -240,6 +242,8 @@ export default function AllocatePaymentPage() {
                                 Allocate
                               </button>
                             ) : null}
+                            {isAdmin ? (
+                            <>
                             <button
                               type="button"
                               onClick={() => {
@@ -258,6 +262,8 @@ export default function AllocatePaymentPage() {
                             >
                               {deletingId === e.id ? "Deleting…" : "Delete"}
                             </button>
+                            </>
+                            ) : null}
                           </div>
                         </td>
                       </tr>

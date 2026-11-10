@@ -81,10 +81,17 @@ const TABS = [
   { key: "payslips", label: "Payslips", icon: FileText },
 ];
 
-function PayrollSidebar({ active, onSelect }) {
+// Payroll runs and payslips show salaries: Admin-only (their routes use
+// requireAdmin).
+const ADMIN_ONLY_TABS = ["runs", "payslips"];
+
+function PayrollSidebar({ active, onSelect, isAdmin = false }) {
+  const tabs = isAdmin
+    ? TABS
+    : TABS.filter((t) => !ADMIN_ONLY_TABS.includes(t.key));
   return (
     <div className="space-y-1">
-      {TABS.map(({ key, label, icon: Icon }) => {
+      {tabs.map(({ key, label, icon: Icon }) => {
         const isActive = active === key;
         return (
           <button
@@ -404,9 +411,13 @@ function NewEmployeeForm({ onClose, onSuccess }) {
   );
 }
 
-function EmployeeRow({ employee }) {
+function EmployeeRow({ employee, isAdmin = false }) {
   const paymentSummary = () => {
     const m = employee.payment_method;
+    // Pay-out details and salary are Admin-only (the API strips them).
+    if (!isAdmin) {
+      return m === "bank" ? "Bank" : m === "momo" ? "MoMo" : "Cash";
+    }
     if (m === "bank") {
       return [
         employee.payment_bank_name,
@@ -442,7 +453,11 @@ function EmployeeRow({ employee }) {
           )}
           <div className="text-sm text-slate-500 mt-0.5">
             {paymentSummary()}
-            {employee.current_salary ? ` · ${fmt(employee.current_salary)}/mo` : " · No salary set"}
+            {isAdmin
+              ? employee.current_salary
+                ? ` · ${fmt(employee.current_salary)}/mo`
+                : " · No salary set"
+              : null}
           </div>
         </div>
       </div>
@@ -450,7 +465,7 @@ function EmployeeRow({ employee }) {
   );
 }
 
-function EmployeesTab() {
+function EmployeesTab({ isAdmin = false }) {
   const [showForm, setShowForm] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
 
@@ -500,6 +515,7 @@ function EmployeesTab() {
             <EmployeeRow
               key={emp.id}
               employee={emp}
+              isAdmin={isAdmin}
             />
           ))}
         </div>
@@ -1207,7 +1223,7 @@ function NewLoanForm({ employees, assetAccounts, onClose, onSuccess }) {
   );
 }
 
-function LoansTab() {
+function LoansTab({ isAdmin = false }) {
   const [showForm, setShowForm] = useState(false);
   const [schedLoanId, setSchedLoanId] = useState(null);
   const [filterEmployeeId, setFilterEmployeeId] = useState("");
@@ -1234,10 +1250,13 @@ function LoansTab() {
           <h2 className="text-lg font-semibold text-slate-800">Staff Loans</h2>
           <p className="text-sm text-slate-500">{loans.length} loans</p>
         </div>
-        <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
-          <Plus className="w-4 h-4" />
-          Issue Loan
-        </PrimaryBtn>
+        {/* Issuing a loan is Admin-only (requireAdmin on the route). */}
+        {isAdmin ? (
+          <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
+            <Plus className="w-4 h-4" />
+            Issue Loan
+          </PrimaryBtn>
+        ) : null}
       </div>
 
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
@@ -2074,6 +2093,9 @@ export default function PayrollPage() {
 
   const canView = staffQuery.data?.permissions?.payroll === true;
   const isAdmin = staffQuery.data?.role_name === "Admin";
+  // Non-admins never land on an admin-only tab (e.g. via ?tab=runs).
+  const shownTab =
+    !isAdmin && ADMIN_ONLY_TABS.includes(activeTab) ? "employees" : activeTab;
   const isLoading = userLoading || staffQuery.isLoading;
 
   if (isLoading) {
@@ -2116,16 +2138,16 @@ export default function PayrollPage() {
         active="payroll"
       />
       <Sidebar active="payroll">
-        <PayrollSidebar active={activeTab} onSelect={setActiveTab} />
+        <PayrollSidebar active={shownTab} onSelect={setActiveTab} isAdmin={isAdmin} />
       </Sidebar>
 
       <main className="pt-32 md:pl-56">
         <div className="max-w-[90%] mx-auto p-4 md:p-6">
-          {activeTab === "employees" && <EmployeesTab />}
-          {activeTab === "advances" && <AdvancesTab isAdmin={isAdmin} />}
-          {activeTab === "loans" && <LoansTab />}
-          {activeTab === "runs" && <RunsTab isAdmin={isAdmin} />}
-          {activeTab === "payslips" && <PayslipsTab />}
+          {shownTab === "employees" && <EmployeesTab isAdmin={isAdmin} />}
+          {shownTab === "advances" && <AdvancesTab isAdmin={isAdmin} />}
+          {shownTab === "loans" && <LoansTab isAdmin={isAdmin} />}
+          {shownTab === "runs" && isAdmin && <RunsTab isAdmin={isAdmin} />}
+          {shownTab === "payslips" && isAdmin && <PayslipsTab />}
         </div>
       </main>
     </div>

@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { LANDLORD_PAYOUT_FIELDS, redactForStaff } from "@/app/api/utils/redact";
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
@@ -99,7 +100,10 @@ export async function GET(request) {
       [search, like],
     );
 
-    return Response.json({ landlords });
+    // Bank / mobile-money payout details are Admin-only.
+    return Response.json({
+      landlords: redactForStaff(perm.staff, landlords, LANDLORD_PAYOUT_FIELDS),
+    });
   } catch (error) {
     console.error("GET /api/landlords error", error);
     return Response.json(

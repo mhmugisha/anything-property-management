@@ -10,6 +10,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { PropertiesCard } from "./PropertiesCard";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { PayoutCard } from "./PayoutCard";
 import { StatementCard } from "./StatementCard";
 import { ordinalDay, monthLabelFromRange } from "@/utils/formatters";
@@ -112,6 +113,8 @@ export function LandlordDetails({
     ? String(landlord.payment_method).replace(/_/g, " ")
     : "—";
 
+  // Bank / mobile-money payout details are Admin-only (the API strips them).
+  const isAdmin = useIsAdmin();
   const bankNameText = landlord?.bank_name || "—";
   const bankAccountTitleText = landlord?.bank_account_title || "—";
   const bankAccountNumberText = landlord?.bank_account_number || "—";
@@ -253,6 +256,8 @@ export function LandlordDetails({
               <div className="text-sm text-slate-800">{paymentMethodText}</div>
             </div>
 
+            {isAdmin ? (
+            <>
             <div>
               <div className="text-xs uppercase tracking-wide text-slate-500">
                 Bank Name
@@ -295,6 +300,8 @@ export function LandlordDetails({
                 {mobileMoneyPhoneText}
               </div>
             </div>
+            </>
+            ) : null}
           </div>
         </div>
       ) : null}

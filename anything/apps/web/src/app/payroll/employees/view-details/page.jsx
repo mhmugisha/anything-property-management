@@ -24,10 +24,14 @@ const PAYROLL_TABS = [
   { key: "payslips",  label: "Payslips",  icon: FileText,   href: "/payroll?tab=payslips" },
 ];
 
-function PayrollDetailSidebar() {
+function PayrollDetailSidebar({ isAdmin = false }) {
+  // Runs and payslips show salaries: Admin-only.
+  const tabs = isAdmin
+    ? PAYROLL_TABS
+    : PAYROLL_TABS.filter((t) => t.key !== "runs" && t.key !== "payslips");
   return (
     <div className="space-y-1">
-      {PAYROLL_TABS.map(({ key, label, icon: Icon, href }) => (
+      {tabs.map(({ key, label, icon: Icon, href }) => (
         <a
           key={key}
           href={href}
@@ -64,7 +68,7 @@ function DetailRow({ label, value }) {
   );
 }
 
-function ViewDetailsPanel({ employee, onClose }) {
+function ViewDetailsPanel({ employee, onClose, isAdmin = false }) {
   const paymentDetails = (() => {
     if (employee.payment_method === "bank") {
       const parts = [employee.payment_bank_name, employee.payment_account_number].filter(Boolean);
@@ -122,10 +126,12 @@ function ViewDetailsPanel({ employee, onClose }) {
             </span>
           }
         />
-        <DetailRow
-          label="Current Salary"
-          value={employee.current_salary ? fmt(employee.current_salary) + " / month" : null}
-        />
+        {isAdmin ? (
+          <DetailRow
+            label="Current Salary"
+            value={employee.current_salary ? fmt(employee.current_salary) + " / month" : null}
+          />
+        ) : null}
         {employee.notes && (
           <div className="md:col-span-2">
             <DetailRow label="Notes" value={employee.notes} />
@@ -148,7 +154,10 @@ export default function EmployeeViewDetailsPage() {
   const { data: user, loading: userLoading } = useUser();
   const staffQuery = useStaffProfile(!userLoading && !!user);
   const canView = staffQuery.data?.permissions?.payroll === true;
-  const isAdmin = staffQuery.data?.permissions?.admin === true;
+  // Salary, pay-out details, the pay statement, Terminate and Delete are
+  // Admin-only (the routes use requireAdmin / strip the fields).
+  const isAdmin = staffQuery.data?.role_name === "Admin";
+  const homeMode = isAdmin ? "statement" : "details";
 
   const employeesQuery = useEmployees(
     { status: "all" },
@@ -159,7 +168,7 @@ export default function EmployeeViewDetailsPage() {
 
   const deleteMutation = useDeleteEmployee();
 
-  const [mode, setMode] = useState("statement");
+  const [mode, setMode] = useState(null); // null = homeMode
   const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -178,6 +187,8 @@ export default function EmployeeViewDetailsPage() {
   }, [showMoreMenu]);
 
   const isLoading = userLoading || staffQuery.isLoading;
+  const shownMode =
+    mode === "statement" && !isAdmin ? "details" : mode || homeMode;
 
   if (isLoading) {
     return (
@@ -235,7 +246,7 @@ export default function EmployeeViewDetailsPage() {
         active="payroll"
       />
       <Sidebar active="payroll">
-        <PayrollDetailSidebar />
+        <PayrollDetailSidebar isAdmin={isAdmin} />
       </Sidebar>
 
       <main className="pt-32 md:pl-56">
@@ -298,10 +309,10 @@ export default function EmployeeViewDetailsPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setMode((m) => m === "details" ? "statement" : "details");
+                        setMode(shownMode === "details" ? homeMode : "details");
                         setShowMoreMenu(false);
                       }}
-                      className={mode === "details" ? btnActiveClass : btnClass}
+                      className={shownMode === "details" ? btnActiveClass : btnClass}
                     >
                       <Eye className="w-4 h-4" />
                       View Details
@@ -310,15 +321,16 @@ export default function EmployeeViewDetailsPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setMode((m) => m === "edit" ? "statement" : "edit");
+                        setMode(shownMode === "edit" ? homeMode : "edit");
                         setShowMoreMenu(false);
                       }}
-                      className={mode === "edit" ? btnActiveClass : btnClass}
+                      className={shownMode === "edit" ? btnActiveClass : btnClass}
                     >
                       <Edit2 className="w-4 h-4" />
                       Edit
                     </button>
 
+                    {isAdmin ? (
                     <div className="relative" ref={moreMenuRef}>
                       <button
                         type="button"
@@ -355,29 +367,32 @@ export default function EmployeeViewDetailsPage() {
                         </div>
                       )}
                     </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
 
               {/* Content panel — exactly one visible at a time */}
-              {mode === "edit" && (
+              {shownMode === "edit" && (
                 <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                   <EditEmployeeForm
                     employee={employee}
-                    onClose={() => setMode("statement")}
-                    onSuccess={() => setMode("statement")}
+                    isAdmin={isAdmin}
+                    onClose={() => setMode(homeMode)}
+                    onSuccess={() => setMode(homeMode)}
                   />
                 </div>
               )}
 
-              {mode === "details" && (
+              {shownMode === "details" && (
                 <ViewDetailsPanel
                   employee={employee}
-                  onClose={() => setMode("statement")}
+                  isAdmin={isAdmin}
+                  onClose={() => setMode(homeMode)}
                 />
               )}
 
-              {mode === "statement" && (
+              {shownMode === "statement" && isAdmin && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                   <EmployeeStatement employeeId={employeeId} />
                 </div>

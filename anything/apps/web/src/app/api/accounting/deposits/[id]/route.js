@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -66,7 +66,7 @@ export async function GET(request, { params: { id } }) {
  * Edit a deposit transaction's date, description, or target account
  */
 export async function PUT(request, { params: { id } }) {
-  const perm = await requirePermission(request, "accounting");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
@@ -197,7 +197,7 @@ export async function PUT(request, { params: { id } }) {
  * You cannot partially reverse - it's all or nothing for the entire deposit batch.
  */
 export async function DELETE(request, { params: { id } }) {
-  const perm = await requirePermission(request, "accounting");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

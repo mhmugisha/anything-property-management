@@ -98,6 +98,16 @@ export default function EditAccountPage({ params }) {
     return null;
   }
 
+  // Admin-only page (the route uses requireAdmin).
+  if (staffQuery.data && staffQuery.data.role_name !== "Admin") {
+    return (
+      <AccessDenied
+        title="Admin only"
+        message="Only an admin can edit the chart of accounts."
+      />
+    );
+  }
+
   if (!canUseAccounting) {
     return (
       <AccessDenied

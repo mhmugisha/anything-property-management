@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
+import { EMPLOYEE_SENSITIVE_FIELDS, redactForStaff } from "@/app/api/utils/redact";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -60,8 +61,9 @@ export async function GET(request) {
       includeInactive ? [] : [status],
     );
 
+    // Salary and pay-out details are Admin-only.
     return Response.json({
-      employees: (rows || []).map((r) => ({
+      employees: redactForStaff(perm.staff, (rows || []).map((r) => ({
         id: Number(r.id),
         full_name: r.full_name,
         position: r.position || null,
@@ -80,7 +82,7 @@ export async function GET(request) {
         created_at: r.created_at,
         current_salary: r.current_salary ? Number(r.current_salary) : null,
         salary_effective_date: r.salary_effective_date || null,
-      })),
+      })), EMPLOYEE_SENSITIVE_FIELDS),
     });
   } catch (error) {
     console.error("GET /api/payroll/employees error", error);

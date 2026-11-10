@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { isAdminStaff } from "@/app/api/utils/redact";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -79,12 +80,16 @@ export async function GET(request, { params }) {
         email: employee.email || null,
         employee_type: employee.employee_type,
         payment_method: employee.payment_method,
-        payment_details: employee.payment_details || null,
+        // Pay-out details are Admin-only.
+        ...(isAdminStaff(perm.staff)
+          ? { payment_details: employee.payment_details || null }
+          : {}),
         status: employee.status,
         notes: employee.notes || null,
         created_at: employee.created_at,
       },
-      salary_history: (salaryRows || []).map((r) => ({
+      // Salary history is Admin-only.
+      salary_history: !isAdminStaff(perm.staff) ? [] : (salaryRows || []).map((r) => ({
         id: Number(r.id),
         amount: Number(r.amount),
         effective_date: r.effective_date,
@@ -135,6 +140,22 @@ export async function PUT(request, { params }) {
     }
 
     const body = await request.json().catch(() => ({}));
+
+    // Pay-out details are Admin-only. GET strips them for everyone else, so
+    // a non-admin's edit form would send them back blank: ignore them here
+    // rather than wipe the stored values.
+    if (!isAdminStaff(perm.staff)) {
+      for (const k of [
+        "payment_method",
+        "payment_details",
+        "payment_bank_name",
+        "payment_account_number",
+        "payment_account_name",
+        "payment_phone",
+      ]) {
+        delete body[k];
+      }
+    }
 
     const fields = [];
     const values = [];

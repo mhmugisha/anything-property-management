@@ -4,6 +4,7 @@ import {
   requirePermission,
   writeAuditLog,
 } from "@/app/api/utils/staff";
+import { TENANT_SENSITIVE_FIELDS, redactForStaff } from "@/app/api/utils/redact";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 
@@ -25,7 +26,10 @@ export async function GET(request, { params: { id } }) {
     `;
 
     const tenant = rows?.[0] || null;
-    return Response.json({ tenant });
+    // National ID is Admin-only.
+    return Response.json({
+      tenant: redactForStaff(perm.staff, tenant, TENANT_SENSITIVE_FIELDS),
+    });
   } catch (error) {
     console.error("GET /api/tenants/[id] error", error);
     return Response.json({ error: "Failed to fetch tenant" }, { status: 500 });

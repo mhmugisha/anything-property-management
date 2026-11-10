@@ -1,5 +1,6 @@
 import { AccountForm } from "./AccountForm";
 import { AccountsTable } from "./AccountsTable";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export function AccountsTab({
   accountCode,
@@ -16,8 +17,11 @@ export function AccountsTab({
   accounts,
   seedAccountsMutation,
 }) {
+  // Creating or seeding accounts is Admin-only (requireAdmin on the routes).
+  const isAdmin = useIsAdmin();
   const accountsArray = Array.isArray(accounts) ? accounts : [];
   const showSeed =
+    isAdmin &&
     !accountsQuery.isLoading &&
     !accountsQuery.error &&
     accountsArray.length === 0;
@@ -58,6 +62,7 @@ export function AccountsTab({
         </div>
       ) : null}
 
+      {isAdmin ? (
       <AccountForm
         accountCode={accountCode}
         accountName={accountName}
@@ -71,6 +76,7 @@ export function AccountsTab({
         isPending={createAccountMutation.isPending}
         error={createAccountMutation.error}
       />
+      ) : null}
 
       <AccountsTable
         accounts={accountsArray}

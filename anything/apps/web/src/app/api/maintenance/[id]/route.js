@@ -34,6 +34,16 @@ export async function PUT(request, { params: { id } }) {
 
     const body = await request.json();
 
+    // Writes that move money (post, edit or remove GL entries) are
+    // Admin-only. Close, plain edits and completion without a cost stay on
+    // the maintenance permission.
+    const isAdmin = perm.staff?.role_name === "Admin";
+    const adminOnly = (what) =>
+      Response.json(
+        { error: `Only an admin can ${what}.` },
+        { status: 403 },
+      );
+
     // --- Action: close ---
     if (body?.action === "close") {
       if (existing.status !== "completed") {
@@ -62,6 +72,18 @@ export async function PUT(request, { params: { id } }) {
 
     // --- Action: cancel ---
     if (body?.action === "cancel") {
+      // Cancelling soft-deletes the request's GL entries, if any.
+      if (!isAdmin) {
+        const glRows = await sql`
+          SELECT 1 FROM transactions
+          WHERE source_type = 'maintenance' AND source_id = ${reqId}
+            AND COALESCE(is_deleted, false) = false
+          LIMIT 1
+        `;
+        if (existing.transaction_id || glRows.length > 0) {
+          return adminOnly("cancel a request that has posted expenses");
+        }
+      }
       await sql`
         UPDATE transactions
         SET is_deleted = true
@@ -82,6 +104,7 @@ export async function PUT(request, { params: { id } }) {
 
     // --- Edit completion details on a closed request ---
     if (existing.status === "closed" && !body?.action) {
+      if (!isAdmin) return adminOnly("edit the cost of a closed request");
       const editCost = toNumber(body?.completed_cost);
       const editDate = parseDate(body?.completed_date);
       const editChargeType =
@@ -199,6 +222,7 @@ export async function PUT(request, { params: { id } }) {
     let finalCompletedDate = existing.completed_date;
 
     if (isNowCompleted && completedCost && paymentAccountId && chargeType) {
+      if (!isAdmin) return adminOnly("post a maintenance expense");
       // Build GL description: include tenant name when available
       let glDescription;
       if (existing.tenant_id) {

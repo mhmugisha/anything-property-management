@@ -6,7 +6,7 @@ import { deleteJson, fetchJson, putJson } from "@/utils/api";
 import DatePopoverInput from "@/components/DatePopoverInput";
 import { formatDate } from "@/utils/formatters";
 import Pagination from "@/components/Pagination";
-import { useCanRecordPayments } from "@/hooks/useCanRecordPayments";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 function toYmd(value) {
   if (!value) return "";
@@ -27,10 +27,13 @@ export function JournalTable({
   isLoading,
   error,
   accountOptions,
-  isAdmin,
+  isAdmin: isAdminProp = false,
 }) {
   const queryClient = useQueryClient();
-  const canRecordPayments = useCanRecordPayments();
+  // Editing, deleting and reversing posted entries is Admin-only (the
+  // routes use requireAdmin). Recording payments is unaffected.
+  const isAdminFromProfile = useIsAdmin();
+  const isAdmin = isAdminProp || isAdminFromProfile;
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 14;
@@ -391,10 +394,9 @@ export function JournalTable({
       if (sourceType === "manual") {
         kind = "manual";
       } else if (sourceType === "payment") {
-        // Only show actions on the receipt row, not the commission row,
-        // and only to staff who can record payments.
+        // Only show actions on the receipt row, not the commission row.
         const isReceipt = String(t.debit_code) === "1130";
-        kind = isReceipt && canRecordPayments ? "payment" : null;
+        kind = isReceipt ? "payment" : null;
       } else if (sourceType === "landlord_payout") {
         kind = "landlord_payout";
       } else if (sourceType === "landlord_deduction") {
@@ -405,7 +407,7 @@ export function JournalTable({
 
       return { ...t, _editKind: kind, _isDeposit: false };
     });
-  }, [transactions, canRecordPayments]);
+  }, [transactions]);
 
   const paginatedRows = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -469,8 +471,8 @@ export function JournalTable({
               const amountText = formatCurrencyUGX(t.amount);
               const dateText = formatDate(t.transaction_date);
 
-              const canEdit = !!t._editKind;
-              const isDeposit = t._isDeposit;
+              const canEdit = isAdmin && !!t._editKind;
+              const isDeposit = isAdmin && t._isDeposit;
 
               return (
                 <tr key={t.id} className="border-b last:border-b-0">
