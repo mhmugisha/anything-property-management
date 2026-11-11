@@ -176,9 +176,13 @@ export async function POST(request) {
         );
       }
 
+      // The tenant written to payments.tenant_id below; the duplicate check
+      // must use exactly this value.
+      const paymentTenantId = invoice.tenant_id;
+
       // Duplicate-receipt warning: 409 unless the user confirmed.
       const dupA = await checkDuplicateReceipt({
-        tenantId: invoice.tenant_id,
+        tenantId: paymentTenantId,
         referenceNumber,
         amount,
         confirmDuplicate,
@@ -204,7 +208,7 @@ export async function POST(request) {
               approval_status, approved_by, approved_at
             )
             VALUES (
-              ${invoice.lease_id}, ${invoice.tenant_id}, ${invoice.property_id},
+              ${invoice.lease_id}, ${paymentTenantId}, ${invoice.property_id},
               ${paymentDate}::date, ${amount}, ${invoice.currency || "UGX"}, ${paymentMethod},
               ${referenceNumber},
               ${perm.staff.id}, ${notes},

@@ -23,7 +23,15 @@ export async function checkDuplicateReceipt({
   confirmDuplicate,
 }) {
   const ref = String(referenceNumber ?? "").trim();
-  if (!tenantId || !ref || !Number.isFinite(Number(amount))) {
+  const tenant = Number(tenantId);
+  const amt = Number(amount);
+  if (!Number.isInteger(tenant) || tenant <= 0 || !ref || !Number.isFinite(amt)) {
+    // Diagnostic: a skipped check is otherwise silent.
+    console.info("duplicate-receipt check skipped", {
+      tenantId: tenantId ?? null,
+      hasRef: !!ref,
+      amount: amount ?? null,
+    });
     return { blocked: null, existingIds: [] };
   }
 
@@ -38,17 +46,23 @@ export async function checkDuplicateReceipt({
       p.created_at
     FROM payments p
     LEFT JOIN staff_users s ON s.id = p.recorded_by
-    WHERE p.tenant_id = ${tenantId}
+    WHERE p.tenant_id = ${tenant}::int
       AND COALESCE(p.is_reversed, false) = false
-      AND LOWER(TRIM(COALESCE(p.reference_number, ''))) = LOWER(${ref})
-      AND p.amount = ${Number(amount)}::numeric
+      AND LOWER(TRIM(COALESCE(p.reference_number, ''))) = LOWER(${ref}::text)
+      AND p.amount = ${amt}::numeric
     ORDER BY p.created_at DESC, p.id DESC
     LIMIT 10
   `;
 
-  if (!existing?.length) return { blocked: null, existingIds: [] };
+  const existingIds = (existing || []).map((r) => Number(r.id));
+  console.info("duplicate-receipt check", {
+    tenantId: tenant,
+    amount: amt,
+    matches: existingIds,
+    confirmDuplicate: confirmDuplicate === true,
+  });
+  if (!existingIds.length) return { blocked: null, existingIds: [] };
 
-  const existingIds = existing.map((r) => Number(r.id));
   if (confirmDuplicate === true) return { blocked: null, existingIds };
 
   return {
