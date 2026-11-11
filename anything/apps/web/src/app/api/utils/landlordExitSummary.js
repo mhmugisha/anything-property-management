@@ -2,7 +2,7 @@ import sql from "@/app/api/utils/sql";
 import {
   getDueToLandlordsBalance,
   getLeaseDepositBalance,
-  getTenantPrepaymentBalance,
+  getPropertyPrepaymentBalance,
   managementFeeSettings,
   monthlyManagementFee,
 } from "@/app/api/utils/accounting";
@@ -74,7 +74,10 @@ export async function getLandlordExitSummary(landlordId) {
   for (const r of leaseRows || []) {
     const [depositHeld, prepayment] = await Promise.all([
       getLeaseDepositBalance(r.lease_id),
-      getTenantPrepaymentBalance(r.tenant_id),
+      getPropertyPrepaymentBalance({
+        tenantId: r.tenant_id,
+        propertyId: r.property_id,
+      }),
     ]);
     const pid = Number(r.property_id);
     if (!leasesByProperty.has(pid)) leasesByProperty.set(pid, []);
@@ -86,7 +89,7 @@ export async function getLandlordExitSummary(landlordId) {
       end_date: r.end_date,
       outstanding: Number(r.outstanding || 0),
       deposit_held: Number(depositHeld || 0),
-      // Tenant-wide: includes prepayments for the tenant's other leases.
+      // This property only: credit never crosses properties.
       prepayment: Number(prepayment || 0),
     });
   }

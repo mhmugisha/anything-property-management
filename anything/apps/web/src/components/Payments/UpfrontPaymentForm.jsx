@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import DatePopoverInput from "@/components/DatePopoverInput";
 import { MoneyInput } from "@/components/MoneyInput";
 import { Field } from "./Field";
+import { PaymentPropertyField } from "./PaymentPropertyField";
 
 export function UpfrontPaymentForm({
   form,
@@ -119,17 +120,17 @@ export function UpfrontPaymentForm({
         </Field>
 
         {/* Row 2 - Auto-populated Property (read-only) */}
-        <Field label="Property (Auto-filled)">
-          <input
-            type="text"
-            value={
-              form.propertyName || (form.tenantId ? "No active lease" : "")
-            }
-            readOnly
-            placeholder={form.tenantId ? "" : "Select tenant first..."}
-            className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 outline-none text-sm text-slate-600"
-          />
-        </Field>
+        <PaymentPropertyField
+          tenantId={form.tenantId}
+          propertyId={form.propertyId}
+          propertyName={form.propertyName}
+          options={form.propertyOptions}
+          mustChoose={form.mustChooseProperty}
+          onChoose={(id, name) => {
+            form.setPropertyId(id);
+            form.setPropertyName(name);
+          }}
+        />
 
         {/* Row 3 */}
         <div className="grid grid-cols-2 gap-3">

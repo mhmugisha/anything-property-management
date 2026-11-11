@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
+import { pickPaymentProperty } from "@/components/Payments/PaymentPropertyField";
 
 export function useUpfrontPaymentForm(defaultDate, allTenants = []) {
   const [propertyId, setPropertyId] = useState("");
   const [propertyName, setPropertyName] = useState(""); // Display name for auto-filled property
+  const [propertyOptions, setPropertyOptions] = useState([]);
+  const [mustChooseProperty, setMustChooseProperty] = useState(false);
   const [tenantId, setTenantId] = useState("");
   const [tenantSearch, setTenantSearch] = useState("");
   const [showTenantDropdown, setShowTenantDropdown] = useState(false);
@@ -12,28 +15,27 @@ export function useUpfrontPaymentForm(defaultDate, allTenants = []) {
   const [receiptNumber, setReceiptNumber] = useState("");
   const [notes, setNotes] = useState("");
 
-  // When tenant is selected, auto-populate property from their current lease
+  // When tenant is selected, auto-populate property from their active lease.
+  // If they have active leases at more than one property, the user must
+  // choose (credit is scoped per property and never crosses properties).
   useEffect(() => {
-    if (tenantId && allTenants.length > 0) {
-      const tenant = allTenants.find((t) => String(t.id) === String(tenantId));
-      if (tenant && tenant.current_property_id) {
-        setPropertyId(String(tenant.current_property_id));
-        setPropertyName(tenant.current_property_name || "");
-      } else {
-        // Tenant has no active lease
-        setPropertyId("");
-        setPropertyName("");
-      }
-    } else {
-      setPropertyId("");
-      setPropertyName("");
-    }
+    const tenant =
+      tenantId && allTenants.length > 0
+        ? allTenants.find((t) => String(t.id) === String(tenantId))
+        : null;
+    const picked = pickPaymentProperty(tenant);
+    setPropertyId(picked.propertyId);
+    setPropertyName(picked.propertyName);
+    setPropertyOptions(picked.options);
+    setMustChooseProperty(picked.mustChoose);
     setAmount("");
   }, [tenantId, allTenants]);
 
   const reset = () => {
     setPropertyId("");
     setPropertyName("");
+    setPropertyOptions([]);
+    setMustChooseProperty(false);
     setTenantId("");
     setTenantSearch("");
     setShowTenantDropdown(false);
@@ -62,6 +64,8 @@ export function useUpfrontPaymentForm(defaultDate, allTenants = []) {
     setPropertyId,
     propertyName,
     setPropertyName,
+    propertyOptions,
+    mustChooseProperty,
     tenantId,
     setTenantId,
     tenantSearch,

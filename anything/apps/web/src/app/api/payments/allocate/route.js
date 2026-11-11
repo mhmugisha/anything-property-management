@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
+import { resolvePaymentProperty } from "@/app/api/utils/payments/resolvePaymentProperty";
 import { recordAdvancePayment } from "@/app/api/utils/payments/recordAdvancePayment";
 import {
   checkDuplicateReceipt,
@@ -43,12 +44,16 @@ export async function POST(request) {
       return Response.json({ error: "Amount must be > 0" }, { status: 400 });
     }
 
-    if (!tenantId || !propertyId) {
-      return Response.json(
-        { error: "tenant_id and property_id are required" },
-        { status: 400 },
-      );
+    if (!tenantId) {
+      return Response.json({ error: "tenant_id is required" }, { status: 400 });
     }
+
+    // Credit is scoped per property: never guess between properties.
+    const resolved = await resolvePaymentProperty({ tenantId, propertyId });
+    if (!resolved.ok) {
+      return Response.json(resolved.body, { status: resolved.status });
+    }
+    const paymentPropertyId = resolved.propertyId;
 
     if (!holdingTransactionId) {
       return Response.json(
@@ -114,7 +119,7 @@ export async function POST(request) {
       staff: perm.staff,
       ipAddress: perm.ipAddress,
       tenantId,
-      propertyId,
+      propertyId: paymentPropertyId,
       paymentDate,
       amount,
       paymentMethod,
