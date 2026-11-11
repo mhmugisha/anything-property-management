@@ -31,7 +31,7 @@ export default function LandlordsSidebar({
         </div>
       </div>
 
-      {/* New Landlord button (admin-only: no onCreateNew for non-admins) */}
+      {/* New Landlord button (hidden when no onCreateNew is passed) */}
       {onCreateNew ? (
         <div className="px-3 pt-3 pb-3 border-b border-white/10">
           <button

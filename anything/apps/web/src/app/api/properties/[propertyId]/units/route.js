@@ -1,6 +1,8 @@
 import sql from "@/app/api/utils/sql";
-import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getManagerScope } from "@/app/api/utils/managerScope";
+import { insertUnitWithRecalc } from "@/app/api/utils/units/createUnit";
+import { submitUnit } from "@/app/api/utils/units/unitSubmissions";
 
 export async function GET(request, { params: { propertyId } }) {
   try {
@@ -51,10 +53,13 @@ export async function GET(request, { params: { propertyId } }) {
 
 export async function POST(request, { params: { propertyId } }) {
   try {
-    const perm = await requireAdmin(request);
+    // Admin creates units directly; anyone else with "properties" proposes
+    // one into unit_submissions for Admin approval.
+    const perm = await requirePermission(request, "properties");
     if (!perm.ok) {
       return Response.json(perm.body, { status: perm.status });
     }
+    const isAdmin = perm.staff?.role_name === "Admin";
 
     const pid = parseInt(propertyId, 10);
     if (!Number.isFinite(pid)) {
@@ -68,53 +73,50 @@ export async function POST(request, { params: { propertyId } }) {
       bathrooms,
       square_feet,
       monthly_rent_ugx,
+      monthly_rent_usd,
       deposit_amount,
       status,
       photos,
     } = body || {};
 
-    if (!unit_number || typeof unit_number !== "string") {
+    if (!unit_number || typeof unit_number !== "string" || !unit_number.trim()) {
       return Response.json(
         { error: "unit_number is required" },
         { status: 400 },
       );
     }
 
-    const inserted = await sql`
-      INSERT INTO units (
-        property_id,
-        unit_number,
-        bedrooms,
-        bathrooms,
-        square_feet,
-        monthly_rent_ugx,
-        deposit_amount,
-        status,
-        photos
-      ) VALUES (
-        ${pid},
-        ${unit_number.trim()},
-        ${Number.isFinite(bedrooms) ? bedrooms : null},
-        ${Number.isFinite(bathrooms) ? bathrooms : null},
-        ${typeof square_feet === "number" ? square_feet : null},
-        ${typeof monthly_rent_ugx === "number" ? monthly_rent_ugx : null},
-        ${typeof deposit_amount === "number" ? deposit_amount : null},
-        ${typeof status === "string" ? status : "vacant"},
-        ${Array.isArray(photos) ? photos : []}
-      )
-      RETURNING *
-    `;
+    const values = {
+      property_id: pid,
+      unit_number: unit_number.trim(),
+      bedrooms: Number.isFinite(bedrooms) ? bedrooms : null,
+      bathrooms: Number.isFinite(bathrooms) ? bathrooms : null,
+      square_feet: typeof square_feet === "number" ? square_feet : null,
+      monthly_rent_ugx:
+        typeof monthly_rent_ugx === "number" ? monthly_rent_ugx : null,
+      monthly_rent_usd:
+        typeof monthly_rent_usd === "number" ? monthly_rent_usd : null,
+      deposit_amount: typeof deposit_amount === "number" ? deposit_amount : null,
+      photos: Array.isArray(photos) ? photos : [],
+    };
 
-    const unit = inserted?.[0] || null;
+    if (!isAdmin) {
+      // Same scoping as GET: Portfolio Managers only for their properties.
+      const scope = await getManagerScope(perm);
+      if (scope.scoped && !scope.propertyIds.includes(pid)) {
+        return Response.json({ error: "Forbidden" }, { status: 403 });
+      }
+      const result = await submitUnit({ propertyId: pid, values, perm });
+      return Response.json(result.body, { status: result.status });
+    }
 
-    // update property total_units to keep it accurate
-    await sql`
-      UPDATE properties
-      SET total_units = (
-        SELECT COUNT(*) FROM units WHERE property_id = ${pid}
-      )
-      WHERE id = ${pid}
-    `;
+    const created = await insertUnitWithRecalc({
+      values: {
+        ...values,
+        status: typeof status === "string" ? status : "vacant",
+      },
+    });
+    const unit = created?.unit || null;
 
     await writeAuditLog({
       staffId: perm.staff.id,

@@ -18,9 +18,8 @@ export async function GET(request) {
       transactions,
       tenantDeductions,
       landlordDeductions,
-      landlordRows,
-      propertyRows,
       tenantSubmissionRows,
+      unitSubmissionRows,
       maintenanceCompletionRows,
     ] = await Promise.all([
       sql`
@@ -75,22 +74,6 @@ export async function GET(request) {
           AND COALESCE(ld.is_deleted, false) = false
         ORDER BY ld.created_at DESC
       `,
-      sql`
-        SELECT l.*, s.full_name AS created_by_name
-        FROM landlords l
-        LEFT JOIN staff_users s ON s.id = l.created_by
-        WHERE l.approval_status = 'pending'
-        ORDER BY l.created_at DESC
-      `,
-      sql`
-        SELECT p.*, s.full_name AS created_by_name,
-               l.full_name AS landlord_name
-        FROM properties p
-        LEFT JOIN staff_users s ON s.id = p.created_by
-        LEFT JOIN landlords l ON l.id = p.landlord_id
-        WHERE p.approval_status = 'pending'
-        ORDER BY p.created_at DESC
-      `,
       // New tenants submitted by non-admins. Nothing exists in tenants/leases
       // until approval; unit_available re-runs the overlap test live.
       sql`
@@ -117,6 +100,52 @@ export async function GET(request) {
         LEFT JOIN landlords l ON l.id = p.landlord_id
         ORDER BY ts.requested_at DESC
       `,
+      // New units proposed by non-admins. Nothing exists in units until
+      // approval. Admin-only route, so landlord payout details are included.
+      sql`
+        SELECT us.id,
+               us.property_id,
+               us.unit_number,
+               us.bedrooms,
+               us.bathrooms,
+               us.square_feet,
+               us.monthly_rent_ugx,
+               us.monthly_rent_usd,
+               us.deposit_amount,
+               us.photos,
+               us.requested_by,
+               us.requested_at,
+               s.full_name AS created_by_name,
+               p.property_name,
+               p.address AS property_address,
+               p.management_fee_type,
+               p.management_fee_percent,
+               p.management_fee_fixed_amount,
+               COALESCE(p.is_deleted, false) AS property_archived,
+               l.id AS landlord_id,
+               CASE WHEN l.id IS NULL THEN NULL
+                    ELSE CONCAT_WS(' ', NULLIF(l.title, ''), l.full_name) END AS landlord_name,
+               l.payment_method AS landlord_payment_method,
+               l.bank_name AS landlord_bank_name,
+               l.bank_account_title AS landlord_bank_account_title,
+               l.bank_account_number AS landlord_bank_account_number,
+               l.mobile_money_name AS landlord_mobile_money_name,
+               l.mobile_money_phone AS landlord_mobile_money_phone,
+               l.start_date AS landlord_start_date,
+               l.end_date AS landlord_end_date,
+               (CASE WHEN l.due_date IS NULL THEN NULL
+                     ELSE EXTRACT(day FROM l.due_date)::int END) AS landlord_due_day,
+               (
+                 COALESCE(NULLIF(TRIM(l.bank_name), ''), NULLIF(TRIM(l.bank_account_title), ''),
+                          NULLIF(TRIM(l.bank_account_number), ''), NULLIF(TRIM(l.mobile_money_name), ''),
+                          NULLIF(TRIM(l.mobile_money_phone), '')) IS NULL
+               ) AS landlord_has_no_payout_details
+        FROM unit_submissions us
+        LEFT JOIN staff_users s ON s.id = us.requested_by
+        LEFT JOIN properties p ON p.id = us.property_id
+        LEFT JOIN landlords l ON l.id = p.landlord_id
+        ORDER BY us.requested_at DESC, us.id DESC
+      `,
       // Maintenance jobs completed by non-admins with a cost: nothing is
       // posted to the GL until approved (see utils/maintenance/completionApproval).
       sql(`
@@ -142,9 +171,8 @@ export async function GET(request) {
       `, []),
     ]);
 
-    const landlords = landlordRows || [];
-    const properties = propertyRows || [];
     const tenantSubmissions = tenantSubmissionRows || [];
+    const unitSubmissions = unitSubmissionRows || [];
     const maintenanceCompletions = maintenanceCompletionRows || [];
 
     return Response.json({
@@ -153,9 +181,8 @@ export async function GET(request) {
       transactions,
       tenantDeductions,
       landlordDeductions,
-      landlords,
-      properties,
       tenantSubmissions,
+      unitSubmissions,
       maintenanceCompletions,
     });
   } catch (error) {

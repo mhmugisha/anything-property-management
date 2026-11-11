@@ -525,7 +525,7 @@ export function PropertiesOverview({
             {viewButton("cards", LayoutGrid, "Cards")}
             {viewButton("table", TableIcon, "Table")}
           </div>
-          {/* Admin-only: the page passes no onCreateProperty otherwise. */}
+          {/* Hidden when the page passes no onCreateProperty. */}
           {onCreateProperty ? (
             <button
               type="button"

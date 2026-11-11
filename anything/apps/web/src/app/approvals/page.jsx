@@ -31,9 +31,8 @@ const TYPE_LABELS = {
   transactions: "Transactions",
   tenantDeductions: "Tenant Deductions",
   landlordDeductions: "Landlord Deductions",
-  landlords: "Landlords",
-  properties: "Properties",
   tenantSubmissions: "New Tenants",
+  unitSubmissions: "New Units",
   maintenanceCompletions: "Maintenance Costs",
 };
 
@@ -43,9 +42,8 @@ const TYPE_API_KEYS = {
   transactions: "transactions",
   tenantDeductions: "tenant_deductions",
   landlordDeductions: "landlord_deductions",
-  landlords: "landlords",
-  properties: "properties",
   tenantSubmissions: "tenant_submissions",
+  unitSubmissions: "unit_submissions",
   maintenanceCompletions: "maintenance_completions",
 };
 
@@ -192,22 +190,43 @@ function EntityCard({ entry, typeKey, onApprove, onReject, isPending }) {
   let title = "—";
   let details = [];
 
-  if (typeKey === "landlords") {
-    title = entry.full_name || "—";
-    details = [
-      entry.phone && `Phone: ${entry.phone}`,
-      entry.email && `Email: ${entry.email}`,
-    ].filter(Boolean);
-  } else if (typeKey === "properties") {
-    title = entry.property_name || "—";
+  if (typeKey === "unitSubmissions") {
+    title = `Unit ${entry.unit_number || "—"} – ${entry.property_name || "—"}`;
     const feeType = String(entry.management_fee_type || "percent").toLowerCase();
     const feeDisplay =
       feeType === "fixed"
         ? `Fixed UGX ${Number(entry.management_fee_fixed_amount || 0).toLocaleString()}`
         : `${Number(entry.management_fee_percent || 0)}% of rent`;
+    const method = entry.landlord_payment_method;
+    const payout =
+      method === "bank"
+        ? `Bank: ${[entry.landlord_bank_name, entry.landlord_bank_account_title, entry.landlord_bank_account_number].filter(Boolean).join(" · ") || "—"}`
+        : method === "mobile_money"
+          ? `Mobile Money: ${[entry.landlord_mobile_money_name, entry.landlord_mobile_money_phone].filter(Boolean).join(" · ") || "—"}`
+          : "Payment method: not set";
+    const ymd = (d) => (d ? String(d).slice(0, 10) : null);
+    const contract =
+      ymd(entry.landlord_start_date) || ymd(entry.landlord_end_date)
+        ? `Contract: ${ymd(entry.landlord_start_date) || "—"} to ${ymd(entry.landlord_end_date) || "open"}`
+        : null;
     details = [
-      entry.landlord_name && `Landlord: ${entry.landlord_name}`,
-      `Fee: ${feeDisplay}`,
+      [
+        entry.bedrooms != null && `${entry.bedrooms} bed`,
+        entry.bathrooms != null && `${entry.bathrooms} bath`,
+        entry.square_feet != null && `${Number(entry.square_feet).toLocaleString()} sq ft`,
+      ].filter(Boolean).join(" · ") || null,
+      `Rent: ${entry.monthly_rent_ugx != null ? formatAmount(entry.monthly_rent_ugx, "UGX") : "—"}${
+        entry.monthly_rent_usd != null ? ` / ${formatAmount(entry.monthly_rent_usd, "USD")}` : ""
+      } per month`,
+      entry.deposit_amount != null && `Deposit: ${formatAmount(entry.deposit_amount, "UGX")}`,
+      Array.isArray(entry.photos) && entry.photos.length > 0 && `Photos: ${entry.photos.length}`,
+      entry.property_address && `Address: ${entry.property_address}`,
+      `Management fee: ${feeDisplay}`,
+      `Landlord: ${entry.landlord_name || "—"}`,
+      payout,
+      contract,
+      entry.landlord_due_day && `Payout due day: ${entry.landlord_due_day}`,
+      entry.requested_at && `Submitted: ${String(entry.requested_at).slice(0, 10)}`,
     ].filter(Boolean);
   } else if (typeKey === "tenantSubmissions") {
     title = `${entry.title ? `${entry.title} ` : ""}${entry.full_name || "—"}`;
@@ -259,6 +278,10 @@ function EntityCard({ entry, typeKey, onApprove, onReject, isPending }) {
 
   const unitTaken =
     typeKey === "tenantSubmissions" && entry.unit_available === false;
+  const noPayoutDetails =
+    typeKey === "unitSubmissions" && entry.landlord_has_no_payout_details === true;
+  const propertyArchived =
+    typeKey === "unitSubmissions" && entry.property_archived === true;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
@@ -279,6 +302,18 @@ function EntityCard({ entry, typeKey, onApprove, onReject, isPending }) {
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
           This unit is no longer available for these dates. Approving will fail;
           reject the submission or ask for a different unit.
+        </div>
+      )}
+
+      {noPayoutDetails && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+          Landlord has no payout details yet. Add them before payouts.
+        </div>
+      )}
+
+      {propertyArchived && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+          This property is archived. Approving will fail; reject the submission.
         </div>
       )}
 
@@ -396,9 +431,8 @@ export default function ApprovalsPage() {
   const transactions = data.transactions || [];
   const tenantDeductions = data.tenantDeductions || [];
   const landlordDeductions = data.landlordDeductions || [];
-  const landlords = data.landlords || [];
-  const properties = data.properties || [];
   const tenantSubmissions = data.tenantSubmissions || [];
+  const unitSubmissions = data.unitSubmissions || [];
   const maintenanceCompletions = data.maintenanceCompletions || [];
 
   const totalPending =
@@ -407,9 +441,8 @@ export default function ApprovalsPage() {
     transactions.length +
     tenantDeductions.length +
     landlordDeductions.length +
-    landlords.length +
-    properties.length +
     tenantSubmissions.length +
+    unitSubmissions.length +
     maintenanceCompletions.length;
 
   return (
@@ -505,20 +538,11 @@ export default function ApprovalsPage() {
                 isPending={approvalMutation.isPending}
               />
               <SectionGroup
-                label={TYPE_LABELS.landlords}
-                entries={landlords}
-                typeKey="landlords"
-                onApprove={handleApprove(TYPE_API_KEYS.landlords)}
-                onReject={handleReject(TYPE_API_KEYS.landlords)}
-                isPending={approvalMutation.isPending}
-                CardComponent={EntityCard}
-              />
-              <SectionGroup
-                label={TYPE_LABELS.properties}
-                entries={properties}
-                typeKey="properties"
-                onApprove={handleApprove(TYPE_API_KEYS.properties)}
-                onReject={handleReject(TYPE_API_KEYS.properties)}
+                label={TYPE_LABELS.unitSubmissions}
+                entries={unitSubmissions}
+                typeKey="unitSubmissions"
+                onApprove={handleApprove(TYPE_API_KEYS.unitSubmissions)}
+                onReject={handleReject(TYPE_API_KEYS.unitSubmissions)}
                 isPending={approvalMutation.isPending}
                 CardComponent={EntityCard}
               />

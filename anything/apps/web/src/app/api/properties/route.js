@@ -1,7 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
-import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
-import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
+import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getManagerScope } from "@/app/api/utils/managerScope";
 
 function toNumber(value) {
@@ -209,7 +207,9 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const perm = await requireAdmin(request);
+    // Anyone with "properties" may add a property; it is live but idle (no
+    // units) until an Admin approves units for it.
+    const perm = await requirePermission(request, "properties");
     if (!perm.ok) {
       return Response.json(perm.body, { status: perm.status });
     }
@@ -302,7 +302,8 @@ export async function POST(request) {
       if (Number.isFinite(parsedOfficer)) officerId = parsedOfficer;
     }
 
-    const approval = getApprovalFields(perm.staff);
+    // Created live (not pending) whoever creates it; approved_by records the
+    // creator. Not via getApprovalFields, which would mark non-admins pending.
     const created = await sql`
       INSERT INTO properties (
         property_name, address, property_type,
@@ -323,7 +324,7 @@ export async function POST(request) {
         ${landlordId},
         ${officerId},
         ${perm.staff.id},
-        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
+        'approved', ${perm.staff.id}, NOW()
       )
       RETURNING *
     `;
@@ -339,16 +340,6 @@ export async function POST(request) {
       newValues: property,
       ipAddress: perm.ipAddress,
     });
-
-    if (approval.approval_status === "pending") {
-      notifyAllAdminsAsync({
-        title: "New Property Pending Approval",
-        message: `New property ${property_name.trim()} has been created and is pending approval. Added by ${perm.staff.full_name || "Staff"}`,
-        type: "property",
-        reference_id: property?.id,
-        reference_type: "property",
-      });
-    }
 
     return Response.json({ property });
   } catch (error) {

@@ -85,6 +85,7 @@ export default function PropertiesPage() {
   const [unitEditingId, setUnitEditingId] = useState(null);
   const [unitForm, setUnitForm] = useState(INITIAL_UNIT_FORM);
   const [unitFormError, setUnitFormError] = useState(null);
+  const [unitFormNotice, setUnitFormNotice] = useState(null);
 
   const [deepLinkNewUnitHandled, setDeepLinkNewUnitHandled] = useState(false);
 
@@ -92,8 +93,10 @@ export default function PropertiesPage() {
 
   const canManageProperties =
     staffQuery.data?.permissions?.properties === true || false;
-  // Creating, editing, reactivating, decommissioning and deleting properties
-  // and units are admin-only (requireAdmin).
+  // Anyone with "properties" may create a property, and propose a unit (a
+  // non-admin's unit waits in unit_submissions for Admin approval). Editing,
+  // reactivating, decommissioning and deleting properties and units are
+  // admin-only (requireAdmin).
   const isAdmin = staffQuery.data?.role_name === "Admin";
 
   // Restore the remembered Cards/Table choice after mount (client only).
@@ -299,6 +302,7 @@ export default function PropertiesPage() {
     setUnitFormOpen(true);
     setUnitEditingId(null);
     setUnitForm(INITIAL_UNIT_FORM);
+    setUnitFormNotice(null);
   }, []);
 
   useEffect(() => {
@@ -307,7 +311,6 @@ export default function PropertiesPage() {
     if (userLoading) return;
     if (!user) return;
     if (!canManageProperties) return;
-    if (!isAdmin) return; // ?newUnit=1 opens the admin-only unit form
     if (!selectedPropertyId) return;
 
     const sp = new URLSearchParams(window.location.search);
@@ -321,7 +324,6 @@ export default function PropertiesPage() {
     userLoading,
     user,
     canManageProperties,
-    isAdmin,
     selectedPropertyId,
     onOpenCreateUnit,
   ]);
@@ -477,11 +479,18 @@ export default function PropertiesPage() {
         },
       );
     } else {
-      // When creating, keep the modal open and reset the form for another entry
+      // When creating, keep the modal open and reset the form for another entry.
+      // A non-admin's unit is stored as a submission ({ pending: true }).
+      setUnitFormNotice(null);
       createUnitMutation.mutate(payload, {
-        onSuccess: () => {
+        onSuccess: (data) => {
           setUnitForm(INITIAL_UNIT_FORM);
           setUnitFormError(null);
+          setUnitFormNotice(
+            data?.pending
+              ? "Submitted for approval. The unit will appear once an admin approves it."
+              : null,
+          );
         },
         onError: (error) => {
           setUnitFormError(error);
@@ -629,7 +638,7 @@ export default function PropertiesPage() {
                 landlordOptions={landlordOptions}
                 officerOptions={officerOptions}
                 units={units}
-                onCreateUnit={isAdmin ? onOpenCreateUnit : null}
+                onCreateUnit={onOpenCreateUnit}
                 onEditUnit={isAdmin ? onOpenEditUnit : null}
                 onDeleteUnit={isAdmin ? onDeleteUnit : null}
                 unitsLoading={unitsQuery.isLoading}
@@ -649,7 +658,7 @@ export default function PropertiesPage() {
               view={view}
               onViewChange={onViewChange}
               onOpenProperty={handleSelectProperty}
-              onCreateProperty={isAdmin ? onOpenCreateProperty : null}
+              onCreateProperty={onOpenCreateProperty}
             />
           )}
         </div>
@@ -663,11 +672,14 @@ export default function PropertiesPage() {
             setUnitFormOpen(false);
             setUnitEditingId(null);
             setUnitFormError(null);
+            setUnitFormNotice(null);
           }}
           onAddPhotos={onAddUnitPhotos}
           isEditing={!!unitEditingId}
           isSaving={isSavingUnit}
           error={unitFormError}
+          notice={unitFormNotice}
+          showStatus={isAdmin || !!unitEditingId}
           uploadLoading={uploadState.loading}
           propertyType={selectedPropertyType}
           onClearError={onClearUnitFormError}

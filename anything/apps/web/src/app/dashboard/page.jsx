@@ -416,15 +416,13 @@ export default function Dashboard() {
 
           {/* Quick links */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
-            {/* Adding units is admin-only. */}
-            {staffProfile?.role_name === "Admin" ? (
-              <QuickLinkTile href="/properties?newUnit=1">
-                <div className="flex items-center gap-2">
-                  <PlusSquare className="w-4 h-4 text-white" />
-                  <span>Add Unit</span>
-                </div>
-              </QuickLinkTile>
-            ) : null}
+            {/* Non-admins' units go to unit_submissions for Admin approval. */}
+            <QuickLinkTile href="/properties?newUnit=1">
+              <div className="flex items-center gap-2">
+                <PlusSquare className="w-4 h-4 text-white" />
+                <span>Add Unit</span>
+              </div>
+            </QuickLinkTile>
             <QuickLinkTile href="/tenants?new=1">
               <div className="flex items-center gap-2">
                 <UserPlus className="w-4 h-4 text-white" />

@@ -25,9 +25,8 @@ export async function GET(request) {
           WHERE approval_status = 'pending' AND COALESCE(is_deleted, false) = false)
         + (SELECT COUNT(*) FROM landlord_deductions
           WHERE approval_status = 'pending' AND COALESCE(is_deleted, false) = false)
-        + (SELECT COUNT(*) FROM landlords WHERE approval_status = 'pending')
-        + (SELECT COUNT(*) FROM properties WHERE approval_status = 'pending')
         + (SELECT COUNT(*) FROM tenant_submissions)
+        + (SELECT COUNT(*) FROM unit_submissions)
         + (SELECT COUNT(*) FROM maintenance_requests WHERE ${PENDING_COMPLETION_SQL})
         AS total
     `, []);

@@ -19,6 +19,7 @@ export function LandlordForm({
   isSaving,
   error,
   canSave,
+  canEditPayoutDetails = true,
 }) {
   const paymentMethod = form.payment_method || "";
   const isBank = paymentMethod === "bank";
@@ -139,7 +140,13 @@ export function LandlordForm({
           </select>
         </Field>
 
-        {isBank ? (
+        {!canEditPayoutDetails ? (
+          <div className="md:col-span-2 text-xs text-slate-500">
+            Payout details are added by an admin.
+          </div>
+        ) : null}
+
+        {canEditPayoutDetails && isBank ? (
           <>
             <Field label="Bank">
               <input
@@ -177,7 +184,7 @@ export function LandlordForm({
           </>
         ) : null}
 
-        {isMobileMoney ? (
+        {canEditPayoutDetails && isMobileMoney ? (
           <>
             <Field label="Name">
               <input
