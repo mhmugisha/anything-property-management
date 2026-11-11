@@ -9,7 +9,8 @@ import sql from "@/app/api/utils/sql";
 //
 // Source of truth is the payments subledger, not GL 2150:
 //   credit(tenant, property) =
-//       Σ over non-reversed payments of (amount − Σ payment_invoice_allocations)
+//       Σ over non-reversed, APPROVED payments of
+//         (amount − Σ payment_invoice_allocations)
 //     − Σ prepayment_refund / prepayment_writeoff GL entries (not deleted) for
 //       the tenant's leases at that property
 // Auto-apply spends exactly this credit, so the balance shown / refunded at
@@ -61,6 +62,9 @@ export async function loadTenantCreditByProperty({ tenantId, propertyId = null }
         FROM payments p
         LEFT JOIN payment_invoice_allocations pia ON pia.payment_id = p.id
         WHERE COALESCE(p.is_reversed, false) = false
+          -- Pending payments are not credit until an Admin approves them
+          -- (NULL = legacy row from before approvals, treated as approved).
+          AND COALESCE(p.approval_status, 'approved') = 'approved'
           AND p.tenant_id = $1::int
           AND p.property_id IS NOT NULL
           AND ($2::int IS NULL OR p.property_id = $2::int)

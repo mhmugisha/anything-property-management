@@ -13,6 +13,8 @@ import {
   approveUnitSubmission,
   rejectUnitSubmission,
 } from "@/app/api/utils/units/unitSubmissions";
+import { allocationSideEffectQueries } from "@/app/api/utils/payments/allocationCleanup";
+import { autoApplyAdvancePaymentsForTenant } from "@/app/api/utils/payments/autoApply";
 
 // New tenants are approved via 'tenant_submissions' and new units via
 // 'unit_submissions' (both handled separately below), never by flipping an
@@ -103,6 +105,17 @@ export async function POST(request, { params }) {
 
     const previousApprovalStatus = existing.approval_status;
 
+    // Allocations about to be deleted by a payment/invoice rejection. Captured
+    // BEFORE the transaction so their side effects (auto-apply GL, arrears
+    // fees) can be undone in the same transaction that deletes them.
+    let rejectAllocationIds = [];
+    if (action === 'reject' && (type === 'payments' || type === 'invoices')) {
+      const allocRows = type === 'payments'
+        ? await sql`SELECT id FROM payment_invoice_allocations WHERE payment_id = ${entryId}`
+        : await sql`SELECT id FROM payment_invoice_allocations WHERE invoice_id = ${entryId}`;
+      rejectAllocationIds = (allocRows || []).map((r) => Number(r.id));
+    }
+
     const updateQuery = `
       UPDATE ${type}
       SET approval_status = $1,
@@ -137,6 +150,9 @@ export async function POST(request, { params }) {
           deletedAllocations,
           _updatedPayment,
           resetHoldingPointers,
+          deletedAutoApplyTxns = [],
+          deletedFeeTxns = [],
+          deletedFees = [],
         ] = await sql.transaction([
           sql`UPDATE transactions SET is_deleted = true
               WHERE source_type = ANY(ARRAY['payment','payment_advance','payment_allocation']::text[])
@@ -169,12 +185,21 @@ export async function POST(request, { params }) {
                   AND source_id = ${entryId}
               )
               RETURNING id`,
+          // Same allocation cleanup as DELETE /api/payments/[id]: auto-apply
+          // GL entries and arrears-recovery fees of the allocations above.
+          ...allocationSideEffectQueries(sql, {
+            allocationIds: rejectAllocationIds,
+            staffId: perm.staff.id,
+          }),
         ]);
         cleanupSummary = {
           ledger_txns_deleted: deletedTxns?.length ?? 0,
           invoices_restored: updatedInvoices?.length ?? 0,
           allocations_deleted: deletedAllocations?.length ?? 0,
           holding_pointers_reset: resetHoldingPointers?.length ?? 0,
+          auto_apply_txns_deleted: deletedAutoApplyTxns?.length ?? 0,
+          arrears_fee_txns_deleted: deletedFeeTxns?.length ?? 0,
+          arrears_fees_deleted: deletedFees?.length ?? 0,
         };
         console.log(`Rejected payments ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}, invoices updated=${cleanupSummary.invoices_restored}, holding pointers reset=${cleanupSummary.holding_pointers_reset}`);
       }
@@ -213,15 +238,31 @@ export async function POST(request, { params }) {
         // Note: the accrual ledger uses source_type='rent_accrual_summary'/'mgmt_fee_summary'
         // keyed by property+month, not individual invoice id. The query below will
         // match 0 rows for those (harmless). Any directly-linked invoice txns are covered.
-        const [deletedInvoice, deletedTxns, deletedAllocations] = await sql.transaction([
+        const [
+          deletedInvoice,
+          deletedTxns,
+          deletedAllocations,
+          deletedAutoApplyTxns = [],
+          deletedFeeTxns = [],
+          deletedFees = [],
+        ] = await sql.transaction([
           sql`UPDATE invoices SET is_deleted = true WHERE id = ${entryId} RETURNING id`,
           sql`UPDATE transactions SET is_deleted = true WHERE source_type = 'invoice' AND source_id = ${entryId} RETURNING id`,
           sql`DELETE FROM payment_invoice_allocations WHERE invoice_id = ${entryId} RETURNING id`,
+          // Credit that was auto-applied to this invoice goes back to the
+          // payment: undo the auto-apply GL entries and arrears fees too.
+          ...allocationSideEffectQueries(sql, {
+            allocationIds: rejectAllocationIds,
+            staffId: perm.staff.id,
+          }),
         ]);
         cleanupSummary = {
           invoice_deleted: deletedInvoice?.length ?? 0,
           ledger_txns_deleted: deletedTxns?.length ?? 0,
           allocations_deleted: deletedAllocations?.length ?? 0,
+          auto_apply_txns_deleted: deletedAutoApplyTxns?.length ?? 0,
+          arrears_fee_txns_deleted: deletedFeeTxns?.length ?? 0,
+          arrears_fees_deleted: deletedFees?.length ?? 0,
         };
         console.log(`Rejected invoices ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}`);
       }
@@ -266,7 +307,30 @@ export async function POST(request, { params }) {
       }
     }
 
-    return Response.json({ ok: true, entry, action });
+    // An approved payment becomes usable credit, and an approved invoice can be
+    // paid from credit: apply the tenant's credit now (same property scoping,
+    // oldest-first rules as everywhere else). Best effort — the approval
+    // itself has already succeeded.
+    let autoApplied = null;
+    if (
+      action === 'approve' &&
+      (type === 'payments' || type === 'invoices') &&
+      entry.tenant_id
+    ) {
+      try {
+        const res = await autoApplyAdvancePaymentsForTenant(entry.tenant_id);
+        if (!res?.ok) {
+          console.error(`auto-apply after approving ${type} ${entryId} failed`, res?.error);
+        }
+        autoApplied = res?.ok
+          ? { count: res.appliedCount || 0, amount: res.appliedAmount || 0 }
+          : null;
+      } catch (e) {
+        console.error(`auto-apply after approving ${type} ${entryId} failed`, e);
+      }
+    }
+
+    return Response.json({ ok: true, entry, action, autoApplied });
   } catch (error) {
     console.error(`POST /api/approvals/${type}/${id} error`, error);
     return Response.json({ error: 'Failed to process approval' }, { status: 500 });
