@@ -9,6 +9,8 @@ import MobileMenu from "@/components/Shell/MobileMenu";
 import PaymentsSidebar from "@/components/Shell/PaymentsSidebar";
 import AccessDenied from "@/components/Shell/AccessDenied";
 import { useCreatePayment } from "@/hooks/usePayments";
+import { useDuplicateReceiptGuard } from "@/hooks/useDuplicateReceiptGuard";
+import { DuplicateReceiptDialog } from "@/components/Payments/DuplicateReceiptDialog";
 import { usePaymentFilters } from "@/hooks/usePaymentFilters";
 import { useInvoicePaymentForm } from "@/hooks/useInvoicePaymentForm";
 import { useTenantLookup, useDueInvoices } from "@/hooks/usePaymentLookups";
@@ -29,6 +31,7 @@ export default function PayInvoicePage() {
   const filters = usePaymentFilters();
 
   const createPaymentMutation = useCreatePayment();
+  const duplicateGuard = useDuplicateReceiptGuard(createPaymentMutation);
 
   const handleClearError = useCallback(() => {
     createPaymentMutation.reset();
@@ -63,14 +66,14 @@ export default function PayInvoicePage() {
   const onSubmitInvoicePayment = useCallback(() => {
     const payload = invoiceForm.getPayload();
 
-    createPaymentMutation.mutate(payload, {
+    duplicateGuard.submit(payload, {
       onSuccess: () => {
         invoiceForm.reset();
         setSuccessMessage("Payment saved successfully!");
         setTimeout(() => setSuccessMessage(""), 4000);
       },
     });
-  }, [invoiceForm, createPaymentMutation]);
+  }, [invoiceForm, duplicateGuard]);
 
   const handleCancel = () => {
     if (typeof window !== "undefined") {
@@ -163,6 +166,13 @@ export default function PayInvoicePage() {
           )}
         </div>
       </main>
+
+      <DuplicateReceiptDialog
+        pending={duplicateGuard.pendingDuplicate}
+        onCancel={duplicateGuard.cancel}
+        onConfirm={duplicateGuard.confirm}
+        isSaving={createPaymentMutation.isPending}
+      />
     </div>
   );
 }

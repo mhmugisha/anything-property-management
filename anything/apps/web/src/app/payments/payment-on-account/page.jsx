@@ -9,6 +9,8 @@ import MobileMenu from "@/components/Shell/MobileMenu";
 import PaymentsSidebar from "@/components/Shell/PaymentsSidebar";
 import AccessDenied from "@/components/Shell/AccessDenied";
 import { useCreatePayment } from "@/hooks/usePayments";
+import { useDuplicateReceiptGuard } from "@/hooks/useDuplicateReceiptGuard";
+import { DuplicateReceiptDialog } from "@/components/Payments/DuplicateReceiptDialog";
 import { usePaymentFilters } from "@/hooks/usePaymentFilters";
 import { useUpfrontPaymentForm } from "@/hooks/useUpfrontPaymentForm";
 import { useTenantLookup } from "@/hooks/usePaymentLookups";
@@ -29,6 +31,7 @@ export default function AdvancePaymentPage() {
   const filters = usePaymentFilters();
 
   const createPaymentMutation = useCreatePayment();
+  const duplicateGuard = useDuplicateReceiptGuard(createPaymentMutation);
 
   const handleClearError = useCallback(() => {
     createPaymentMutation.reset();
@@ -47,14 +50,14 @@ export default function AdvancePaymentPage() {
   const onSubmitUpfrontPayment = useCallback(() => {
     const payload = upfrontForm.getPayload();
 
-    createPaymentMutation.mutate(payload, {
+    duplicateGuard.submit(payload, {
       onSuccess: () => {
         upfrontForm.reset();
         setSuccessMessage("Payment saved successfully!");
         setTimeout(() => setSuccessMessage(""), 4000);
       },
     });
-  }, [upfrontForm, createPaymentMutation]);
+  }, [upfrontForm, duplicateGuard]);
 
   const handleCancel = () => {
     if (typeof window !== "undefined") {
@@ -145,6 +148,13 @@ export default function AdvancePaymentPage() {
           )}
         </div>
       </main>
+
+      <DuplicateReceiptDialog
+        pending={duplicateGuard.pendingDuplicate}
+        onCancel={duplicateGuard.cancel}
+        onConfirm={duplicateGuard.confirm}
+        isSaving={createPaymentMutation.isPending}
+      />
     </div>
   );
 }

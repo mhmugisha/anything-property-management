@@ -1,6 +1,10 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
 import { recordAdvancePayment } from "@/app/api/utils/payments/recordAdvancePayment";
+import {
+  checkDuplicateReceipt,
+  logDuplicateOverride,
+} from "@/app/api/utils/payments/duplicateReceipt";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -26,6 +30,7 @@ export async function POST(request) {
     const referenceNumber = (body?.reference_number || "").trim() || null;
     const notes = (body?.notes || "").trim() || null;
     const description = (body?.description || "").trim() || null;
+    const confirmDuplicate = body?.confirm_duplicate === true;
 
     if (!paymentDate || !amount || !paymentMethod) {
       return Response.json(
@@ -94,6 +99,15 @@ export async function POST(request) {
       );
     }
 
+    // Duplicate-receipt warning: 409 unless the user confirmed.
+    const dup = await checkDuplicateReceipt({
+      tenantId,
+      referenceNumber,
+      amount,
+      confirmDuplicate,
+    });
+    if (dup.blocked) return dup.blocked;
+
     // Run the shared advance-payment pipeline.
     // GL: Dr Holding (2500) / Cr Tenant Prepayments (2150).
     const result = await recordAdvancePayment({
@@ -120,6 +134,15 @@ export async function POST(request) {
     if (!result.ok) {
       return Response.json({ error: result.error }, { status: result.status });
     }
+
+    await logDuplicateOverride({
+      staffId: perm.staff.id,
+      ipAddress: perm.ipAddress,
+      paymentId: result.payment?.id,
+      existingIds: dup.existingIds,
+      referenceNumber,
+      amount,
+    });
 
     // Fetch the GL transaction the helper just posted, keyed idempotently on
     // (source_type='payment_allocation', source_id=payment.id).
