@@ -15,6 +15,8 @@ import { formatDate } from "@/utils/formatters";
 import { formatCurrencyUGX } from "@/utils/formatCurrency";
 import { useTenantLookup } from "@/hooks/usePaymentLookups";
 import { NoRecordPermissionNote } from "@/components/Payments/NoRecordPermissionNote";
+import { useDuplicateReceiptGuard } from "@/hooks/useDuplicateReceiptGuard";
+import { DuplicateReceiptDialog } from "@/components/Payments/DuplicateReceiptDialog";
 
 function todayYmd() {
   return new Date().toISOString().slice(0, 10);
@@ -74,6 +76,8 @@ export default function AllocatePaymentPage() {
       closeModal();
     },
   });
+
+  const duplicateGuard = useDuplicateReceiptGuard(allocateMutation);
 
   const invalidateAfterMutation = () => {
     queryClient.invalidateQueries({
@@ -285,11 +289,18 @@ export default function AllocatePaymentPage() {
           tenants={tenantsQuery.data || []}
           tenantsLoading={tenantsQuery.isLoading}
           onCancel={closeModal}
-          onSubmit={(payload) => allocateMutation.mutate(payload)}
+          onSubmit={(payload) => duplicateGuard.submit(payload)}
           isSaving={allocateMutation.isPending}
           error={allocateMutation.error}
         />
       ) : null}
+
+      <DuplicateReceiptDialog
+        pending={duplicateGuard.pendingDuplicate}
+        onCancel={duplicateGuard.cancel}
+        onConfirm={duplicateGuard.confirm}
+        isSaving={allocateMutation.isPending}
+      />
 
       {editingEntry ? (
         <EditHoldingModal

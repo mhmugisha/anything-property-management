@@ -5,6 +5,10 @@ import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 import { createArrearsRecoveryFee } from "@/app/api/utils/payments/arrearsFeesHandler";
 import { recordAdvancePayment } from "@/app/api/utils/payments/recordAdvancePayment";
+import {
+  checkDuplicateReceipt,
+  logDuplicateOverride,
+} from "@/app/api/utils/payments/duplicateReceipt";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -113,6 +117,7 @@ export async function POST(request) {
     const referenceNumber = (body?.reference_number || "").trim() || null;
     const notes = (body?.notes || "").trim() || null;
     const description = (body?.description || "").trim() || null;
+    const confirmDuplicate = body?.confirm_duplicate === true;
 
     if (!paymentDate || !amount || !paymentMethod) {
       return Response.json(
@@ -170,6 +175,15 @@ export async function POST(request) {
           { status: 400 },
         );
       }
+
+      // Duplicate-receipt warning: 409 unless the user confirmed.
+      const dupA = await checkDuplicateReceipt({
+        tenantId: invoice.tenant_id,
+        referenceNumber,
+        amount,
+        confirmDuplicate,
+      });
+      if (dupA.blocked) return dupA.blocked;
 
       // STEP 1: Single CTE chains all three writes atomically — PostgreSQL
       // guarantees all commit or none do, and the payment.id flows through
@@ -328,6 +342,15 @@ export async function POST(request) {
         ipAddress: perm.ipAddress,
       });
 
+      await logDuplicateOverride({
+        staffId: perm.staff.id,
+        ipAddress: perm.ipAddress,
+        paymentId: payment.id,
+        existingIds: dupA.existingIds,
+        referenceNumber,
+        amount,
+      });
+
       await writeAuditLog({
         staffId: perm.staff.id,
         action: "invoice.payment.apply",
@@ -374,6 +397,15 @@ export async function POST(request) {
       );
     }
 
+    // Duplicate-receipt warning: 409 unless the user confirmed.
+    const dupB = await checkDuplicateReceipt({
+      tenantId,
+      referenceNumber,
+      amount,
+      confirmDuplicate,
+    });
+    if (dupB.blocked) return dupB.blocked;
+
     const result = await recordAdvancePayment({
       staff: perm.staff,
       ipAddress: perm.ipAddress,
@@ -398,6 +430,15 @@ export async function POST(request) {
     if (!result.ok) {
       return Response.json({ error: result.error }, { status: result.status });
     }
+
+    await logDuplicateOverride({
+      staffId: perm.staff.id,
+      ipAddress: perm.ipAddress,
+      paymentId: result.payment?.id,
+      existingIds: dupB.existingIds,
+      referenceNumber,
+      amount,
+    });
 
     return Response.json({
       payment: result.payment,
