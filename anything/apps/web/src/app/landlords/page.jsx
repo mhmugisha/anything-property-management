@@ -50,8 +50,9 @@ export default function LandlordsPage() {
 
   const canView = staffQuery.data?.permissions?.properties === true;
   const canReports = staffQuery.data?.permissions?.reports === true;
-  // Creating, editing, reactivating, exiting and deleting a landlord are
-  // admin-only (server uses requireAdmin).
+  // Anyone with "properties" may create a landlord, but payout details are
+  // Admin-only (server drops them for non-admins). Editing, reactivating,
+  // exiting and deleting a landlord are admin-only (server uses requireAdmin).
   const isAdmin = staffQuery.data?.role_name === "Admin";
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -89,7 +90,7 @@ export default function LandlordsPage() {
     reset,
     setIsCreating,
     setIsEditing,
-  } = useLandlordForm(initialForm);
+  } = useLandlordForm(initialForm, { payoutDetailsEditable: isAdmin });
 
   const landlordIdForProps = selected?.id || null;
   const propertiesQuery = useLandlordProperties(
@@ -272,11 +273,16 @@ export default function LandlordsPage() {
       start_date: form.start_date || null,
       end_date: form.end_date || null,
       payment_method: form.payment_method || null,
-      bank_name: form.bank_name || null,
-      bank_account_title: form.bank_account_title || null,
-      bank_account_number: form.bank_account_number || null,
-      mobile_money_name: form.mobile_money_name || null,
-      mobile_money_phone: form.mobile_money_phone || null,
+      // Payout details are Admin-only; the server drops them for others too.
+      ...(isAdmin
+        ? {
+            bank_name: form.bank_name || null,
+            bank_account_title: form.bank_account_title || null,
+            bank_account_number: form.bank_account_number || null,
+            mobile_money_name: form.mobile_money_name || null,
+            mobile_money_phone: form.mobile_money_phone || null,
+          }
+        : {}),
     };
 
     if (isCreating) {
@@ -303,6 +309,7 @@ export default function LandlordsPage() {
     }
   }, [
     form,
+    isAdmin,
     isCreating,
     isEditing,
     selected,
@@ -391,7 +398,7 @@ export default function LandlordsPage() {
           onSearchChange={setSearch}
           selectedLandlordId={selectedId}
           onSelectLandlord={handleSelectLandlord}
-          onCreateNew={isAdmin ? handleStartCreate : null}
+          onCreateNew={handleStartCreate}
           showArchived={showArchived}
           onToggleShowArchived={setShowArchived}
         />
@@ -410,6 +417,7 @@ export default function LandlordsPage() {
                 isSaving={createMutation.isPending || updateMutation.isPending}
                 error={createMutation.error || updateMutation.error}
                 canSave={canSave}
+                canEditPayoutDetails={isAdmin}
               />
             ) : null}
 

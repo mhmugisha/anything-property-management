@@ -30,7 +30,7 @@ export default function PropertiesSidebar({
         </div>
       </div>
 
-      {/* New Property button (admin-only: no onCreateProperty otherwise) */}
+      {/* New Property button (hidden when no onCreateProperty is passed) */}
       {onCreateProperty ? (
         <div className="px-3 pt-3 pb-3 border-b border-white/10">
           <button

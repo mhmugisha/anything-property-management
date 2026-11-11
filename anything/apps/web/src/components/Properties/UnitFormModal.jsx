@@ -15,6 +15,8 @@ export function UnitFormModal({
   uploadLoading,
   propertyType,
   onClearError,
+  notice = null,
+  showStatus = true,
 }) {
   // Auto-dismiss error after 5 seconds
   useEffect(() => {
@@ -62,17 +64,20 @@ export function UnitFormModal({
             placeholder="e.g. 101 or A-101"
             type="text"
           />
-          <Field
-            label="Status"
-            value={form.status}
-            onChange={(v) => onChange({ ...form, status: v })}
-            asSelect
-            options={[
-              { value: "vacant", label: "Vacant" },
-              { value: "occupied", label: "Occupied" },
-              { value: "maintenance", label: "Maintenance" },
-            ]}
-          />
+          {/* Hidden for non-admin proposals: approved units start vacant. */}
+          {showStatus && (
+            <Field
+              label="Status"
+              value={form.status}
+              onChange={(v) => onChange({ ...form, status: v })}
+              asSelect
+              options={[
+                { value: "vacant", label: "Vacant" },
+                { value: "occupied", label: "Occupied" },
+                { value: "maintenance", label: "Maintenance" },
+              ]}
+            />
+          )}
 
           {showBedroomsBathrooms && (
             <>
@@ -187,9 +192,15 @@ export function UnitFormModal({
           </button>
         </div>
 
+        {notice && !error && (
+          <p className="text-sm text-emerald-700 mt-3">{notice}</p>
+        )}
+
         {error && (
           <p className="text-sm text-rose-600 mt-3">
-            Could not save unit. Check unit number uniqueness.
+            {error?.status === 409 && error?.message
+              ? error.message
+              : "Could not save unit. Check unit number uniqueness."}
           </p>
         )}
       </div>

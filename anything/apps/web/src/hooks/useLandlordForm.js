@@ -9,7 +9,9 @@ function iso(d) {
   }
 }
 
-export function useLandlordForm(initialForm) {
+// payoutDetailsEditable: false for non-admins, who pick a payment method but
+// can't enter bank / mobile-money details (an Admin adds those later).
+export function useLandlordForm(initialForm, { payoutDetailsEditable = true } = {}) {
   const [form, setForm] = useState(initialForm);
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -25,6 +27,8 @@ export function useLandlordForm(initialForm) {
       ? method === "bank" || method === "mobile_money"
       : method === "" || method === "bank" || method === "mobile_money";
 
+    if (!payoutDetailsEditable) return methodOk;
+
     const bankOk =
       method !== "bank" ||
       (!!form.bank_name &&
@@ -38,6 +42,7 @@ export function useLandlordForm(initialForm) {
     return methodOk && bankOk && mmOk;
   }, [
     isCreating,
+    payoutDetailsEditable,
     form.full_name,
     form.payment_method,
     form.bank_name,

@@ -9,10 +9,16 @@ import {
   approveMaintenanceCompletion,
   rejectMaintenanceCompletion,
 } from "@/app/api/utils/maintenance/completionApproval";
+import {
+  approveUnitSubmission,
+  rejectUnitSubmission,
+} from "@/app/api/utils/units/unitSubmissions";
 
-// New tenants are approved via 'tenant_submissions' (handled separately below),
-// never by flipping tenants.approval_status.
-const ALLOWED_TYPES = ['payments', 'invoices', 'transactions', 'tenant_deductions', 'landlord_deductions', 'landlords', 'properties', 'tenant_submissions', 'maintenance_completions'];
+// New tenants are approved via 'tenant_submissions' and new units via
+// 'unit_submissions' (both handled separately below), never by flipping an
+// approval_status. Landlords and properties are created live and are not
+// part of the approval flow.
+const ALLOWED_TYPES = ['payments', 'invoices', 'transactions', 'tenant_deductions', 'landlord_deductions', 'tenant_submissions', 'unit_submissions', 'maintenance_completions'];
 
 export async function POST(request, { params }) {
   const perm = await requirePermission(request, "accounting");
@@ -46,6 +52,18 @@ export async function POST(request, { params }) {
       const result = action === 'approve'
         ? await approveMaintenanceCompletion({ requestId: entryId, perm })
         : await rejectMaintenanceCompletion({ requestId: entryId, reason: rejectedReason, perm });
+      return Response.json(result.body, { status: result.status });
+    } catch (error) {
+      console.error(`POST /api/approvals/${type}/${id} error`, error);
+      return Response.json({ error: 'Failed to process approval' }, { status: 500 });
+    }
+  }
+
+  if (type === 'unit_submissions') {
+    try {
+      const result = action === 'approve'
+        ? await approveUnitSubmission({ submissionId: entryId, perm })
+        : await rejectUnitSubmission({ submissionId: entryId, reason: rejectedReason, perm });
       return Response.json(result.body, { status: result.status });
     } catch (error) {
       console.error(`POST /api/approvals/${type}/${id} error`, error);
@@ -208,35 +226,6 @@ export async function POST(request, { params }) {
         console.log(`Rejected invoices ${entryId}: soft-deleted ledger txns=${cleanupSummary.ledger_txns_deleted}, allocations reversed=${cleanupSummary.allocations_deleted}`);
       }
 
-      else if (['landlords', 'properties'].includes(type)) {
-        // Warn if related financial records already exist (rejection at this stage is unexpected)
-        let relatedWarning = null;
-        if (type === 'landlords') {
-          const rel = await sql`SELECT 1 FROM properties WHERE landlord_id = ${entryId} AND COALESCE(is_deleted, false) = false LIMIT 1`;
-          if (rel?.length > 0) relatedWarning = 'has active properties';
-        } else if (type === 'properties') {
-          const rel = await sql`SELECT 1 FROM leases WHERE property_id = ${entryId} LIMIT 1`;
-          if (rel?.length > 0) relatedWarning = 'has leases';
-        }
-        if (relatedWarning) {
-          console.warn(`REJECTION WARN: Rejecting ${type} ${entryId} but it ${relatedWarning}. Entities should only be rejectable before any data is attached.`);
-        }
-
-        // is_deleted may not yet exist on these tables; log a warning and skip rather than crashing
-        try {
-          await sql(`UPDATE ${type} SET is_deleted = true WHERE id = $1`, [entryId]);
-          cleanupSummary = { soft_deleted: true };
-        } catch (e) {
-          if (e?.message?.toLowerCase().includes('is_deleted')) {
-            console.warn(`Rejection cleanup: is_deleted column not present on ${type}, skipping soft-delete for ${type} ${entryId}`);
-            cleanupSummary = { soft_deleted: false, skip_reason: 'column_missing' };
-          } else {
-            throw e;
-          }
-        }
-        console.log(`Rejected ${type} ${entryId}: soft_deleted=${cleanupSummary.soft_deleted}`);
-      }
-
       await writeAuditLog({
         staffId: perm.staff.id,
         action: `approval.${action}`,
@@ -257,8 +246,6 @@ export async function POST(request, { params }) {
         transactions: `Your journal entry of UGX ${Number(entry.amount || 0).toLocaleString()} (${entry.description || ''}) has not been approved. Please contact admin.`,
         tenant_deductions: `Your tenant deduction of UGX ${Number(entry.amount || 0).toLocaleString()} (${entry.description || ''}) has not been approved. Please contact admin.`,
         landlord_deductions: `Your landlord deduction of UGX ${Number(entry.amount || 0).toLocaleString()} (${entry.description || ''}) has not been approved. Please contact admin.`,
-        landlords: `The landlord '${entry.full_name || ''}' you added has not been approved. Please contact admin.`,
-        properties: `The property '${entry.property_name || ''}' you added has not been approved. Please contact admin.`,
       };
 
       const message = messageMap[type];

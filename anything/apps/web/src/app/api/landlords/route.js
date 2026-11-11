@@ -1,8 +1,6 @@
 import sql from "@/app/api/utils/sql";
-import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { LANDLORD_PAYOUT_FIELDS, redactForStaff } from "@/app/api/utils/redact";
-import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
-import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 const ALLOWED_PAYMENT_METHODS = new Set(["bank", "mobile_money"]);
@@ -114,11 +112,17 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const perm = await requireAdmin(request);
+  // Anyone with "properties" may add a landlord; it is live but idle until an
+  // Admin approves units under its properties. Payout details are Admin-only.
+  const perm = await requirePermission(request, "properties");
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
     const body = await request.json();
+    const isAdmin = perm.staff?.role_name === "Admin";
+    if (!isAdmin && body && typeof body === "object") {
+      for (const field of LANDLORD_PAYOUT_FIELDS) delete body[field];
+    }
 
     const rawTitle = (body?.title || "").trim();
     const title = rawTitle
@@ -160,7 +164,9 @@ export async function POST(request) {
     const mobileMoneyPhoneToSave =
       paymentMethod === "mobile_money" ? mobileMoneyPhone : null;
 
-    if (paymentMethod === "bank") {
+    // Non-admins can't send payout details (stripped above), so the
+    // completeness checks only apply to Admin.
+    if (isAdmin && paymentMethod === "bank") {
       if (
         !bankNameToSave ||
         !bankAccountTitleToSave ||
@@ -176,7 +182,7 @@ export async function POST(request) {
       }
     }
 
-    if (paymentMethod === "mobile_money") {
+    if (isAdmin && paymentMethod === "mobile_money") {
       if (!mobileMoneyNameToSave || !mobileMoneyPhoneToSave) {
         return Response.json(
           {
@@ -202,7 +208,8 @@ export async function POST(request) {
       return Response.json({ error: "full_name is required" }, { status: 400 });
     }
 
-    const approval = getApprovalFields(perm.staff);
+    // Created live (not pending) whoever creates it; approved_by records the
+    // creator. Not via getApprovalFields, which would mark non-admins pending.
     const rows = await sql`
       INSERT INTO landlords (
         title,
@@ -240,7 +247,7 @@ export async function POST(request) {
         ${bankAccountNumberToSave},
         ${mobileMoneyNameToSave},
         ${mobileMoneyPhoneToSave},
-        ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at},
+        'approved', ${perm.staff.id}, NOW(),
         ${perm.staff.id}
       )
       RETURNING
@@ -274,16 +281,6 @@ export async function POST(request) {
       newValues: landlord,
       ipAddress: perm.ipAddress,
     });
-
-    if (approval.approval_status === "pending") {
-      notifyAllAdminsAsync({
-        title: "New Landlord Pending Approval",
-        message: `New landlord ${fullName} has been created and is pending approval. Added by ${perm.staff.full_name || "Staff"}`,
-        type: "landlord",
-        reference_id: landlord?.id,
-        reference_type: "landlord",
-      });
-    }
 
     return Response.json({ landlord });
   } catch (error) {
