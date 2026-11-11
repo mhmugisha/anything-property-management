@@ -866,8 +866,8 @@ function AdvancesTab({ isAdmin = false, canManage = false }) {
           <h2 className="text-lg font-semibold text-slate-800">Staff Advances</h2>
           <p className="text-sm text-slate-500">{advances.length} records</p>
         </div>
-        {/* Recording an advance needs payroll_manage. */}
-        {canManage ? (
+        {/* Issuing an advance pays money out immediately: Admin only. */}
+        {isAdmin ? (
           <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
             <Plus className="w-4 h-4" />
             New Advance
@@ -881,7 +881,7 @@ function AdvancesTab({ isAdmin = false, canManage = false }) {
         <p className="text-2xl font-bold text-amber-900 mt-1">{fmt(totalOutstanding)}</p>
       </div>
 
-      {showForm && (
+      {isAdmin && showForm && (
         <NewAdvanceForm
           employees={employees}
           assetAccounts={assetAccounts}
