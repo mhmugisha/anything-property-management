@@ -10,6 +10,7 @@ export const PERMISSION_DEFS = [
   { key: "reports", label: "Reports" },
   { key: "accounting", label: "Accounting" },
   { key: "payroll", label: "Payroll" },
+  { key: "payroll_manage", label: "Manage payroll" },
   { key: "maintenance", label: "Maintenance" },
 ];
 

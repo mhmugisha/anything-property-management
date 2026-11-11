@@ -184,6 +184,58 @@ export async function requireReportAccess(request, reportKey) {
 }
 
 /**
+ * payroll_manage (Accountant + Admin): view salaries/runs/payslips, prepare
+ * runs, pay out approved runs, record and recover advances. Admin always
+ * qualifies, matching ensureAdminPermissions in /api/staff/profile, so the
+ * server and UI agree even if a role row lacks the key.
+ */
+export function canManagePayroll(staff, permissions) {
+  return (
+    staff?.role_name === "Admin" || hasPermission(permissions, "payroll_manage")
+  );
+}
+
+export async function requirePayrollManage(request) {
+  const { session, staff, permissions, ipAddress } =
+    await getStaffContext(request);
+
+  if (!session) {
+    return {
+      ok: false,
+      status: 401,
+      body: { error: "Unauthorized" },
+      staff: null,
+      permissions: null,
+      ipAddress,
+    };
+  }
+
+  if (!staff || staff.is_active === false) {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: "Staff profile not set up" },
+      staff: null,
+      permissions: null,
+      ipAddress,
+    };
+  }
+
+  if (!canManagePayroll(staff, permissions)) {
+    return {
+      ok: false,
+      status: 403,
+      body: { error: "Forbidden" },
+      staff,
+      permissions,
+      ipAddress,
+    };
+  }
+
+  return { ok: true, status: 200, body: null, staff, permissions, ipAddress };
+}
+
+/**
  * Passes if the caller has the given blanket permission OR is a
  * Portfolio Manager. Used to expose narrow capabilities (e.g. payment
  * promises) to managers without granting the full "tenants" permission.

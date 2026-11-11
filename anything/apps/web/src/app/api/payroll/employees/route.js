@@ -1,5 +1,10 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import {
+  canManagePayroll,
+  requireAdmin,
+  requirePermission,
+} from "@/app/api/utils/staff";
+import { EMPLOYEE_SENSITIVE_FIELDS, omitFields } from "@/app/api/utils/redact";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -60,6 +65,8 @@ export async function GET(request) {
       includeInactive ? [] : [status],
     );
 
+    // Salary and pay-out details: payroll_manage (Accountant + Admin) only.
+    const showPay = canManagePayroll(perm.staff, perm.permissions);
     return Response.json({
       employees: (rows || []).map((r) => ({
         id: Number(r.id),
@@ -80,7 +87,7 @@ export async function GET(request) {
         created_at: r.created_at,
         current_salary: r.current_salary ? Number(r.current_salary) : null,
         salary_effective_date: r.salary_effective_date || null,
-      })),
+      })).map((e) => (showPay ? e : omitFields(e, EMPLOYEE_SENSITIVE_FIELDS))),
     });
   } catch (error) {
     console.error("GET /api/payroll/employees error", error);
@@ -89,7 +96,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const perm = await requirePermission(request, "payroll");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

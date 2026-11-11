@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 import {
   ensureCanCreditAccount,
   ensureNotManuallyLocked,
@@ -59,7 +59,7 @@ async function checkChosenAccount(accountId, { type, codes, label }) {
 }
 
 export async function POST(request, { params: { id } }) {
-  const perm = await requirePermission(request, "tenants");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

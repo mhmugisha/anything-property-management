@@ -1,6 +1,10 @@
 import { Edit } from "lucide-react";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export function AccountsTable({ accounts, isLoading, error }) {
+  // Editing the chart of accounts is Admin-only (requireAdmin on the route).
+  const isAdmin = useIsAdmin();
+
   if (isLoading) {
     return <p className="text-sm text-slate-500">Loading accounts…</p>;
   }
@@ -18,7 +22,7 @@ export function AccountsTable({ accounts, isLoading, error }) {
             <th className="py-2 pr-3">Name</th>
             <th className="py-2 pr-3">Type</th>
             <th className="py-2 pr-3">Active</th>
-            <th className="py-2 pr-3">Edit</th>
+            {isAdmin ? <th className="py-2 pr-3">Edit</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -49,16 +53,18 @@ export function AccountsTable({ accounts, isLoading, error }) {
                 </td>
                 <td className="py-2 pr-3">{a.account_type}</td>
                 <td className="py-2 pr-3">{a.is_active ? "yes" : "no"}</td>
-                <td className="py-2 pr-3">
-                  <a
-                    href={editHref}
-                    className="inline-flex items-center gap-1 text-violet-600 hover:text-violet-700"
-                    title="Edit account"
-                  >
-                    <Edit className="w-4 h-4" />
-                    Edit
-                  </a>
-                </td>
+                {isAdmin ? (
+                  <td className="py-2 pr-3">
+                    <a
+                      href={editHref}
+                      className="inline-flex items-center gap-1 text-violet-600 hover:text-violet-700"
+                      title="Edit account"
+                    >
+                      <Edit className="w-4 h-4" />
+                      Edit
+                    </a>
+                  </td>
+                ) : null}
               </tr>
             );
           })}

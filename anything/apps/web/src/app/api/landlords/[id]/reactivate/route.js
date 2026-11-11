@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 
 function toNumber(v) {
   const n = Number(v);
@@ -8,7 +8,7 @@ function toNumber(v) {
 }
 
 export async function POST(request, { params }) {
-  const perm = await requirePermission(request, "properties");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

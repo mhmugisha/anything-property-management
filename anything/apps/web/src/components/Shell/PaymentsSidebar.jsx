@@ -8,9 +8,12 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useCanRecordPayments } from "@/hooks/useCanRecordPayments";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export default function PaymentsSidebar() {
   const canRecordPayments = useCanRecordPayments();
+  // Bulk auto-apply is Admin-only (requireAdmin on the route).
+  const isAdmin = useIsAdmin();
 
   // recordOnly entries lead only to a recording page; hide them unless the
   // staff profile has loaded and grants payments_receive.
@@ -35,6 +38,7 @@ export default function PaymentsSidebar() {
     {
       title: "Auto Apply",
       href: "/payments/auto-apply",
+      adminOnly: true,
       recordOnly: true,
       icon: RefreshCw,
     },
@@ -45,7 +49,8 @@ export default function PaymentsSidebar() {
     },
   ];
   const menuItems = allItems.filter(
-    (item) => !item.recordOnly || canRecordPayments,
+    (item) =>
+      (!item.recordOnly || canRecordPayments) && (!item.adminOnly || isAdmin),
   );
 
   return (

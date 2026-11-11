@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getManagerScope } from "@/app/api/utils/managerScope";
 
 function toNumber(value) {
@@ -64,7 +64,7 @@ export async function GET(request, { params: { id } }) {
 
 export async function PUT(request, { params: { id } }) {
   try {
-    const perm = await requirePermission(request, "properties");
+    const perm = await requireAdmin(request);
     if (!perm.ok) {
       return Response.json(perm.body, { status: perm.status });
     }
@@ -246,7 +246,7 @@ export async function PUT(request, { params: { id } }) {
 
 export async function DELETE(request, { params: { id } }) {
   try {
-    const perm = await requirePermission(request, "properties");
+    const perm = await requireAdmin(request);
     if (!perm.ok) {
       return Response.json(perm.body, { status: perm.status });
     }

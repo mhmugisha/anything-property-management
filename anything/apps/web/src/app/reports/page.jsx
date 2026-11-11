@@ -41,7 +41,9 @@ export default function ReportsPage() {
 
   const permissions = staffQuery.data?.permissions || {};
   const canViewReports = permissions.reports === true;
-  const canRecordPayments = permissions.payments_receive === true;
+  // Editing/deleting posted payments is Admin-only (PUT/DELETE
+  // /api/payments/[id] use requireAdmin).
+  const isAdmin = staffQuery.data?.role_name === "Admin";
   // GL 2100 reconciliation: same gate as its API (accounting + Admin).
   const canViewGlRecon =
     permissions.accounting === true && staffQuery.data?.role_name === "Admin";
@@ -160,7 +162,7 @@ export default function ReportsPage() {
             userLoading={userLoading}
             user={user}
             canViewReports={canViewReports}
-            canManagePayments={canRecordPayments}
+            canManagePayments={isAdmin}
           />
         );
       case "payment-status":

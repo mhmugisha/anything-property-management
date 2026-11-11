@@ -4,6 +4,7 @@ import {
   requirePermission,
   writeAuditLog,
 } from "@/app/api/utils/staff";
+import { TENANT_SENSITIVE_FIELDS, redactForStaff } from "@/app/api/utils/redact";
 import { getApprovalFields } from "@/app/api/utils/approval";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
@@ -81,7 +82,10 @@ export async function GET(request) {
 
       const tenants = await sql(query, params);
 
-      return Response.json({ tenants });
+      // National IDs are Admin-only.
+      return Response.json({
+        tenants: redactForStaff(perm.staff, tenants, TENANT_SENSITIVE_FIELDS),
+      });
     }
 
     // includeArchived=1: show tenants under this landlord even if the lease is ended,
@@ -146,7 +150,10 @@ export async function GET(request) {
 
     const tenants = await sql(query, params);
 
-    return Response.json({ tenants });
+    // National IDs are Admin-only.
+    return Response.json({
+      tenants: redactForStaff(perm.staff, tenants, TENANT_SENSITIVE_FIELDS),
+    });
   } catch (error) {
     console.error("GET /api/tenants error", error);
     return Response.json({ error: "Failed to fetch tenants" }, { status: 500 });

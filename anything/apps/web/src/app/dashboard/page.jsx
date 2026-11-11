@@ -416,12 +416,15 @@ export default function Dashboard() {
 
           {/* Quick links */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
-            <QuickLinkTile href="/properties?newUnit=1">
-              <div className="flex items-center gap-2">
-                <PlusSquare className="w-4 h-4 text-white" />
-                <span>Add Unit</span>
-              </div>
-            </QuickLinkTile>
+            {/* Adding units is admin-only. */}
+            {staffProfile?.role_name === "Admin" ? (
+              <QuickLinkTile href="/properties?newUnit=1">
+                <div className="flex items-center gap-2">
+                  <PlusSquare className="w-4 h-4 text-white" />
+                  <span>Add Unit</span>
+                </div>
+              </QuickLinkTile>
+            ) : null}
             <QuickLinkTile href="/tenants?new=1">
               <div className="flex items-center gap-2">
                 <UserPlus className="w-4 h-4 text-white" />

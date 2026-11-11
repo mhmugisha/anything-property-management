@@ -183,7 +183,7 @@ export default function TenantViewDetailsPage() {
       <div><div class="field-label">Full Name</div><div class="field-value">${escapeHtml(tenant?.full_name || "—")}</div></div>
       <div><div class="field-label">Phone</div><div class="field-value">${escapeHtml(tenant?.phone || "—")}</div></div>
       <div><div class="field-label">Email</div><div class="field-value">${escapeHtml(tenant?.email || "—")}</div></div>
-      <div><div class="field-label">National ID</div><div class="field-value">${escapeHtml(tenant?.national_id || "—")}</div></div>
+      ${tenant && "national_id" in tenant ? `<div><div class="field-label">National ID</div><div class="field-value">${escapeHtml(tenant?.national_id || "—")}</div></div>` : ""}
       <div><div class="field-label">Status</div><div class="field-value"><span class="status-badge ${tenant?.status === "archived" ? "archived" : "active"}">${escapeHtml(tenant?.status || "—")}</span></div></div>
       <div><div class="field-label">Emergency Phone</div><div class="field-value">${escapeHtml(tenant?.emergency_phone || "—")}</div></div>
       <div><div class="field-label">Emergency Contact</div><div class="field-value">${escapeHtml(tenant?.emergency_contact || "—")}</div></div>
@@ -361,11 +361,14 @@ export default function TenantViewDetailsPage() {
                     value={tenant.email}
                     icon={<Mail className="w-3 h-3" />}
                   />
-                  <ReadOnlyField
-                    label="National ID"
-                    value={tenant.national_id}
-                    icon={<CreditCard className="w-3 h-3" />}
-                  />
+                  {/* National ID is Admin-only: the API omits the key otherwise. */}
+                  {"national_id" in tenant ? (
+                    <ReadOnlyField
+                      label="National ID"
+                      value={tenant.national_id}
+                      icon={<CreditCard className="w-3 h-3" />}
+                    />
+                  ) : null}
                   <ReadOnlyField
                     label="Status"
                     value={

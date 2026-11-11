@@ -5,10 +5,14 @@ import {
   approveTenantSubmission,
   rejectTenantSubmission,
 } from "@/app/api/utils/tenants/tenantSubmissions";
+import {
+  approveMaintenanceCompletion,
+  rejectMaintenanceCompletion,
+} from "@/app/api/utils/maintenance/completionApproval";
 
 // New tenants are approved via 'tenant_submissions' (handled separately below),
 // never by flipping tenants.approval_status.
-const ALLOWED_TYPES = ['payments', 'invoices', 'transactions', 'tenant_deductions', 'landlord_deductions', 'landlords', 'properties', 'tenant_submissions'];
+const ALLOWED_TYPES = ['payments', 'invoices', 'transactions', 'tenant_deductions', 'landlord_deductions', 'landlords', 'properties', 'tenant_submissions', 'maintenance_completions'];
 
 export async function POST(request, { params }) {
   const perm = await requirePermission(request, "accounting");
@@ -35,6 +39,20 @@ export async function POST(request, { params }) {
 
   // Tenant submissions live outside the live tables: approve creates the
   // tenant + financials from the submission, reject deletes it.
+  // Maintenance costs from non-admin completions: approve posts the GL
+  // expense, reject clears the pending cost. Never the generic path below.
+  if (type === 'maintenance_completions') {
+    try {
+      const result = action === 'approve'
+        ? await approveMaintenanceCompletion({ requestId: entryId, perm })
+        : await rejectMaintenanceCompletion({ requestId: entryId, reason: rejectedReason, perm });
+      return Response.json(result.body, { status: result.status });
+    } catch (error) {
+      console.error(`POST /api/approvals/${type}/${id} error`, error);
+      return Response.json({ error: 'Failed to process approval' }, { status: 500 });
+    }
+  }
+
   if (type === 'tenant_submissions') {
     try {
       const result = action === 'approve'

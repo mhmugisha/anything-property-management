@@ -1,5 +1,10 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import {
+  requireAdmin,
+  requirePermission,
+  writeAuditLog,
+} from "@/app/api/utils/staff";
+import { TENANT_SENSITIVE_FIELDS, redactForStaff } from "@/app/api/utils/redact";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
 
@@ -21,7 +26,10 @@ export async function GET(request, { params: { id } }) {
     `;
 
     const tenant = rows?.[0] || null;
-    return Response.json({ tenant });
+    // National ID is Admin-only.
+    return Response.json({
+      tenant: redactForStaff(perm.staff, tenant, TENANT_SENSITIVE_FIELDS),
+    });
   } catch (error) {
     console.error("GET /api/tenants/[id] error", error);
     return Response.json({ error: "Failed to fetch tenant" }, { status: 500 });
@@ -29,7 +37,7 @@ export async function GET(request, { params: { id } }) {
 }
 
 export async function PUT(request, { params: { id } }) {
-  const perm = await requirePermission(request, "tenants");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
@@ -138,7 +146,7 @@ export async function PUT(request, { params: { id } }) {
 }
 
 export async function DELETE(request, { params: { id } }) {
-  const perm = await requirePermission(request, "tenants");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

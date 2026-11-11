@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 import {
   getAccountIdByCode,
   getDueToLandlordsBalance,
@@ -31,7 +31,7 @@ const MODES = {
 // Dr 5300 Bad Debt / Cr 2100. Either way a positive balance adjustment brings
 // the property's due back toward zero.
 export async function POST(request, { params }) {
-  const perm = await requirePermission(request, "accounting");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

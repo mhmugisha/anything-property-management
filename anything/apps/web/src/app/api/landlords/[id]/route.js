@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { LANDLORD_PAYOUT_FIELDS, redactForStaff } from "@/app/api/utils/redact";
 import { countActiveLeasesForLandlord } from "@/app/api/utils/landlordLeases";
 
 const ALLOWED_TITLES = new Set(["Mr.", "Ms.", "Dr."]);
@@ -92,7 +93,10 @@ export async function GET(request, { params }) {
     if (!landlord)
       return Response.json({ error: "Not found" }, { status: 404 });
 
-    return Response.json({ landlord });
+    // Bank / mobile-money payout details are Admin-only.
+    return Response.json({
+      landlord: redactForStaff(perm.staff, landlord, LANDLORD_PAYOUT_FIELDS),
+    });
   } catch (error) {
     console.error("GET /api/landlords/[id] error", error);
     return Response.json(
@@ -103,7 +107,7 @@ export async function GET(request, { params }) {
 }
 
 export async function PUT(request, { params }) {
-  const perm = await requirePermission(request, "properties");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
@@ -366,7 +370,7 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const perm = await requirePermission(request, "properties");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

@@ -1,4 +1,4 @@
-import { requirePermission } from "@/app/api/utils/staff";
+import { requireAdmin, requirePermission } from "@/app/api/utils/staff";
 import {
   listAccountBindings,
   upsertAccountBinding,
@@ -21,7 +21,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const perm = await requirePermission(request, "accounting");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

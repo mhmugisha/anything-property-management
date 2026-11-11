@@ -1,10 +1,10 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 
 // Un-archive a decommissioned property. Invoicing resumes through the normal
 // generator for any lease created on it afterwards; ended leases stay ended.
 export async function POST(request, { params: { id } }) {
-  const perm = await requirePermission(request, "properties");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

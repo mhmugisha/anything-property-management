@@ -14,8 +14,12 @@ import {
   Wallet,
   Target,
 } from "lucide-react";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
-export default function AccountingSidebar({ isAdmin = false }) {
+export default function AccountingSidebar({ isAdmin: isAdminProp = false }) {
+  // Many pages don't pass isAdmin, so also read it from the staff profile.
+  const isAdminFromProfile = useIsAdmin();
+  const isAdmin = isAdminProp || isAdminFromProfile;
   const [journalOpen, setJournalOpen] = useState(false);
   const [statementsOpen, setStatementsOpen] = useState(false);
 
@@ -25,11 +29,16 @@ export default function AccountingSidebar({ isAdmin = false }) {
       href: "/accounting/chart-of-accounts",
       icon: BookOpen,
     },
-    {
-      title: "Backfill",
-      href: "/accounting/backfill",
-      icon: RefreshCw,
-    },
+    // Admin-only (requireAdmin on the route).
+    ...(isAdmin
+      ? [
+          {
+            title: "Backfill",
+            href: "/accounting/backfill",
+            icon: RefreshCw,
+          },
+        ]
+      : []),
     {
       title: "Journal",
       href: "/accounting/journal",
@@ -48,8 +57,13 @@ export default function AccountingSidebar({ isAdmin = false }) {
           title: "Post Manual Invoice",
           href: "/accounting/post-manual-invoice",
         },
-        { title: "Reverse Invoice", href: "/accounting/reverse-invoice" },
-        { title: "Credit Landlord", href: "/accounting/credit-landlord" },
+        // Reverse Invoice and Credit Landlord are Admin-only on the server.
+        ...(isAdmin
+          ? [
+              { title: "Reverse Invoice", href: "/accounting/reverse-invoice" },
+              { title: "Credit Landlord", href: "/accounting/credit-landlord" },
+            ]
+          : []),
         ...(isAdmin ? [{ title: "Void Transaction", href: "/accounting/void-transaction" }] : []),
       ],
     },

@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
 import { computeTerminationSettlement } from "@/app/api/utils/payroll/computeTerminationSettlement";
 
@@ -16,11 +16,8 @@ function parseDate(v) {
 }
 
 export async function POST(request, { params }) {
-  const perm = await requirePermission(request, "payroll");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
-  if (perm.staff.role_name !== "Admin") {
-    return Response.json({ error: "Admin only" }, { status: 403 });
-  }
 
   try {
     const employeeId = toNumber(params?.id);

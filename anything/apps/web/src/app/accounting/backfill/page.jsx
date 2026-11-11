@@ -88,6 +88,16 @@ export default function AccountingBackfillPage() {
     return null;
   }
 
+  // Admin-only page (the route uses requireAdmin).
+  if (staffQuery.data && staffQuery.data.role_name !== "Admin") {
+    return (
+      <AccessDenied
+        title="Admin only"
+        message="Only an admin can run the historical backfill."
+      />
+    );
+  }
+
   if (!canUseAccounting) {
     return (
       <AccessDenied

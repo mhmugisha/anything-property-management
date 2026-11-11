@@ -81,10 +81,17 @@ const TABS = [
   { key: "payslips", label: "Payslips", icon: FileText },
 ];
 
-function PayrollSidebar({ active, onSelect }) {
+// Payroll runs and payslips show salaries: payroll_manage only (Accountant +
+// Admin; their routes use requirePayrollManage).
+const MANAGE_ONLY_TABS = ["runs", "payslips"];
+
+function PayrollSidebar({ active, onSelect, canManage = false }) {
+  const tabs = canManage
+    ? TABS
+    : TABS.filter((t) => !MANAGE_ONLY_TABS.includes(t.key));
   return (
     <div className="space-y-1">
-      {TABS.map(({ key, label, icon: Icon }) => {
+      {tabs.map(({ key, label, icon: Icon }) => {
         const isActive = active === key;
         return (
           <button
@@ -404,9 +411,13 @@ function NewEmployeeForm({ onClose, onSuccess }) {
   );
 }
 
-function EmployeeRow({ employee }) {
+function EmployeeRow({ employee, canManage = false }) {
   const paymentSummary = () => {
     const m = employee.payment_method;
+    // Pay-out details and salary need payroll_manage (the API strips them).
+    if (!canManage) {
+      return m === "bank" ? "Bank" : m === "momo" ? "MoMo" : "Cash";
+    }
     if (m === "bank") {
       return [
         employee.payment_bank_name,
@@ -442,7 +453,11 @@ function EmployeeRow({ employee }) {
           )}
           <div className="text-sm text-slate-500 mt-0.5">
             {paymentSummary()}
-            {employee.current_salary ? ` · ${fmt(employee.current_salary)}/mo` : " · No salary set"}
+            {canManage
+              ? employee.current_salary
+                ? ` · ${fmt(employee.current_salary)}/mo`
+                : " · No salary set"
+              : null}
           </div>
         </div>
       </div>
@@ -450,7 +465,7 @@ function EmployeeRow({ employee }) {
   );
 }
 
-function EmployeesTab() {
+function EmployeesTab({ isAdmin = false, canManage = false }) {
   const [showForm, setShowForm] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
 
@@ -474,14 +489,17 @@ function EmployeesTab() {
           >
             {showInactive ? "Show active only" : "Show all"}
           </button>
-          <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
-            <Plus className="w-4 h-4" />
-            New Employee
-          </PrimaryBtn>
+          {/* Adding an employee is Admin-only (requireAdmin on the route). */}
+          {isAdmin ? (
+            <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
+              <Plus className="w-4 h-4" />
+              New Employee
+            </PrimaryBtn>
+          ) : null}
         </div>
       </div>
 
-      {showForm && (
+      {isAdmin && showForm && (
         <NewEmployeeForm
           onClose={() => setShowForm(false)}
           onSuccess={() => setShowForm(false)}
@@ -500,6 +518,7 @@ function EmployeesTab() {
             <EmployeeRow
               key={emp.id}
               employee={emp}
+              canManage={canManage}
             />
           ))}
         </div>
@@ -808,7 +827,7 @@ function RecoverAdvanceModal({ advance, assetAccounts, onClose, onSuccess }) {
   );
 }
 
-function AdvancesTab({ isAdmin = false }) {
+function AdvancesTab({ isAdmin = false, canManage = false }) {
   const [showForm, setShowForm] = useState(false);
   const [filterEmployeeId, setFilterEmployeeId] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
@@ -847,10 +866,13 @@ function AdvancesTab({ isAdmin = false }) {
           <h2 className="text-lg font-semibold text-slate-800">Staff Advances</h2>
           <p className="text-sm text-slate-500">{advances.length} records</p>
         </div>
-        <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
-          <Plus className="w-4 h-4" />
-          New Advance
-        </PrimaryBtn>
+        {/* Issuing an advance pays money out immediately: Admin only. */}
+        {isAdmin ? (
+          <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
+            <Plus className="w-4 h-4" />
+            New Advance
+          </PrimaryBtn>
+        ) : null}
       </div>
 
       {/* Summary card */}
@@ -859,7 +881,7 @@ function AdvancesTab({ isAdmin = false }) {
         <p className="text-2xl font-bold text-amber-900 mt-1">{fmt(totalOutstanding)}</p>
       </div>
 
-      {showForm && (
+      {isAdmin && showForm && (
         <NewAdvanceForm
           employees={employees}
           assetAccounts={assetAccounts}
@@ -922,8 +944,9 @@ function AdvancesTab({ isAdmin = false }) {
                 const isFullyRecovered = adv.status === "recovered";
                 const canEdit = isAdmin && isUntouched;
                 const canVoid = isAdmin && isUntouched;
+                // Recover: payroll_manage. Edit/Void stay Admin-only.
                 const canRecover =
-                  isAdmin && !adv.is_voided && !isFullyRecovered;
+                  canManage && !adv.is_voided && !isFullyRecovered;
                 return (
                   <tr
                     key={adv.id}
@@ -1207,7 +1230,7 @@ function NewLoanForm({ employees, assetAccounts, onClose, onSuccess }) {
   );
 }
 
-function LoansTab() {
+function LoansTab({ isAdmin = false }) {
   const [showForm, setShowForm] = useState(false);
   const [schedLoanId, setSchedLoanId] = useState(null);
   const [filterEmployeeId, setFilterEmployeeId] = useState("");
@@ -1234,10 +1257,13 @@ function LoansTab() {
           <h2 className="text-lg font-semibold text-slate-800">Staff Loans</h2>
           <p className="text-sm text-slate-500">{loans.length} loans</p>
         </div>
-        <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
-          <Plus className="w-4 h-4" />
-          Issue Loan
-        </PrimaryBtn>
+        {/* Issuing a loan is Admin-only (requireAdmin on the route). */}
+        {isAdmin ? (
+          <PrimaryBtn onClick={() => setShowForm((v) => !v)}>
+            <Plus className="w-4 h-4" />
+            Issue Loan
+          </PrimaryBtn>
+        ) : null}
       </div>
 
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
@@ -1536,7 +1562,7 @@ function BudgetRaiseModal({ info, isAdmin, isPending, error, onConfirm, onClose 
   );
 }
 
-function RunDetail({ runId, onBack, isAdmin }) {
+function RunDetail({ runId, onBack, isAdmin, canManage = false }) {
   const runQuery = usePayrollRun(runId);
   const approveRun = useApprovePayrollRun();
   const deleteRun = useDeletePayrollRun();
@@ -1623,7 +1649,7 @@ function RunDetail({ runId, onBack, isAdmin }) {
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Loans</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Net</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-                {isAdmin && run.status === "approved" && (
+                {canManage && run.status === "approved" && (
                   <th className="px-4 py-3"></th>
                 )}
               </tr>
@@ -1656,7 +1682,7 @@ function RunDetail({ runId, onBack, isAdmin }) {
                       <span className="text-xs text-slate-400">Unpaid</span>
                     )}
                   </td>
-                  {isAdmin && run.status === "approved" && (
+                  {canManage && run.status === "approved" && (
                     <td className="px-4 py-3">
                       {!entry.paid_at && (
                         <button
@@ -1675,11 +1701,12 @@ function RunDetail({ runId, onBack, isAdmin }) {
         </div>
       )}
 
-      {/* Bottom action bar — admin only */}
-      {isAdmin && (
+      {/* Bottom action bar: Delete/Approve are Admin-only; Pay All needs
+          payroll_manage (the server also requires an approved run). */}
+      {canManage && (
         <div className="flex justify-between gap-3">
           <div>
-            {run.status === "draft" && (
+            {isAdmin && run.status === "draft" && (
               <button
                 onClick={() => {
                   if (window.confirm("Delete this draft run? This cannot be undone.")) {
@@ -1694,13 +1721,18 @@ function RunDetail({ runId, onBack, isAdmin }) {
             )}
           </div>
           <div className="flex gap-3">
-            {run.status === "draft" && (
+            {isAdmin && run.status === "draft" && (
               <PrimaryBtn
                 onClick={() => handleApprove()}
                 disabled={approveRun.isPending || entries.length === 0}
               >
                 {approveRun.isPending ? "Approving…" : "Approve Payroll"}
               </PrimaryBtn>
+            )}
+            {run.status === "draft" && !isAdmin && (
+              <span className="text-sm text-slate-500 self-center">
+                Waiting for an admin to approve this run.
+              </span>
             )}
             {run.status === "approved" && unpaidCount > 0 && (
               <PrimaryBtn onClick={() => setShowPayAll(true)}>
@@ -1721,6 +1753,7 @@ function RunDetail({ runId, onBack, isAdmin }) {
         <BudgetRaiseModal
           info={budgetRaise}
           isAdmin={isAdmin}
+        canManage={canManage}
           isPending={approveRun.isPending}
           error={approveRun.error}
           onConfirm={() => handleApprove(true)}
@@ -1752,7 +1785,7 @@ function RunDetail({ runId, onBack, isAdmin }) {
   );
 }
 
-function RunsTab({ isAdmin }) {
+function RunsTab({ isAdmin, canManage = false }) {
   const [selectedRunId, setSelectedRunId] = useState(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const runsQuery = usePayrollRuns();
@@ -1764,6 +1797,7 @@ function RunsTab({ isAdmin }) {
         runId={selectedRunId}
         onBack={() => setSelectedRunId(null)}
         isAdmin={isAdmin}
+        canManage={canManage}
       />
     );
   }
@@ -1775,7 +1809,8 @@ function RunsTab({ isAdmin }) {
           <h2 className="text-lg font-semibold text-slate-800">Payroll Runs</h2>
           <p className="text-sm text-slate-500">{runs.length} runs</p>
         </div>
-        {isAdmin && (
+        {/* Preparing a draft run needs payroll_manage. */}
+        {canManage && (
           <PrimaryBtn onClick={() => setShowNewForm((v) => !v)}>
             <Plus className="w-4 h-4" />
             New Run
@@ -1797,7 +1832,7 @@ function RunsTab({ isAdmin }) {
         <p className="text-sm text-slate-400">Loading…</p>
       ) : runs.length === 0 ? (
         <div className="bg-white rounded-2xl p-10 text-center text-slate-400 border border-dashed border-gray-200">
-          No payroll runs yet.{isAdmin ? " Click 'New Run' to generate the first one." : ""}
+          No payroll runs yet.{canManage ? " Click 'New Run' to generate the first one." : ""}
         </div>
       ) : (
         <div className="space-y-2">
@@ -2074,6 +2109,12 @@ export default function PayrollPage() {
 
   const canView = staffQuery.data?.permissions?.payroll === true;
   const isAdmin = staffQuery.data?.role_name === "Admin";
+  // payroll_manage (Accountant + Admin; /api/staff/profile forces it on for
+  // Admin): salaries, runs, payslips, prepare/pay runs, advances.
+  const canManage = staffQuery.data?.permissions?.payroll_manage === true;
+  // Without payroll_manage, never land on Runs/Payslips (e.g. via ?tab=runs).
+  const shownTab =
+    !canManage && MANAGE_ONLY_TABS.includes(activeTab) ? "employees" : activeTab;
   const isLoading = userLoading || staffQuery.isLoading;
 
   if (isLoading) {
@@ -2116,16 +2157,16 @@ export default function PayrollPage() {
         active="payroll"
       />
       <Sidebar active="payroll">
-        <PayrollSidebar active={activeTab} onSelect={setActiveTab} />
+        <PayrollSidebar active={shownTab} onSelect={setActiveTab} canManage={canManage} />
       </Sidebar>
 
       <main className="pt-32 md:pl-56">
         <div className="max-w-[90%] mx-auto p-4 md:p-6">
-          {activeTab === "employees" && <EmployeesTab />}
-          {activeTab === "advances" && <AdvancesTab isAdmin={isAdmin} />}
-          {activeTab === "loans" && <LoansTab />}
-          {activeTab === "runs" && <RunsTab isAdmin={isAdmin} />}
-          {activeTab === "payslips" && <PayslipsTab />}
+          {shownTab === "employees" && <EmployeesTab isAdmin={isAdmin} canManage={canManage} />}
+          {shownTab === "advances" && <AdvancesTab isAdmin={isAdmin} canManage={canManage} />}
+          {shownTab === "loans" && <LoansTab isAdmin={isAdmin} />}
+          {shownTab === "runs" && canManage && <RunsTab isAdmin={isAdmin} canManage={canManage} />}
+          {shownTab === "payslips" && canManage && <PayslipsTab />}
         </div>
       </main>
     </div>

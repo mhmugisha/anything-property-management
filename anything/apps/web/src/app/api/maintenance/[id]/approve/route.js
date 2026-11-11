@@ -1,24 +1,15 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import { requireAdmin, writeAuditLog } from "@/app/api/utils/staff";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 
 export async function POST(request, { params: { id } }) {
-  const perm = await requirePermission(request, "maintenance");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {
     const reqId = Number(id);
     if (!reqId) {
       return Response.json({ error: "Invalid id" }, { status: 400 });
-    }
-
-    // Simple admin-only control for approvals
-    const isAdmin = perm.staff?.role_name === "Admin";
-    if (!isAdmin) {
-      return Response.json(
-        { error: "Only Admin can approve expenses" },
-        { status: 403 },
-      );
     }
 
     const existingRows =

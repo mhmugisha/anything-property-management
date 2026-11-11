@@ -375,7 +375,8 @@ export default function TenantsPage() {
     setLeaseForm,
     createTenantWithLeaseMutation,
     updateTenantMutation,
-    updateLeaseMutation,
+    // Lease edits and creation are admin-only (PUT/POST /api/leases).
+    updateLeaseMutation: isAdmin ? updateLeaseMutation : null,
     createLeaseMutation: isAdmin ? createLeaseMutation : null,
     tenantForm,
     leaseForm,
@@ -693,14 +694,19 @@ export default function TenantsPage() {
     !!leaseForm.start_date &&
     !!leaseForm.monthly_rent;
 
+  // Creating always shows the lease section; editing shows it to admins only.
+  const showLeaseSection = isCreating || (isEditing && isAdmin);
+
+  // Lease fields only count when the lease section is on screen.
   const canSaveTenantWhenEditing =
     !!tenantForm.full_name &&
     !!tenantForm.phone &&
-    !!leaseForm.landlord_id &&
-    !!leaseForm.property_id &&
-    !!leaseForm.unit_id &&
-    !!leaseForm.start_date &&
-    !!leaseForm.monthly_rent;
+    (!showLeaseSection ||
+      (!!leaseForm.landlord_id &&
+        !!leaseForm.property_id &&
+        !!leaseForm.unit_id &&
+        !!leaseForm.start_date &&
+        !!leaseForm.monthly_rent));
 
   const isReadOnly = !isCreating && !isEditing && !!selectedTenant;
   const isArchivedTenant = selectedTenant?.status === "archived";
@@ -897,9 +903,8 @@ export default function TenantsPage() {
               canEndLease={canEndLease}
               canOpenLease={canOpenLease}
               canCreateLease={isAdmin}
-              showLeaseSection={
-                isCreating || (isEditing && (!!activeLease || isAdmin))
-              }
+              isAdmin={isAdmin}
+              showLeaseSection={showLeaseSection}
               onArchive={onArchiveTenant}
               onReactivate={onActivateTenant}
               onEndLease={onEndLease}

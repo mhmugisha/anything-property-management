@@ -1,5 +1,11 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
+import {
+  canManagePayroll,
+  requireAdmin,
+  requirePermission,
+  writeAuditLog,
+} from "@/app/api/utils/staff";
+import { isAdminStaff } from "@/app/api/utils/redact";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -79,12 +85,16 @@ export async function GET(request, { params }) {
         email: employee.email || null,
         employee_type: employee.employee_type,
         payment_method: employee.payment_method,
-        payment_details: employee.payment_details || null,
+        // Pay-out details: visible to payroll_manage (Accountant + Admin).
+        ...(canManagePayroll(perm.staff, perm.permissions)
+          ? { payment_details: employee.payment_details || null }
+          : {}),
         status: employee.status,
         notes: employee.notes || null,
         created_at: employee.created_at,
       },
-      salary_history: (salaryRows || []).map((r) => ({
+      // Salary history: payroll_manage (Accountant + Admin) only.
+      salary_history: !canManagePayroll(perm.staff, perm.permissions) ? [] : (salaryRows || []).map((r) => ({
         id: Number(r.id),
         amount: Number(r.amount),
         effective_date: r.effective_date,
@@ -135,6 +145,22 @@ export async function PUT(request, { params }) {
     }
 
     const body = await request.json().catch(() => ({}));
+
+    // Pay-out details are Admin-only. GET strips them for everyone else, so
+    // a non-admin's edit form would send them back blank: ignore them here
+    // rather than wipe the stored values.
+    if (!isAdminStaff(perm.staff)) {
+      for (const k of [
+        "payment_method",
+        "payment_details",
+        "payment_bank_name",
+        "payment_account_number",
+        "payment_account_name",
+        "payment_phone",
+      ]) {
+        delete body[k];
+      }
+    }
 
     const fields = [];
     const values = [];
@@ -207,6 +233,21 @@ export async function PUT(request, { params }) {
       fields.push(`notes = $${values.length + 1}`);
       values.push(str(body.notes));
     }
+    // Status changes (deactivate / reactivate) are Admin-only: setting
+    // "inactive" drops the employee from payroll runs, and "active" would
+    // revive a terminated employee without the terminate route. The edit
+    // form sends status on every save, so only an actual change is refused.
+    if (body?.status !== undefined && !isAdminStaff(perm.staff)) {
+      const [cur] = await sql`SELECT status FROM employees WHERE id = ${employeeId} LIMIT 1`;
+      if (cur && body.status !== cur.status) {
+        return Response.json(
+          { error: "Only an admin can change an employee's status." },
+          { status: 403 },
+        );
+      }
+      delete body.status;
+    }
+
     if (body?.status !== undefined) {
       if (!["active", "inactive"].includes(body.status)) {
         return Response.json({ error: "Invalid status" }, { status: 400 });
@@ -235,11 +276,8 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const perm = await requirePermission(request, "payroll");
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
-  if (perm.staff.role_name !== "Admin") {
-    return Response.json({ error: "Admin only" }, { status: 403 });
-  }
 
   try {
     const employeeId = toNumber(params?.id);

@@ -255,6 +255,7 @@ export default function MaintenancePage() {
     referenceNumber,
     updateMutation,
     closeCompletionModal,
+    isAdmin,
   ]);
 
   const onClose = useCallback(
@@ -608,6 +609,13 @@ export default function MaintenancePage() {
             </p>
 
             <div className="space-y-3">
+              {/* A non-admin's cost goes to an Admin for approval; the GL
+                  entry posts only once approved. */}
+              {!isAdmin && completionItem.status !== "closed" ? (
+                <p className="rounded-lg bg-amber-50 border border-amber-200 p-2 text-xs text-amber-800">
+                  This will be sent to an admin for approval.
+                </p>
+              ) : null}
               <Field label="Actual cost (UGX)">
                 <input
                   type="number"
@@ -780,8 +788,16 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, onEditClosed, on
   const costDisplay = costText ? `Cost (UGX): ${costText}` : "";
 
   const needsApproval = item.approval_required === true && !item.approved_at;
+  // Completed with a cost but not yet posted: waiting for an Admin to
+  // approve the cost (same rule as the server's isPendingCompletion).
+  const costPending =
+    item.status === "completed" &&
+    !item.transaction_id &&
+    Number(item.completed_cost || 0) > 0 &&
+    !!item.payment_account_id &&
+    (item.charge_type === "landlord" || item.charge_type === "company");
 
-  const badgeClasses = needsApproval
+  const badgeClasses = needsApproval || costPending
     ? "bg-orange-100 text-orange-700"
     : item.status === "closed"
       ? "bg-gray-200 text-gray-600"
@@ -791,14 +807,19 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, onEditClosed, on
           ? "bg-blue-100 text-blue-700"
           : "bg-gray-100 text-gray-700";
 
-  const badgeText = needsApproval ? "approval required" : item.status;
+  const badgeText = needsApproval
+    ? "approval required"
+    : costPending
+      ? "Pending approval"
+      : item.status;
 
   const canApprove = isAdmin && needsApproval;
   const isBlocked = needsApproval;
 
   const canMoveToInProgress = item.status === "pending";
   const canMoveToCompleted = item.status === "in_progress";
-  const canClose = item.status === "completed";
+  // A pending cost must be approved or rejected first (server enforces).
+  const canClose = item.status === "completed" && !costPending;
   const canCancel = item.status === "pending" || item.status === "in_progress";
 
   return (
@@ -841,7 +862,10 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, onEditClosed, on
             <div>Completed: {String(item.completed_date).slice(0, 10)}</div>
           ) : null}
           {item.completed_cost ? (
-            <div>Cost paid: {formatCurrencyUGX(item.completed_cost)}</div>
+            <div>
+              {costPending ? "Cost submitted" : "Cost paid"}:{" "}
+              {formatCurrencyUGX(item.completed_cost)}
+            </div>
           ) : null}
           {item.charge_type ? (
             <div>
@@ -851,6 +875,18 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, onEditClosed, on
           ) : null}
           {item.reference_number ? (
             <div>Ref: {item.reference_number}</div>
+          ) : null}
+          {costPending ? (
+            <div className="flex items-center gap-1 text-orange-700 font-medium">
+              <AlertTriangle className="w-3 h-3" />
+              {isAdmin ? (
+                <a href="/approvals" className="underline">
+                  Pending approval — review in Approvals
+                </a>
+              ) : (
+                "Pending approval — sent to an admin"
+              )}
+            </div>
           ) : null}
           {item.transaction_id ? (
             <div className="flex items-center gap-1 text-emerald-600 font-medium">
@@ -912,7 +948,8 @@ function MaintenanceCard({ item, onMove, onApprove, onComplete, onEditClosed, on
         </div>
       ) : null}
 
-      {item.status === "closed" ? (
+      {/* Editing a closed request's cost is Admin-only. */}
+      {item.status === "closed" && isAdmin ? (
         <div className="mt-2 pt-2 border-t border-gray-100">
           <button
             disabled={isUpdating}

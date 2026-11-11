@@ -128,7 +128,7 @@ export function PropertyDetails({
         <div className="flex items-center gap-2 sm:ml-auto">
           {property && !isEditingProperty && !isCreatingProperty && (
             <>
-              {!isArchived && (
+              {!isArchived && onEditProperty && (
                 <button
                   type="button"
                   onClick={onEditProperty}

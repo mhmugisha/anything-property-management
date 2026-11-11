@@ -51,7 +51,7 @@ export async function POST(request) {
   const isCronRequest = isVercelCronRequest(request);
 
   if (!isCronRequest) {
-    const perm = await requirePermission(request, "reports");
+    const perm = await requirePermission(request, "accounting");
     if (!perm.ok) return Response.json(perm.body, { status: perm.status });
   }
 
@@ -130,7 +130,7 @@ export async function GET(request) {
   const isCronRequest = isVercelCronRequest(request);
 
   if (!isCronRequest) {
-    const perm = await requirePermission(request, "reports");
+    const perm = await requirePermission(request, "accounting");
     if (!perm.ok) return Response.json(perm.body, { status: perm.status });
   }
 

@@ -10,6 +10,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { PropertiesCard } from "./PropertiesCard";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { PayoutCard } from "./PayoutCard";
 import { StatementCard } from "./StatementCard";
 import { ordinalDay, monthLabelFromRange } from "@/utils/formatters";
@@ -112,6 +113,8 @@ export function LandlordDetails({
     ? String(landlord.payment_method).replace(/_/g, " ")
     : "—";
 
+  // Bank / mobile-money payout details are Admin-only (the API strips them).
+  const isAdmin = useIsAdmin();
   const bankNameText = landlord?.bank_name || "—";
   const bankAccountTitleText = landlord?.bank_account_title || "—";
   const bankAccountNumberText = landlord?.bank_account_number || "—";
@@ -175,14 +178,17 @@ export function LandlordDetails({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <button
-            onClick={onEdit}
-            disabled={actionsDisabled}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-slate-700 disabled:opacity-50"
-          >
-            <Save className="w-4 h-4" />
-            Edit
-          </button>
+          {/* Admin-only: the page passes no onEdit to non-admins. */}
+          {onEdit ? (
+            <button
+              onClick={onEdit}
+              disabled={actionsDisabled}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-slate-700 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              Edit
+            </button>
+          ) : null}
 
           <button
             onClick={() => setShowDetails((v) => !v)}
@@ -193,7 +199,9 @@ export function LandlordDetails({
             {toggleDetailsLabel}
           </button>
 
-          {/* More dropdown button */}
+          {/* More dropdown: Exit Landlord and Delete are admin-only; the
+              page passes null handlers to non-admins, so no menu then. */}
+          {onExitLandlord || onDelete ? (
           <div className="relative" ref={moreMenuRef}>
             <button
               onClick={() => setShowMoreMenu(!showMoreMenu)}
@@ -218,6 +226,7 @@ export function LandlordDetails({
                   </button>
                 )}
 
+                {onDelete && (
                 <button
                   onClick={() => {
                     onDelete();
@@ -229,9 +238,11 @@ export function LandlordDetails({
                   <Trash2 className="w-4 h-4" />
                   {deleteLabel}
                 </button>
+                )}
               </div>
             )}
           </div>
+          ) : null}
         </div>
       </div>
 
@@ -245,6 +256,8 @@ export function LandlordDetails({
               <div className="text-sm text-slate-800">{paymentMethodText}</div>
             </div>
 
+            {isAdmin ? (
+            <>
             <div>
               <div className="text-xs uppercase tracking-wide text-slate-500">
                 Bank Name
@@ -287,6 +300,8 @@ export function LandlordDetails({
                 {mobileMoneyPhoneText}
               </div>
             </div>
+            </>
+            ) : null}
           </div>
         </div>
       ) : null}

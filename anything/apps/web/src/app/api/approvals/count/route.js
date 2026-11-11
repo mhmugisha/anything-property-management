@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission } from "@/app/api/utils/staff";
+import { PENDING_COMPLETION_SQL } from "@/app/api/utils/maintenance/completionApproval";
 
 // GET /api/approvals/count — total pending items for the nav badge (Admin only).
 // Same access and the same filters as GET /api/approvals, but returns one number.
@@ -12,7 +13,7 @@ export async function GET(request) {
   }
 
   try {
-    const rows = await sql`
+    const rows = await sql(`
       SELECT
         (SELECT COUNT(*) FROM payments
           WHERE approval_status = 'pending' AND is_reversed = false)
@@ -27,8 +28,9 @@ export async function GET(request) {
         + (SELECT COUNT(*) FROM landlords WHERE approval_status = 'pending')
         + (SELECT COUNT(*) FROM properties WHERE approval_status = 'pending')
         + (SELECT COUNT(*) FROM tenant_submissions)
+        + (SELECT COUNT(*) FROM maintenance_requests WHERE ${PENDING_COMPLETION_SQL})
         AS total
-    `;
+    `, []);
 
     return Response.json({ total: Number(rows?.[0]?.total || 0) });
   } catch (error) {

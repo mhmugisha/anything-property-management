@@ -30,16 +30,18 @@ export default function PropertiesSidebar({
         </div>
       </div>
 
-      {/* New Property button */}
-      <div className="px-3 pt-3 pb-3 border-b border-white/10">
-        <button
-          onClick={onCreateProperty}
-          className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-[#0e1e6c] hover:bg-[#12278a] text-white font-medium transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Property</span>
-        </button>
-      </div>
+      {/* New Property button (admin-only: no onCreateProperty otherwise) */}
+      {onCreateProperty ? (
+        <div className="px-3 pt-3 pb-3 border-b border-white/10">
+          <button
+            onClick={onCreateProperty}
+            className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-[#0e1e6c] hover:bg-[#12278a] text-white font-medium transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Property</span>
+          </button>
+        </div>
+      ) : null}
 
       {/* Search */}
       <div className="px-3 py-3 border-b border-white/10">

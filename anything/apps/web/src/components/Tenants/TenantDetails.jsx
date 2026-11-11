@@ -40,6 +40,7 @@ export function TenantDetails({
   canEndLease,
   canOpenLease,
   canCreateLease,
+  isAdmin = false,
   showLeaseSection,
   onArchive,
   onReactivate,
@@ -142,15 +143,20 @@ export function TenantDetails({
               View Details
             </button>
 
-            <button
-              onClick={onStartEdit}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-slate-700"
-            >
-              <Save className="w-4 h-4" />
-              Edit
-            </button>
+            {/* Tenant records are read-only for non-admins. */}
+            {isAdmin ? (
+              <button
+                onClick={onStartEdit}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-slate-700"
+              >
+                <Save className="w-4 h-4" />
+                Edit
+              </button>
+            ) : null}
 
-            {/* More dropdown button */}
+            {/* More dropdown: End Lease, Open Lease and Delete are all
+                admin-only, so non-admins get no menu at all. */}
+            {isAdmin ? (
             <div className="relative" ref={moreMenuRef}>
               <button
                 onClick={() => setShowMoreMenu(!showMoreMenu)}
@@ -219,6 +225,7 @@ export function TenantDetails({
                 </div>
               )}
             </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -249,7 +256,11 @@ export function TenantDetails({
 
       {(isCreating || isEditing) && (
         <div className="mt-4">
-          <TenantForm tenantForm={tenantForm} onChange={onTenantFormChange} />
+          <TenantForm
+            tenantForm={tenantForm}
+            onChange={onTenantFormChange}
+            isAdmin={isAdmin}
+          />
 
           {showLeaseSection ? (
             <div className="mt-6 rounded-2xl border border-gray-100 bg-gray-50 p-4">

@@ -1,5 +1,5 @@
 import sql from "@/app/api/utils/sql";
-import { requirePermission } from "@/app/api/utils/staff";
+import { requireAdmin, requirePermission } from "@/app/api/utils/staff";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
 
 function toNumber(v) {
@@ -87,7 +87,9 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const perm = await requirePermission(request, "payroll");
+  // Issuing an advance pays money out immediately: Admin only.
+  // Recovering advances stays on payroll_manage (see [id]/recover).
+  const perm = await requireAdmin(request);
   if (!perm.ok) return Response.json(perm.body, { status: perm.status });
 
   try {

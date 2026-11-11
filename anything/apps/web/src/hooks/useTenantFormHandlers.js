@@ -207,6 +207,13 @@ export function useTenantFormHandlers({
               ? Number(leaseForm.lease_id)
               : null;
 
+            // Existing active lease without the (admin-only) update
+            // mutation: save the tenant only. Never fall through to create.
+            if (leaseId && !updateLeaseMutation) {
+              setIsEditing(false);
+              return;
+            }
+
             // If there's an existing active lease, update it.
             if (leaseId && updateLeaseMutation) {
               const leasePayload = {
