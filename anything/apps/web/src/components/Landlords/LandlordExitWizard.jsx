@@ -478,7 +478,7 @@ function PropertySection({
                   </td>
                   <td
                     className="py-2 px-3 text-right text-slate-700 whitespace-nowrap"
-                    title="Tenant-wide prepayment balance"
+                    title="Prepayment balance held at this property"
                   >
                     {formatCurrencyUGX(l.prepayment)}
                   </td>

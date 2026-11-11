@@ -327,35 +327,16 @@ export async function getLeaseDepositBalance(leaseId) {
 }
 
 /**
- * Tenant prepayment balance (account 2150), tenant-wide: advances recorded
- * against the tenant's payments, minus refunds/write-offs posted when any of
- * the tenant's leases ended (those rows carry source_id = lease id).
+ * Tenant prepayment balance at ONE property. Credit never crosses properties,
+ * so callers must say which property (the lease's unit's property). See
+ * utils/payments/tenantCredit.js for the definition (payments subledger minus
+ * refunds/write-offs already posted for the tenant's leases at that property).
+ *
+ * The old tenant-wide getTenantPrepaymentBalance(tenantId) was removed: it
+ * matched payment_auto_apply GL rows by payment id although their source_id
+ * is the allocation id, and ignored payment_allocation credits.
  */
-export async function getTenantPrepaymentBalance(tenantId) {
-  const id = toNumber(tenantId);
-  if (!id) return 0;
-  const acctId = await getAccountIdByCode("2150");
-  if (!acctId) return 0;
-
-  const rows = await sql(
-    `SELECT
-       COALESCE(SUM(CASE WHEN t.credit_account_id = $1 THEN t.amount ELSE 0 END), 0)
-       - COALESCE(SUM(CASE WHEN t.debit_account_id = $1 THEN t.amount ELSE 0 END), 0)
-       AS balance
-     FROM transactions t
-     WHERE (t.debit_account_id = $1 OR t.credit_account_id = $1)
-       AND COALESCE(t.is_deleted, false) = false
-       AND (
-         (t.source_type IN ('payment_advance', 'payment_auto_apply')
-          AND t.source_id IN (SELECT id FROM payments WHERE tenant_id = $2))
-         OR
-         (t.source_type IN ('prepayment_refund', 'prepayment_writeoff')
-          AND t.source_id IN (SELECT id FROM leases WHERE tenant_id = $2))
-       )`,
-    [acctId, id],
-  );
-  return Number(rows?.[0]?.balance || 0);
-}
+export { getPropertyPrepaymentBalance } from "@/app/api/utils/payments/tenantCredit";
 
 export async function getAssetAccountBalance(accountId) {
   const id = toNumber(accountId);

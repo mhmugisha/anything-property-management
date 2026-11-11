@@ -4,6 +4,7 @@ import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapt
 import { getApprovalFields, getApprovalStatus } from "@/app/api/utils/approval";
 import { notifyAllAdminsAsync } from "@/app/api/utils/notifications";
 import { createArrearsRecoveryFee } from "@/app/api/utils/payments/arrearsFeesHandler";
+import { resolvePaymentProperty } from "@/app/api/utils/payments/resolvePaymentProperty";
 import { recordAdvancePayment } from "@/app/api/utils/payments/recordAdvancePayment";
 import {
   checkDuplicateReceipt,
@@ -391,15 +392,21 @@ export async function POST(request) {
     // CASE B: Advance payment (no invoice yet)
     // =========================================
 
-    if (!tenantId || !propertyId) {
+    if (!tenantId) {
       return Response.json(
         {
-          error:
-            "tenant_id and property_id are required when invoice_id is not provided",
+          error: "tenant_id is required when invoice_id is not provided",
         },
         { status: 400 },
       );
     }
+
+    // Credit is scoped per property: never guess between properties.
+    const resolvedB = await resolvePaymentProperty({ tenantId, propertyId });
+    if (!resolvedB.ok) {
+      return Response.json(resolvedB.body, { status: resolvedB.status });
+    }
+    const paymentPropertyId = resolvedB.propertyId;
 
     // Duplicate-receipt warning: 409 unless the user confirmed.
     const dupB = await checkDuplicateReceipt({
@@ -414,7 +421,7 @@ export async function POST(request) {
       staff: perm.staff,
       ipAddress: perm.ipAddress,
       tenantId,
-      propertyId,
+      propertyId: paymentPropertyId,
       paymentDate,
       amount,
       paymentMethod,

@@ -27,7 +27,8 @@ export async function GET(request) {
         p.property_name AS current_property_name,
         cl.unit_id AS current_unit_id,
         cl.unit_number AS current_unit_number,
-        p.landlord_id AS current_landlord_id
+        p.landlord_id AS current_landlord_id,
+        COALESCE(ap.active_properties, '[]'::json) AS active_properties
       FROM tenants t
       LEFT JOIN LATERAL (
         SELECT
@@ -42,6 +43,26 @@ export async function GET(request) {
         LIMIT 1
       ) cl ON true
       LEFT JOIN properties p ON p.id = cl.property_id
+      -- Distinct properties where the tenant has an ACTIVE lease. Payment forms
+      -- make the user choose when there is more than one (credit is scoped
+      -- per property and never crosses properties).
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+                 json_build_object(
+                   'property_id', x.property_id,
+                   'property_name', x.property_name
+                 )
+                 ORDER BY x.property_name, x.property_id
+               ) AS active_properties
+        FROM (
+          SELECT DISTINCT u2.property_id, p2.property_name
+          FROM leases l2
+          JOIN units u2 ON u2.id = l2.unit_id
+          JOIN properties p2 ON p2.id = u2.property_id
+          WHERE l2.tenant_id = t.id
+            AND l2.status = 'active'
+        ) x
+      ) ap ON true
       WHERE COALESCE(t.status, 'active') <> 'archived'
         AND (
           ${search === "" ? true : false}

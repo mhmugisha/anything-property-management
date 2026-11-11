@@ -2,7 +2,7 @@ import sql from "@/app/api/utils/sql";
 import { requireAdmin } from "@/app/api/utils/staff";
 import {
   getLeaseDepositBalance,
-  getTenantPrepaymentBalance,
+  getPropertyPrepaymentBalance,
 } from "@/app/api/utils/accounting";
 
 function toNumber(v) {
@@ -93,10 +93,14 @@ export async function GET(request, { params: { id } }) {
 
     // Same helpers end-lease uses, so the preview shows exactly what will be
     // settled: the deposit still held for this lease (net of any prior
-    // refund/forfeiture) and the tenant's prepayment balance.
+    // refund/forfeiture) and the tenant's prepayment balance at this lease's
+    // property (credit never crosses properties).
     const [depositBalance, prepaymentBalance] = await Promise.all([
       getLeaseDepositBalance(leaseId),
-      getTenantPrepaymentBalance(tenantId),
+      getPropertyPrepaymentBalance({
+        tenantId,
+        propertyId: Number(lease.property_id),
+      }),
     ]);
 
     // Income accounts (for deduction dropdown)

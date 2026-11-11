@@ -17,6 +17,10 @@ import { useTenantLookup } from "@/hooks/usePaymentLookups";
 import { NoRecordPermissionNote } from "@/components/Payments/NoRecordPermissionNote";
 import { useDuplicateReceiptGuard } from "@/hooks/useDuplicateReceiptGuard";
 import { DuplicateReceiptDialog } from "@/components/Payments/DuplicateReceiptDialog";
+import {
+  PaymentPropertyField,
+  pickPaymentProperty,
+} from "@/components/Payments/PaymentPropertyField";
 
 function todayYmd() {
   return new Date().toISOString().slice(0, 10);
@@ -332,6 +336,8 @@ function AllocateModal({
   const [tenantId, setTenantId] = useState("");
   const [propertyId, setPropertyId] = useState("");
   const [propertyName, setPropertyName] = useState("");
+  const [propertyOptions, setPropertyOptions] = useState([]);
+  const [mustChooseProperty, setMustChooseProperty] = useState(false);
   const [tenantSearch, setTenantSearch] = useState("");
   const [showTenantDropdown, setShowTenantDropdown] = useState(false);
   const [paymentDate, setPaymentDate] = useState(
@@ -347,19 +353,16 @@ function AllocateModal({
   const [refError, setRefError] = useState("");
 
   useEffect(() => {
-    if (!tenantId || tenants.length === 0) {
-      setPropertyId("");
-      setPropertyName("");
-      return;
-    }
-    const t = tenants.find((x) => String(x.id) === String(tenantId));
-    if (t && t.current_property_id) {
-      setPropertyId(String(t.current_property_id));
-      setPropertyName(t.current_property_name || "");
-    } else {
-      setPropertyId("");
-      setPropertyName("");
-    }
+    const t =
+      tenantId && tenants.length > 0
+        ? tenants.find((x) => String(x.id) === String(tenantId))
+        : null;
+    // Never guess when the tenant has active leases at several properties.
+    const picked = pickPaymentProperty(t);
+    setPropertyId(picked.propertyId);
+    setPropertyName(picked.propertyName);
+    setPropertyOptions(picked.options);
+    setMustChooseProperty(picked.mustChoose);
   }, [tenantId, tenants]);
 
   const filteredTenants = useMemo(() => {
@@ -496,15 +499,17 @@ function AllocateModal({
               </div>
             </Field>
 
-            <Field label="Property (Auto-filled)">
-              <input
-                type="text"
-                value={propertyName || (tenantId ? "No active lease" : "")}
-                readOnly
-                placeholder={tenantId ? "" : "Select tenant first..."}
-                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 outline-none text-sm text-slate-600"
-              />
-            </Field>
+            <PaymentPropertyField
+              tenantId={tenantId}
+              propertyId={propertyId}
+              propertyName={propertyName}
+              options={propertyOptions}
+              mustChoose={mustChooseProperty}
+              onChoose={(id, name) => {
+                setPropertyId(id);
+                setPropertyName(name);
+              }}
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Payment Date">

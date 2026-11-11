@@ -5,7 +5,7 @@ import {
   ensureNotManuallyLocked,
   getAccountIdByCode,
   getLeaseDepositBalance,
-  getTenantPrepaymentBalance,
+  getPropertyPrepaymentBalance,
 } from "@/app/api/utils/accounting";
 import { ensureInvoiceAccrualLedgerEntries } from "@/app/api/utils/invoices/invoiceAccrualLedger";
 
@@ -140,6 +140,12 @@ export async function POST(request, { params: { id } }) {
 
     const leaseId = Number(lease.id);
 
+    // Credit is scoped to the property of the lease being ended.
+    const leasePropertyRows = lease.unit_id
+      ? await sql`SELECT property_id FROM units WHERE id = ${Number(lease.unit_id)} LIMIT 1`
+      : [];
+    const leasePropertyId = toNumber(leasePropertyRows?.[0]?.property_id);
+
     const [prepaymentAcctId, depositPayableAcctId, retainedEarningsAcctId] =
       await Promise.all([
         getAccountIdByCode("2150"),
@@ -153,9 +159,15 @@ export async function POST(request, { params: { id } }) {
     const tenantName = tenantRow?.[0]?.full_name || "Tenant";
 
     // ── Prepayment (server-computed, same helper as the preview) ───────────
+    // Only the credit held at this lease's property; refunds/write-offs already
+    // posted for the tenant's leases there are deducted, so nothing is
+    // refunded twice.
     const prepaymentBalance =
-      prepaymentHandling && prepaymentAcctId
-        ? await getTenantPrepaymentBalance(tenantId)
+      prepaymentHandling && prepaymentAcctId && leasePropertyId
+        ? await getPropertyPrepaymentBalance({
+            tenantId,
+            propertyId: leasePropertyId,
+          })
         : 0;
     const prepaymentAction = prepaymentHandling?.action;
     const prepaymentTxnDate =

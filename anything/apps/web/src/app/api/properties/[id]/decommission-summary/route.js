@@ -2,7 +2,7 @@ import sql from "@/app/api/utils/sql";
 import { requireAdmin } from "@/app/api/utils/staff";
 import {
   getLeaseDepositBalance,
-  getTenantPrepaymentBalance,
+  getPropertyPrepaymentBalance,
 } from "@/app/api/utils/accounting";
 
 // Preview for decommissioning a property: the active leases that must be
@@ -56,7 +56,7 @@ export async function GET(request, { params: { id } }) {
       (leaseRows || []).map(async (r) => {
         const [depositHeld, prepayment] = await Promise.all([
           getLeaseDepositBalance(r.lease_id),
-          getTenantPrepaymentBalance(r.tenant_id),
+          getPropertyPrepaymentBalance({ tenantId: r.tenant_id, propertyId }),
         ]);
         return {
           lease_id: Number(r.lease_id),
@@ -66,7 +66,7 @@ export async function GET(request, { params: { id } }) {
           end_date: r.end_date,
           outstanding: Number(r.outstanding || 0),
           deposit_held: Number(depositHeld || 0),
-          // Tenant-wide: includes prepayments for the tenant's other leases.
+          // This property only: credit never crosses properties.
           prepayment: Number(prepayment || 0),
         };
       }),

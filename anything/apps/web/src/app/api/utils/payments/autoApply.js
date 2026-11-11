@@ -1,6 +1,12 @@
 import sql from "@/app/api/utils/sql";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
 import { createArrearsRecoveryFee } from "@/app/api/utils/payments/arrearsFeesHandler";
+import { loadTenantCreditByProperty } from "@/app/api/utils/payments/tenantCredit";
+
+// Credit never crosses properties: a payment is only ever paired with invoices
+// where invoices.property_id = payments.property_id. Payments with a NULL
+// property_id are never auto-applied. Refunds/write-offs already posted for a
+// property consume that property's oldest credit first (see tenantCredit.js).
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -17,23 +23,28 @@ async function getTenantIdsWithUnappliedAndOpenInvoices(limit = 200) {
     WITH payment_unapplied AS (
       SELECT
         p.tenant_id,
+        p.property_id,
         (p.amount - COALESCE(SUM(pia.amount_applied), 0))::numeric AS unapplied
       FROM payments p
       LEFT JOIN payment_invoice_allocations pia ON pia.payment_id = p.id
       WHERE p.is_reversed = false
         AND p.tenant_id IS NOT NULL
+        AND p.property_id IS NOT NULL
       GROUP BY p.id
       HAVING (p.amount - COALESCE(SUM(pia.amount_applied), 0)) > 0
     ),
     open_invoices AS (
-      SELECT DISTINCT tenant_id
+      SELECT DISTINCT tenant_id, property_id
       FROM invoices
       WHERE status = 'open'
+        AND COALESCE(is_deleted, false) = false
         AND (amount - paid_amount) > 0
     )
     SELECT DISTINCT pu.tenant_id
     FROM payment_unapplied pu
-    JOIN open_invoices oi ON oi.tenant_id = pu.tenant_id
+    JOIN open_invoices oi
+      ON oi.tenant_id = pu.tenant_id
+     AND oi.property_id = pu.property_id
     ORDER BY pu.tenant_id
     LIMIT $1
   `;
@@ -71,45 +82,28 @@ export async function autoApplyAdvancePaymentsForTenant(tenantId) {
     return { ok: true, appliedCount: 0, appliedAmount: 0 };
   }
 
-  // Payments with remaining unapplied amount (oldest-first)
-  const payments = await sql(
-    `
-      SELECT
-        p.id,
-        p.amount,
-        p.payment_date,
-        p.reference_number,
-        (p.amount - COALESCE(SUM(pia.amount_applied), 0))::numeric AS unapplied
-      FROM payments p
-      LEFT JOIN payment_invoice_allocations pia ON pia.payment_id = p.id
-      WHERE p.is_reversed = false
-        AND p.tenant_id = $1
-      GROUP BY p.id
-      HAVING (p.amount - COALESCE(SUM(pia.amount_applied), 0)) > 0
-      ORDER BY p.payment_date ASC, p.id ASC
-    `,
-    [tenantIdNum],
-  );
+  // Remaining credit per property (oldest-first payments, refunds consumed).
+  const creditByProperty = await loadTenantCreditByProperty({
+    tenantId: tenantIdNum,
+  });
 
-  if (!payments || payments.length === 0) {
+  if (creditByProperty.size === 0) {
     return { ok: true, appliedCount: 0, appliedAmount: 0 };
   }
 
-  // Build an allocation plan in JS
-  const paymentState = payments.map((p) => ({
-    id: p.id,
-    paymentDate: p.payment_date,
-    referenceNumber: p.reference_number,
-    unapplied: Number(p.unapplied || 0),
-  }));
-
+  // Build an allocation plan in JS. Each invoice only draws on credit from
+  // payments at the SAME property.
   const allocations = [];
 
   for (const inv of invoices) {
     let remaining = Number(inv.amount || 0) - Number(inv.paid_amount || 0);
     if (remaining <= 0) continue;
+    if (inv.property_id === null || inv.property_id === undefined) continue;
 
-    for (const pay of paymentState) {
+    const credit = creditByProperty.get(Number(inv.property_id));
+    if (!credit) continue;
+
+    for (const pay of credit.payments) {
       if (remaining <= 0) break;
       if (pay.unapplied <= 0) continue;
 
