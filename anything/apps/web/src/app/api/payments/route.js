@@ -196,6 +196,7 @@ export async function POST(request) {
       const approvalA = getApprovalFields(perm.staff);
       let payment;
       let updatedInvoice;
+      let allocationIdA = null;
       try {
         const results = await sql`
           WITH new_payment AS (
@@ -236,9 +237,11 @@ export async function POST(request) {
           )
           SELECT
             (SELECT row_to_json(p) FROM new_payment p) AS payment,
-            (SELECT row_to_json(i) FROM updated_invoice i) AS invoice
+            (SELECT row_to_json(i) FROM updated_invoice i) AS invoice,
+            (SELECT id FROM new_allocation) AS allocation_id
         `;
         payment = results?.[0]?.payment || null;
+        allocationIdA = results?.[0]?.allocation_id || null;
         updatedInvoice = results?.[0]?.invoice || null;
       } catch (txnErr) {
         return Response.json(
@@ -319,6 +322,7 @@ export async function POST(request) {
           amountPaid: amount,
           paymentDate,
           staffId: perm.staff.id,
+          allocationId: allocationIdA,
         });
 
         if (!feeResult.ok) {

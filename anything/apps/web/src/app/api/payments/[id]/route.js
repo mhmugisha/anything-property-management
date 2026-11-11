@@ -2,6 +2,7 @@ import sql from "@/app/api/utils/sql";
 import { requireAdmin, requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { ensureCanCreditAccount } from "@/app/api/utils/accounting";
 import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
+import { allocationSideEffectQueries } from "@/app/api/utils/payments/allocationCleanup";
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -489,18 +490,12 @@ export async function DELETE(request, { params: { id } }) {
             AND COALESCE(is_deleted, false) = false
         `);
 
-        // 6. Soft-delete 'payment_auto_apply' ledger entries (keyed by allocation_id).
-        if (allocationIds.length > 0) {
-          queries.push(txn`
-            UPDATE transactions
-            SET is_deleted = true,
-                deleted_at = now(),
-                deleted_by = ${staffId}
-            WHERE source_type = 'payment_auto_apply'
-              AND source_id = ANY(${allocationIds}::int[])
-              AND COALESCE(is_deleted, false) = false
-          `);
-        }
+        // 6. Undo the allocations' side effects: 'payment_auto_apply' ledger
+        //    entries (keyed by allocation_id) and arrears-recovery fees. Same
+        //    helper as approval reject, so both paths clean up identically.
+        queries.push(
+          ...allocationSideEffectQueries(txn, { allocationIds, staffId }),
+        );
 
         // 7. Soft-delete 'payment_allocation' ledger entries (Allocate-from-Holding flow).
         queries.push(txn`

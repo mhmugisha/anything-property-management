@@ -7,6 +7,9 @@ import { loadTenantCreditByProperty } from "@/app/api/utils/payments/tenantCredi
 // where invoices.property_id = payments.property_id. Payments with a NULL
 // property_id are never auto-applied. Refunds/write-offs already posted for a
 // property consume that property's oldest credit first (see tenantCredit.js).
+// Only APPROVED payments are credit and only APPROVED invoices are paid from
+// it (NULL approval_status = legacy row, treated as approved); approving a
+// pending payment or invoice re-runs auto-apply for that tenant.
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -28,6 +31,7 @@ async function getTenantIdsWithUnappliedAndOpenInvoices(limit = 200) {
       FROM payments p
       LEFT JOIN payment_invoice_allocations pia ON pia.payment_id = p.id
       WHERE p.is_reversed = false
+        AND COALESCE(p.approval_status, 'approved') = 'approved'
         AND p.tenant_id IS NOT NULL
         AND p.property_id IS NOT NULL
       GROUP BY p.id
@@ -38,6 +42,7 @@ async function getTenantIdsWithUnappliedAndOpenInvoices(limit = 200) {
       FROM invoices
       WHERE status = 'open'
         AND COALESCE(is_deleted, false) = false
+        AND COALESCE(approval_status, 'approved') = 'approved'
         AND (amount - paid_amount) > 0
     )
     SELECT DISTINCT pu.tenant_id
@@ -72,6 +77,8 @@ export async function autoApplyAdvancePaymentsForTenant(tenantId) {
       WHERE i.tenant_id = $1
         AND i.status = 'open'
         AND COALESCE(i.is_deleted, false) = false
+        -- Pending invoices are never paid from credit (NULL = legacy row).
+        AND COALESCE(i.approval_status, 'approved') = 'approved'
         AND (i.amount - i.paid_amount) > 0
       ORDER BY i.invoice_date ASC, i.id ASC
     `,
@@ -234,6 +241,7 @@ export async function autoApplyAdvancePaymentsForTenant(tenantId) {
         amountPaid: a.amount,
         paymentDate: a.paymentDate,
         staffId: null, // null for auto-apply
+        allocationId: a.allocationId || null,
       });
     });
 

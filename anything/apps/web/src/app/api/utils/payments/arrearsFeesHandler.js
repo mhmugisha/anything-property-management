@@ -1,5 +1,6 @@
 import sql from "@/app/api/utils/sql";
 import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
+import { arrearsFeeReference } from "@/app/api/utils/payments/allocationCleanup";
 
 /**
  * Creates a landlord deduction for management fees on recovered arrears.
@@ -14,6 +15,8 @@ import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapt
  * @param {number} params.amountPaid - The amount that was paid on this invoice
  * @param {string} params.paymentDate - The payment date (ISO format)
  * @param {number|null} params.staffId - The staff user who recorded the payment (can be null for auto-apply)
+ * @param {number|null} [params.allocationId] - The payment_invoice_allocations row this fee is for.
+ *   Stored as reference_number so reversing/rejecting the allocation can undo the fee.
  * @returns {Promise<{ok: boolean, deduction?: Object, error?: string}>}
  */
 export async function createArrearsRecoveryFee({
@@ -21,6 +24,7 @@ export async function createArrearsRecoveryFee({
   amountPaid,
   paymentDate,
   staffId = null,
+  allocationId = null,
 }) {
   try {
     // 1. Get invoice details and property management fee settings
@@ -98,11 +102,13 @@ export async function createArrearsRecoveryFee({
       INSERT INTO landlord_deductions (
         landlord_id, property_id, deduction_date,
         description, amount, created_by,
+        reference_number,
         is_deleted
       )
       VALUES (
         ${invoice.landlord_id}, ${invoice.property_id}, ${paymentDate}::date,
         ${description}, ${feeAmount}, ${staffId},
+        ${arrearsFeeReference(allocationId)},
         false
       )
       RETURNING *
