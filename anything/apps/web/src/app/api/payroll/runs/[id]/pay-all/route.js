@@ -1,7 +1,11 @@
 import sql from "@/app/api/utils/sql";
 import { requirePayrollManage } from "@/app/api/utils/staff";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
-import { payPayrollEntries } from "@/app/api/utils/payroll/payEntries";
+import {
+  payPayrollEntries,
+  notPayableRunMessage,
+  RUN_ALREADY_PAID_MSG,
+} from "@/app/api/utils/payroll/payEntries";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -37,21 +41,29 @@ export async function PUT(request, { params }) {
     );
     if (!runRows?.length) return Response.json({ error: "Run not found" }, { status: 404 });
     if (runRows[0].status !== "approved") {
-      return Response.json({ error: "Run must be approved before paying" }, { status: 409 });
+      return Response.json(
+        { error: notPayableRunMessage(runRows[0].status) },
+        { status: 409 },
+      );
     }
 
     // Non-authoritative pre-check: lets us return early and only require the
     // 2300 account when there is something to pay. The locked write below is
     // what decides which entries get paid.
-    const unpaidEntries = await sql(
-      `SELECT pe.id, pe.net_pay
+    const entryRows = await sql(
+      `SELECT pe.id, pe.net_pay, pe.paid_at
        FROM payroll_entries pe
-       WHERE pe.run_id = $1 AND pe.paid_at IS NULL`,
+       WHERE pe.run_id = $1`,
       [runId],
     );
+    const unpaidEntries = entryRows.filter((e) => !e.paid_at);
 
-    if (unpaidEntries.length === 0) {
+    if (entryRows.length === 0) {
       return Response.json({ success: true, paid_count: 0 });
+    }
+    if (unpaidEntries.length === 0) {
+      // Approved run whose entries are all paid already.
+      return Response.json({ error: RUN_ALREADY_PAID_MSG }, { status: 409 });
     }
 
     const acct2300 = await getAccountIdByCode("2300");
@@ -70,13 +82,14 @@ export async function PUT(request, { params }) {
       acct2300,
     });
 
-    if (claimed.length === 0 && runStatus !== "approved") {
-      // A concurrent request paid (or the run changed) while we waited.
+    if (claimed.length === 0) {
+      // A concurrent request paid everything (or the run changed) while we
+      // waited for the lock. 'approved' here means every entry is now paid.
       return Response.json(
         {
-          error: runStatus === "paid"
-            ? "Payroll run already paid"
-            : "Run must be approved before paying",
+          error: runStatus === "approved"
+            ? RUN_ALREADY_PAID_MSG
+            : notPayableRunMessage(runStatus),
         },
         { status: 409 },
       );

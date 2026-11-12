@@ -170,7 +170,10 @@ function Select({ children, ...props }) {
 
 function ErrorBanner({ error }) {
   if (!error) return null;
-  const msg = error?.message || String(error);
+  // Prefer the server's own message (e.g. "This payroll run has already been
+  // paid.") over putJson's "When fetching … [409] Conflict: …" wrapper.
+  const serverMsg = typeof error?.payload?.error === "string" ? error.payload.error : null;
+  const msg = serverMsg || error?.message || String(error);
   return (
     <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
       {msg}

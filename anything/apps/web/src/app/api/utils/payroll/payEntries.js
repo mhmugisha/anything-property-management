@@ -6,6 +6,16 @@ import sql from "@/app/api/utils/sql";
 // materializeTenantWithLease.js; 41132 = tenant credit lock, see autoApply.js.)
 export const PAYROLL_RUN_LOCK_NAMESPACE = 41131;
 
+// 409 messages shared by pay-all and pay/[employeeId], chosen by run status.
+export const RUN_ALREADY_PAID_MSG = "This payroll run has already been paid.";
+export const EMPLOYEE_ALREADY_PAID_MSG = "This employee has already been paid for this run.";
+export const RUN_NOT_APPROVED_MSG = "Run must be approved before paying";
+
+/** 409 message for a run that is not payable: 'paid' vs draft/other. */
+export function notPayableRunMessage(status) {
+  return status === "paid" ? RUN_ALREADY_PAID_MSG : RUN_NOT_APPROVED_MSG;
+}
+
 /**
  * Pays the still-unpaid entries of an approved payroll run, atomically.
  *
@@ -65,6 +75,7 @@ export async function payPayrollEntries({
         transaction_date, description, reference_number,
         debit_account_id, credit_account_id,
         amount, currency, created_by,
+        employee_id,
         source_type, source_id, approval_status
       )
       SELECT
@@ -73,6 +84,7 @@ export async function payPayrollEntries({
         'PAY-' || r.year || '-' || lpad(r.month::text, 2, '0') || '-EMP' || c.employee_id,
         $5::int, $4::int,
         c.net_pay, 'UGX', $6::int,
+        c.employee_id,
         'payroll_payment', c.id, 'approved'
       FROM claimed c CROSS JOIN run r
       WHERE c.net_pay > 0

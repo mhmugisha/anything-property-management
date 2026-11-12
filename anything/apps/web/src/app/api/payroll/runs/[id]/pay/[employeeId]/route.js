@@ -1,7 +1,11 @@
 import sql from "@/app/api/utils/sql";
 import { requirePayrollManage } from "@/app/api/utils/staff";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
-import { payPayrollEntries } from "@/app/api/utils/payroll/payEntries";
+import {
+  payPayrollEntries,
+  notPayableRunMessage,
+  EMPLOYEE_ALREADY_PAID_MSG,
+} from "@/app/api/utils/payroll/payEntries";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -40,7 +44,10 @@ export async function PUT(request, { params }) {
     );
     if (!runRows?.length) return Response.json({ error: "Run not found" }, { status: 404 });
     if (runRows[0].status !== "approved") {
-      return Response.json({ error: "Run must be approved before paying" }, { status: 409 });
+      return Response.json(
+        { error: notPayableRunMessage(runRows[0].status) },
+        { status: 409 },
+      );
     }
 
     const entryRows = await sql(
@@ -53,7 +60,7 @@ export async function PUT(request, { params }) {
     }
     const entry = entryRows[0];
     if (entry.paid_at) {
-      return Response.json({ error: "Employee already paid for this run" }, { status: 409 });
+      return Response.json({ error: EMPLOYEE_ALREADY_PAID_MSG }, { status: 409 });
     }
 
     const acct2300 = await getAccountIdByCode("2300");
@@ -75,13 +82,12 @@ export async function PUT(request, { params }) {
 
     if (claimed.length === 0) {
       // A concurrent request paid this employee (or the run changed) while we
-      // waited for the lock.
-      const alreadyPaid = runStatus === "approved" || runStatus === "paid";
+      // waited for the lock. Still 'approved' = just this employee was paid.
       return Response.json(
         {
-          error: alreadyPaid
-            ? "Employee already paid for this run"
-            : "Run must be approved before paying",
+          error: runStatus === "approved"
+            ? EMPLOYEE_ALREADY_PAID_MSG
+            : notPayableRunMessage(runStatus),
         },
         { status: 409 },
       );
