@@ -243,6 +243,14 @@ export function usePayEmployee() {
       qc.invalidateQueries({ queryKey: ["payroll", "loans"] });
       qc.invalidateQueries({ queryKey: ["accounting"] });
     },
+    // 409 = the run/employee was already paid (e.g. from another tab) or the
+    // run is not approved: refetch so the page shows the real state.
+    onError: (error, { runId }) => {
+      if (error?.status === 409) {
+        qc.invalidateQueries({ queryKey: ["payroll", "runs"] });
+        qc.invalidateQueries({ queryKey: ["payroll", "runs", runId] });
+      }
+    },
   });
 }
 
@@ -257,6 +265,14 @@ export function usePayAll() {
       qc.invalidateQueries({ queryKey: ["payroll", "advances"] });
       qc.invalidateQueries({ queryKey: ["payroll", "loans"] });
       qc.invalidateQueries({ queryKey: ["accounting"] });
+    },
+    // 409 = the run/employee was already paid (e.g. from another tab) or the
+    // run is not approved: refetch so the page shows the real state.
+    onError: (error, { runId }) => {
+      if (error?.status === 409) {
+        qc.invalidateQueries({ queryKey: ["payroll", "runs"] });
+        qc.invalidateQueries({ queryKey: ["payroll", "runs", runId] });
+      }
     },
   });
 }

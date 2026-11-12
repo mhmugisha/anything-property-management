@@ -1,7 +1,8 @@
 import sql from "@/app/api/utils/sql";
-import { postAccountingEntryFromIntents } from "@/app/api/utils/cil/postingAdapter";
 import { createArrearsRecoveryFee } from "@/app/api/utils/payments/arrearsFeesHandler";
 import { loadTenantCreditByProperty } from "@/app/api/utils/payments/tenantCredit";
+import { resolveAccountIntent } from "@/app/api/utils/cil/bindings";
+import { writeAuditLog } from "@/app/api/utils/staff";
 
 // Credit never crosses properties: a payment is only ever paired with invoices
 // where invoices.property_id = payments.property_id. Payments with a NULL
@@ -10,6 +11,236 @@ import { loadTenantCreditByProperty } from "@/app/api/utils/payments/tenantCredi
 // Only APPROVED payments are credit and only APPROVED invoices are paid from
 // it (NULL approval_status = legacy row, treated as approved); approving a
 // pending payment or invoice re-runs auto-apply for that tenant.
+
+// Namespace for pg_advisory_xact_lock(ns, tenant_id). Every auto-apply for a
+// tenant serialises here, so two runs can never spend the same credit.
+// (41130 = unit lock, 41131 = payroll run lock.)
+export const TENANT_CREDIT_LOCK_NAMESPACE = 41132;
+
+// Runs as the 2nd statement of the batch, i.e. with a snapshot taken AFTER the
+// tenant lock. $1 tenant id, $2 plan (jsonb [{seq, payment_id, invoice_id,
+// amount}], oldest-first), $3 debit account (tenant_prepayments), $4 credit
+// account (tenant_receivable).
+//
+// Guards (never over-apply):
+//   * invoice remaining is read with FOR UPDATE (latest committed value, row
+//     held until commit) and must still be open / approved / same tenant;
+//   * payment available credit is recomputed exactly as tenantCredit.js does
+//     (amount − allocations, minus the property's refunds/write-offs consumed
+//     oldest-first); payments are row-locked and must still be approved and
+//     not reversed;
+//   * each pair applies LEAST(planned, invoice remaining − planned earlier on
+//     that invoice, payment available − planned earlier from that payment),
+//     floored at 0. Without concurrency this is exactly the plan; with it,
+//     a pair is reduced or skipped, never increased.
+// GL: one 'payment_auto_apply' row per allocation (source_id = allocation id,
+// what allocationCleanup.js soft-deletes), whose amount is set to the
+// allocation's TOTAL amount_applied after this write — so re-applying the same
+// payment/invoice pair no longer leaves the GL at only the last increment.
+const AUTO_APPLY_WRITE_QUERY = `
+  WITH plan AS (
+    SELECT (e->>'seq')::int         AS seq,
+           (e->>'payment_id')::int  AS payment_id,
+           (e->>'invoice_id')::int  AS invoice_id,
+           (e->>'amount')::numeric  AS planned
+    FROM jsonb_array_elements($2::jsonb) e
+  ),
+  inv AS (
+    SELECT i.id, i.property_id, (i.amount - i.paid_amount) AS remaining,
+           i.currency, i.description
+    FROM invoices i
+    WHERE i.id IN (SELECT invoice_id FROM plan)
+      AND i.tenant_id = $1::int
+      AND i.status = 'open'
+      AND COALESCE(i.is_deleted, false) = false
+      AND COALESCE(i.approval_status, 'approved') = 'approved'
+      AND i.property_id IS NOT NULL
+      AND (i.amount - i.paid_amount) > 0
+    FOR UPDATE
+  ),
+  pay_lock AS (
+    SELECT p.id
+    FROM payments p
+    WHERE p.id IN (SELECT payment_id FROM plan)
+      AND p.tenant_id = $1::int
+      AND COALESCE(p.is_reversed, false) = false
+      AND COALESCE(p.approval_status, 'approved') = 'approved'
+      AND p.property_id IS NOT NULL
+    FOR UPDATE
+  ),
+  pay_gross AS (
+    SELECT p.id, p.property_id, p.payment_date, p.reference_number,
+           (p.amount - COALESCE(SUM(pia.amount_applied), 0))::numeric AS gross
+    FROM payments p
+    LEFT JOIN payment_invoice_allocations pia ON pia.payment_id = p.id
+    WHERE COALESCE(p.is_reversed, false) = false
+      AND COALESCE(p.approval_status, 'approved') = 'approved'
+      AND p.tenant_id = $1::int
+      AND p.property_id IS NOT NULL
+    GROUP BY p.id
+    HAVING (p.amount - COALESCE(SUM(pia.amount_applied), 0)) > 0
+  ),
+  refunds AS (
+    SELECT u.property_id, COALESCE(SUM(t.amount), 0)::numeric AS refunded
+    FROM transactions t
+    JOIN leases l ON l.id = t.source_id
+    JOIN units u ON u.id = l.unit_id
+    WHERE t.source_type IN ('prepayment_refund', 'prepayment_writeoff')
+      AND COALESCE(t.is_deleted, false) = false
+      AND l.tenant_id = $1::int
+    GROUP BY u.property_id
+  ),
+  pay_avail AS (
+    SELECT g.id, g.property_id, g.payment_date, g.reference_number,
+           GREATEST(0, LEAST(
+             g.gross,
+             SUM(g.gross) OVER (
+               PARTITION BY g.property_id
+               ORDER BY g.payment_date ASC, g.id ASC
+             ) - COALESCE(r.refunded, 0)
+           )) AS avail
+    FROM pay_gross g
+    LEFT JOIN refunds r ON r.property_id = g.property_id
+  ),
+  guarded AS (
+    SELECT pl.seq, pl.payment_id, pl.invoice_id, pl.planned,
+           inv.remaining, pa.avail,
+           COALESCE(SUM(pl.planned) OVER (
+             PARTITION BY pl.invoice_id ORDER BY pl.seq
+             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+           ), 0) AS inv_before,
+           COALESCE(SUM(pl.planned) OVER (
+             PARTITION BY pl.payment_id ORDER BY pl.seq
+             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+           ), 0) AS pay_before
+    FROM plan pl
+    JOIN inv ON inv.id = pl.invoice_id
+    JOIN pay_lock pk ON pk.id = pl.payment_id
+    JOIN pay_avail pa ON pa.id = pl.payment_id
+                     AND pa.property_id = inv.property_id
+    WHERE pl.planned > 0
+  ),
+  ok AS (
+    SELECT seq, payment_id, invoice_id,
+           GREATEST(0, LEAST(planned,
+                             remaining - inv_before,
+                             avail - pay_before)) AS amount
+    FROM guarded
+  ),
+  to_write AS (
+    SELECT * FROM ok WHERE amount > 0
+  ),
+  alloc AS (
+    INSERT INTO payment_invoice_allocations (payment_id, invoice_id, amount_applied)
+    SELECT payment_id, invoice_id, amount FROM to_write
+    ON CONFLICT (payment_id, invoice_id)
+    DO UPDATE SET amount_applied = payment_invoice_allocations.amount_applied + EXCLUDED.amount_applied
+    RETURNING id, payment_id, invoice_id, amount_applied
+  ),
+  written AS (
+    SELECT al.id AS allocation_id, al.payment_id, al.invoice_id,
+           al.amount_applied AS total_applied, w.amount AS applied, w.seq
+    FROM alloc al
+    JOIN to_write w ON w.payment_id = al.payment_id AND w.invoice_id = al.invoice_id
+  ),
+  inv_totals AS (
+    SELECT invoice_id, SUM(applied) AS total FROM written GROUP BY invoice_id
+  ),
+  inv_upd AS (
+    UPDATE invoices i
+    SET paid_amount = i.paid_amount + s.total,
+        status = CASE
+          WHEN (i.paid_amount + s.total) >= i.amount THEN 'paid'
+          ELSE 'open'
+        END
+    FROM inv_totals s
+    WHERE i.id = s.invoice_id
+      AND (i.amount - i.paid_amount) >= s.total
+    RETURNING i.id
+  ),
+  gl_src AS (
+    SELECT w.allocation_id, w.payment_id, w.invoice_id, w.total_applied,
+           w.applied, w.seq,
+           pa.payment_date, pa.reference_number,
+           inv.property_id,
+           pr.landlord_id,
+           COALESCE(NULLIF(inv.currency, ''), 'UGX') AS currency,
+           'Payment on Account Applied - '
+             || COALESCE(NULLIF(tn.full_name, ''), 'Tenant')
+             || ' - ' || COALESCE(NULLIF(inv.description, ''), 'Rent') AS descr,
+           (SELECT t.id FROM transactions t
+            WHERE t.source_type = 'payment_auto_apply'
+              AND t.source_id = w.allocation_id
+            ORDER BY COALESCE(t.is_deleted, false) ASC, t.id ASC
+            LIMIT 1) AS existing_gl_id
+    FROM written w
+    JOIN inv ON inv.id = w.invoice_id
+    JOIN pay_avail pa ON pa.id = w.payment_id
+    LEFT JOIN properties pr ON pr.id = inv.property_id
+    LEFT JOIN tenants tn ON tn.id = $1::int
+  ),
+  gl_upd AS (
+    UPDATE transactions t
+    SET transaction_date = g.payment_date::date,
+        description = g.descr,
+        reference_number = NULLIF(TRIM(g.reference_number), ''),
+        debit_account_id = $3::int,
+        credit_account_id = $4::int,
+        amount = g.total_applied,
+        currency = g.currency,
+        created_by = NULL,
+        landlord_id = g.landlord_id,
+        property_id = g.property_id,
+        is_deleted = false,
+        deleted_at = NULL,
+        deleted_by = NULL
+    FROM gl_src g
+    WHERE t.id = g.existing_gl_id
+    RETURNING t.id, t.source_id
+  ),
+  gl_ins AS (
+    INSERT INTO transactions (
+      transaction_date, description, reference_number,
+      debit_account_id, credit_account_id,
+      amount, currency, created_by,
+      landlord_id, property_id,
+      source_type, source_id, is_deleted, approval_status
+    )
+    SELECT g.payment_date::date, g.descr, NULLIF(TRIM(g.reference_number), ''),
+           $3::int, $4::int,
+           g.total_applied, g.currency, NULL,
+           g.landlord_id, g.property_id,
+           'payment_auto_apply', g.allocation_id, false, 'approved'
+    FROM gl_src g
+    WHERE g.existing_gl_id IS NULL
+    RETURNING id, source_id
+  ),
+  guard AS (
+    -- Belt and braces: every invoice we allocated to must have been updated
+    -- (it is row-locked above, so this only trips on a logic error). Casting
+    -- a non-constant string to int aborts the whole batch.
+    SELECT CASE
+      WHEN (SELECT COUNT(*) FROM inv_upd) <> (SELECT COUNT(*) FROM inv_totals)
+      THEN ('autoApply guard: invoice balance changed during write ('
+            || (SELECT COUNT(*) FROM inv_upd) || '/'
+            || (SELECT COUNT(*) FROM inv_totals) || ')')::int
+      ELSE 0
+    END AS ok
+  )
+  SELECT g.allocation_id, g.payment_id, g.invoice_id,
+         g.applied, g.total_applied, g.payment_date,
+         COALESCE(u.id, i.id) AS gl_id,
+         CASE WHEN u.id IS NOT NULL THEN 'update' ELSE 'insert' END AS gl_posting,
+         (SELECT ok FROM guard) AS guard_ok
+  FROM gl_src g
+  LEFT JOIN gl_upd u ON u.source_id = g.allocation_id
+  LEFT JOIN gl_ins i ON i.source_id = g.allocation_id
+  UNION ALL
+  -- Always return at least one row so the guard is evaluated even when
+  -- nothing was written.
+  SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, (SELECT ok FROM guard)
+  ORDER BY 1 NULLS LAST
+`;
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -139,117 +370,108 @@ export async function autoApplyAdvancePaymentsForTenant(tenantId) {
     return { ok: true, appliedCount: 0, appliedAmount: 0 };
   }
 
-  const appliedAmount = allocations.reduce((sum, a) => sum + a.amount, 0);
+  // Resolve GL accounts up front: the GL row is written inside the same
+  // statement as the allocation, so an allocation can never exist without its
+  // GL (or vice versa). If they can't be resolved, apply nothing.
+  const [debitRes, creditRes] = await Promise.all([
+    resolveAccountIntent("tenant_prepayments"),
+    resolveAccountIntent("tenant_receivable"),
+  ]);
+  const debitAccountId = toNumber(debitRes?.accountId);
+  const creditAccountId = toNumber(creditRes?.accountId);
+  if (!debitRes?.ok || !creditRes?.ok || !debitAccountId || !creditAccountId) {
+    console.error("autoApply: could not resolve GL accounts", {
+      debit: debitRes?.error,
+      credit: creditRes?.error,
+    });
+    return { ok: false, error: "Could not resolve auto-apply GL accounts" };
+  }
 
-  // Apply allocations in a transaction (best-effort)
+  // The plan above was computed from a read taken BEFORE the lock, so another
+  // auto-apply for this tenant (Payment on Account, bulk/cron run, approval)
+  // may have spent some of the same credit or paid some of the same invoices
+  // since. It is only an upper bound: the write re-checks everything.
+  const plan = allocations.map((a, idx) => ({
+    seq: idx,
+    payment_id: Number(a.paymentId),
+    invoice_id: Number(a.invoiceId),
+    amount: Number(a.amount),
+  }));
+
   try {
-    // STEP 1: Execute INSERT and UPDATE in transaction FIRST
-    await sql.transaction((txn) => {
-      const queries = [];
+    const [, rows] = await sql.transaction([
+      sql(`SELECT pg_advisory_xact_lock($1, $2)`, [
+        TENANT_CREDIT_LOCK_NAMESPACE,
+        tenantIdNum,
+      ]),
+      sql(AUTO_APPLY_WRITE_QUERY, [
+        tenantIdNum,
+        JSON.stringify(plan),
+        debitAccountId,
+        creditAccountId,
+      ]),
+    ]);
 
-      for (const a of allocations) {
-        // Insert allocation
-        queries.push(
-          txn`
-            INSERT INTO payment_invoice_allocations (payment_id, invoice_id, amount_applied)
-            VALUES (${a.paymentId}, ${a.invoiceId}, ${a.amount})
-            ON CONFLICT (payment_id, invoice_id)
-            DO UPDATE SET amount_applied = payment_invoice_allocations.amount_applied + EXCLUDED.amount_applied
-          `,
-        );
+    const written = (rows || []).filter((r) => r.allocation_id !== null);
+    if (written.length === 0) {
+      return { ok: true, appliedCount: 0, appliedAmount: 0 };
+    }
 
-        // Update invoice
-        queries.push(
-          txn`
-            UPDATE invoices
-            SET paid_amount = paid_amount + ${a.amount},
-                status = CASE
-                  WHEN (paid_amount + ${a.amount}) >= amount THEN 'paid'
-                  ELSE 'open'
-                END
-            WHERE id = ${a.invoiceId}
-          `,
-        );
-      }
+    const appliedAmount = written.reduce((sum, r) => sum + Number(r.applied || 0), 0);
 
-      return queries;
-    });
-
-    // Fetch allocation ids for the (payment_id, invoice_id) pairs we just upserted.
-    // Each allocation row has a unique id — use it as sourceId so the postingAdapter
-    // idempotency key is unique per allocation, not shared across all allocations of
-    // the same payment.
-    const paymentIds = allocations.map((a) => a.paymentId);
-    const invoiceIds = allocations.map((a) => a.invoiceId);
-    const allocationRows = await sql(
-      `SELECT id, payment_id, invoice_id
-       FROM payment_invoice_allocations
-       WHERE payment_id = ANY($1::int[]) AND invoice_id = ANY($2::int[])`,
-      [paymentIds, invoiceIds],
+    // Audit trail for the GL rows (best-effort, after commit — same action
+    // name the posting adapter uses).
+    await Promise.allSettled(
+      written
+        .filter((r) => r.gl_id)
+        .map((r) =>
+          writeAuditLog({
+            staffId: null,
+            action: "cil.accounting.upsert",
+            entityType: "transaction",
+            entityId: r.gl_id,
+            oldValues: null,
+            newValues: {
+              amount: r.total_applied,
+              source_type: "payment_auto_apply",
+              source_id: r.allocation_id,
+              cil: {
+                debitIntent: "tenant_prepayments",
+                creditIntent: "tenant_receivable",
+                posting: r.gl_posting,
+                increment: r.applied,
+                source: {
+                  sourceModule: "property",
+                  businessEvent: "TENANT_ADVANCE_PAYMENT_AUTO_APPLIED",
+                  sourceEntity: {
+                    type: "payment",
+                    id: r.payment_id,
+                    invoiceId: r.invoice_id,
+                  },
+                },
+              },
+            },
+            ipAddress: null,
+          }),
+        ),
     );
-    const allocationIdByPair = new Map();
-    for (const row of allocationRows || []) {
-      allocationIdByPair.set(`${row.payment_id}-${row.invoice_id}`, row.id);
-    }
-    for (const a of allocations) {
-      a.allocationId = allocationIdByPair.get(`${a.paymentId}-${a.invoiceId}`);
-    }
 
-    // STEP 2: THEN post accounting entries AFTER transaction commits
-    const postPromises = allocations.map((a) => {
-      if (!a.allocationId) {
-        console.error("autoApply: allocationId missing, skipping GL posting", {
-          paymentId: a.paymentId,
-          invoiceId: a.invoiceId,
-        });
-        return Promise.resolve({ ok: false, error: "missing allocationId" });
-      }
-
-      const receiptDesc = `Payment on Account Applied - ${a.tenantName || "Tenant"} - ${a.description || "Rent"}`;
-
-      return postAccountingEntryFromIntents({
-        transactionDate: a.paymentDate,
-        description: receiptDesc,
-        referenceNumber: a.referenceNumber || null,
-        debitIntent: "tenant_prepayments",
-        creditIntent: "tenant_receivable",
-        amount: a.amount,
-        currency: a.currency,
-        createdBy: null,
-        landlordId: a.landlordId || null,
-        propertyId: a.propertyId,
-        sourceType: "payment_auto_apply",
-        sourceId: a.allocationId,
-        auditContext: {
-          sourceModule: "property",
-          businessEvent: "TENANT_ADVANCE_PAYMENT_AUTO_APPLIED",
-          sourceEntity: {
-            type: "payment",
-            id: a.paymentId,
-            invoiceId: a.invoiceId,
-          },
-        },
-      });
-    });
-
-    const postResults = await Promise.allSettled(postPromises);
-
-    // STEP 3: NEW - Process arrears recovery fees for each allocation
-    const feePromises = allocations.map((a) => {
-      return createArrearsRecoveryFee({
-        invoiceId: a.invoiceId,
-        amountPaid: a.amount,
-        paymentDate: a.paymentDate,
-        staffId: null, // null for auto-apply
-        allocationId: a.allocationId || null,
-      });
-    });
-
-    const feeResults = await Promise.allSettled(feePromises);
+    // Arrears recovery fees, only for amounts actually written.
+    await Promise.allSettled(
+      written.map((r) =>
+        createArrearsRecoveryFee({
+          invoiceId: r.invoice_id,
+          amountPaid: Number(r.applied),
+          paymentDate: r.payment_date,
+          staffId: null, // null for auto-apply
+          allocationId: r.allocation_id,
+        }),
+      ),
+    );
 
     return {
       ok: true,
-      appliedCount: allocations.length,
+      appliedCount: written.length,
       appliedAmount,
     };
   } catch (e) {
