@@ -1738,17 +1738,16 @@ function RunDetail({ runId, onBack, isAdmin, canManage = false }) {
             {/* Admin only, and only while nobody has been paid (the server
                 re-checks both under the run lock). */}
             {isAdmin && run.status === "approved" && paidCount === 0 && (
-              <button
+              <PrimaryBtn
                 onClick={() => {
                   if (window.confirm("Return this run to draft? You can then delete or recreate it.")) {
                     returnToDraft.mutate({ runId: run.id });
                   }
                 }}
                 disabled={returnToDraft.isPending}
-                className="px-4 py-2 rounded-lg border border-gray-200 text-slate-600 text-sm hover:bg-gray-50 disabled:opacity-50"
               >
                 {returnToDraft.isPending ? "Returning…" : "Return to draft"}
-              </button>
+              </PrimaryBtn>
             )}
           </div>
           <div className="flex gap-3">
