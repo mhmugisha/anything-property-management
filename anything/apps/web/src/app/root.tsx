@@ -483,7 +483,6 @@ export function Layout({ children }: { children: ReactNode }) {
       'payments/payment-on-account': 'Pay on Account',
       'payments/open-balances': 'Open Balances',
       'payments/receipt': 'Receipt',
-      'payments/auto-apply': 'Auto-Apply',
       'tenants/view-details': 'Tenant Details',
       'dashboard/due-to-landlords': 'Due to Landlords',
       'account/signin': 'Sign In',

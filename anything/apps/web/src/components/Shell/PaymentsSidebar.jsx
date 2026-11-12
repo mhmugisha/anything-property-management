@@ -4,7 +4,6 @@ import {
   Receipt,
   DollarSign,
   Wallet,
-  RefreshCw,
   AlertCircle,
 } from "lucide-react";
 import { useCanRecordPayments } from "@/hooks/useCanRecordPayments";
@@ -12,7 +11,7 @@ import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export default function PaymentsSidebar() {
   const canRecordPayments = useCanRecordPayments();
-  // Bulk auto-apply is Admin-only (requireAdmin on the route).
+  // Admin-only items (adminOnly: true) — none at present.
   const isAdmin = useIsAdmin();
 
   // recordOnly entries lead only to a recording page; hide them unless the
@@ -34,13 +33,6 @@ export default function PaymentsSidebar() {
       href: "/payments/pay-invoice",
       recordOnly: true,
       icon: DollarSign,
-    },
-    {
-      title: "Auto Apply",
-      href: "/payments/auto-apply",
-      adminOnly: true,
-      recordOnly: true,
-      icon: RefreshCw,
     },
     {
       title: "Open Balances",

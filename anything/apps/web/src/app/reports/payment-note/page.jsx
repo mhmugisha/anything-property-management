@@ -776,12 +776,17 @@ export default function PaymentNotePage() {
                           </span>
                         </div>
                       ))}
-                      <div className="flex justify-between gap-4 py-0.5">
-                        <span>Balance brought forward</span>
-                        <span className="tabular-nums">
-                          {signedUGX(payable.balance_brought_forward)}
-                        </span>
-                      </div>
+                      {/* Omitted when zero (same zero test signedUGX uses, so
+                          it never hides a value that would show as non-zero).
+                          Screen and print share this markup. */}
+                      {Math.abs(Number(payable.balance_brought_forward || 0)) >= 0.005 && (
+                        <div className="flex justify-between gap-4 py-0.5">
+                          <span>Balance brought forward</span>
+                          <span className="tabular-nums">
+                            {signedUGX(payable.balance_brought_forward)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between gap-4 mt-1 pt-1.5 border-t border-gray-300">
                         <span className="font-semibold">Net payable</span>
                         <span
