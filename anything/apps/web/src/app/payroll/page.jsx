@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import useUser from "@/utils/useUser";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
 import AppHeader from "@/components/Shell/AppHeader";
@@ -1410,16 +1410,22 @@ function PayModal({ run, entry, onClose, onSuccess }) {
   const accountsQuery = usePayrollAssetAccounts();
   const accounts = accountsQuery.data || [];
   const mutation = usePayEmployee();
+  // Synchronous in-flight guard: isPending only flips after a re-render, so a
+  // fast double submit (double click / Enter twice) could otherwise fire twice.
+  const inFlight = useRef(false);
+  const busy = mutation.isPending;
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (inFlight.current || busy) return;
+    inFlight.current = true;
     mutation.mutate(
       {
         runId: run.id,
         employeeId: entry.employee_id,
         payload: { payment_account_id: Number(accountId), payment_date: payDate },
       },
-      { onSuccess },
+      { onSuccess, onSettled: () => { inFlight.current = false; } },
     );
   };
 
@@ -1428,7 +1434,7 @@ function PayModal({ run, entry, onClose, onSuccess }) {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-slate-800">Pay Employee</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-slate-400">
+          <button onClick={onClose} disabled={busy} className="p-1 rounded hover:bg-gray-100 text-slate-400 disabled:opacity-50">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -1448,11 +1454,11 @@ function PayModal({ run, entry, onClose, onSuccess }) {
           </FormField>
           <ErrorBanner error={mutation.error} />
           <div className="flex gap-2 justify-end pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50">
+            <button type="button" onClick={onClose} disabled={busy} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50 disabled:opacity-50">
               Cancel
             </button>
-            <PrimaryBtn type="submit" disabled={!accountId || mutation.isPending}>
-              {mutation.isPending ? "Processing…" : "Confirm Payment"}
+            <PrimaryBtn type="submit" disabled={!accountId || busy}>
+              {busy ? "Processing…" : "Confirm Payment"}
             </PrimaryBtn>
           </div>
         </form>
@@ -1468,12 +1474,17 @@ function PayAllModal({ run, onClose, onSuccess }) {
   const accountsQuery = usePayrollAssetAccounts();
   const accounts = accountsQuery.data || [];
   const mutation = usePayAll();
+  // Synchronous in-flight guard (see PayModal).
+  const inFlight = useRef(false);
+  const busy = mutation.isPending;
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (inFlight.current || busy) return;
+    inFlight.current = true;
     mutation.mutate(
       { runId: run.id, payload: { payment_account_id: Number(accountId), payment_date: payDate } },
-      { onSuccess },
+      { onSuccess, onSettled: () => { inFlight.current = false; } },
     );
   };
 
@@ -1482,7 +1493,7 @@ function PayAllModal({ run, onClose, onSuccess }) {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-slate-800">Pay All Employees</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-slate-400">
+          <button onClick={onClose} disabled={busy} className="p-1 rounded hover:bg-gray-100 text-slate-400 disabled:opacity-50">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -1504,11 +1515,11 @@ function PayAllModal({ run, onClose, onSuccess }) {
           </FormField>
           <ErrorBanner error={mutation.error} />
           <div className="flex gap-2 justify-end pt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50">
+            <button type="button" onClick={onClose} disabled={busy} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-slate-600 hover:bg-gray-50 disabled:opacity-50">
               Cancel
             </button>
-            <PrimaryBtn type="submit" disabled={!accountId || mutation.isPending}>
-              {mutation.isPending ? "Processing…" : "Pay All"}
+            <PrimaryBtn type="submit" disabled={!accountId || busy}>
+              {busy ? "Processing…" : "Pay All"}
             </PrimaryBtn>
           </div>
         </form>

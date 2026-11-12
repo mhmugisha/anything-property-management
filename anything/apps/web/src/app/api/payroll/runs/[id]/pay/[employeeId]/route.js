@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePayrollManage } from "@/app/api/utils/staff";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
+import { payPayrollEntries } from "@/app/api/utils/payroll/payEntries";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -43,7 +44,7 @@ export async function PUT(request, { params }) {
     }
 
     const entryRows = await sql(
-      `SELECT id, net_pay, advance_deduction, loan_deduction, paid_at
+      `SELECT id, net_pay, paid_at
        FROM payroll_entries WHERE run_id = $1 AND employee_id = $2 LIMIT 1`,
       [runId, employeeId],
     );
@@ -55,96 +56,35 @@ export async function PUT(request, { params }) {
       return Response.json({ error: "Employee already paid for this run" }, { status: 409 });
     }
 
-    const netPay = Number(entry.net_pay);
-
-    // GL: Dr 2300 Salaries Payable / Cr payment account (net_pay)
-    if (netPay > 0) {
-      const acct2300 = await getAccountIdByCode("2300");
-      if (!acct2300) {
-        return Response.json({ error: "Salaries Payable account (2300) not configured" }, { status: 500 });
-      }
-      const run = runRows[0];
-      await sql(
-        `INSERT INTO transactions (
-           transaction_date, description, reference_number,
-           debit_account_id, credit_account_id,
-           amount, currency, created_by,
-           source_type, source_id, approval_status
-         ) VALUES ($1::date, $2, $3, $4, $5, $6, 'UGX', $7, 'payroll_payment', $8, 'approved')`,
-        [
-          paymentDate,
-          `Salary payment — employee #${employeeId}`,
-          `PAY-${run.year}-${String(run.month).padStart(2, "0")}-EMP${employeeId}`,
-          acct2300,
-          paymentAccountId,
-          netPay,
-          perm.staff.id,
-          Number(entry.id),
-        ],
-      );
+    const acct2300 = await getAccountIdByCode("2300");
+    if (!acct2300 && Number(entry.net_pay) > 0) {
+      return Response.json({ error: "Salaries Payable account (2300) not configured" }, { status: 500 });
     }
 
-    // Mark entry as paid
-    await sql(
-      `UPDATE payroll_entries SET paid_at = $1::timestamptz, payment_account_id = $2
-       WHERE run_id = $3 AND employee_id = $4`,
-      [paymentDate, paymentAccountId, runId, employeeId],
-    );
+    // Atomic: lock on the run and claim this employee's entry only if it is
+    // still unpaid at write time. GL (Dr 2300 / Cr payment account), advance
+    // and loan recovery, and run -> 'paid' happen only for a claimed entry.
+    const { runStatus, claimed } = await payPayrollEntries({
+      runId,
+      employeeId,
+      paymentAccountId,
+      paymentDate,
+      staffId: perm.staff.id,
+      acct2300,
+    });
 
-    // Apply advance deduction to outstanding advances (oldest first)
-    const advDeduction = Number(entry.advance_deduction);
-    if (advDeduction > 0) {
-      const advances = await sql(
-        `SELECT id, amount, recovered_amount
-         FROM employee_advances
-         WHERE employee_id = $1
-           AND status != 'recovered'
-           AND COALESCE(is_voided, false) = false
-         ORDER BY advance_date ASC`,
-        [employeeId],
+    if (claimed.length === 0) {
+      // A concurrent request paid this employee (or the run changed) while we
+      // waited for the lock.
+      const alreadyPaid = runStatus === "approved" || runStatus === "paid";
+      return Response.json(
+        {
+          error: alreadyPaid
+            ? "Employee already paid for this run"
+            : "Run must be approved before paying",
+        },
+        { status: 409 },
       );
-      let remaining = advDeduction;
-      for (const adv of advances) {
-        if (remaining <= 0) break;
-        const outstanding = Number(adv.amount) - Number(adv.recovered_amount);
-        const apply = Math.min(remaining, outstanding);
-        const newRecovered = Number(adv.recovered_amount) + apply;
-        const newStatus = newRecovered >= Number(adv.amount) ? "recovered" : "partial";
-        await sql(
-          `UPDATE employee_advances SET recovered_amount = $1, status = $2 WHERE id = $3`,
-          [newRecovered, newStatus, Number(adv.id)],
-        );
-        remaining -= apply;
-      }
-    }
-
-    // Apply loan deduction — one instalment per active loan
-    const loanDeduction = Number(entry.loan_deduction);
-    if (loanDeduction > 0) {
-      const loans = await sql(
-        `SELECT id, amount, monthly_instalment, paid_instalments, recovered_amount
-         FROM employee_loans WHERE employee_id = $1 AND status = 'active'`,
-        [employeeId],
-      );
-      for (const loan of loans) {
-        const newRecovered = Number(loan.recovered_amount) + Number(loan.monthly_instalment);
-        const newPaid = Number(loan.paid_instalments) + 1;
-        const newStatus = newRecovered >= Number(loan.amount) ? "completed" : "active";
-        await sql(
-          `UPDATE employee_loans
-           SET recovered_amount = $1, paid_instalments = $2, status = $3 WHERE id = $4`,
-          [newRecovered, newPaid, newStatus, Number(loan.id)],
-        );
-      }
-    }
-
-    // Check if all entries are now paid → update run status
-    const unpaidRows = await sql(
-      `SELECT COUNT(*)::int AS cnt FROM payroll_entries WHERE run_id = $1 AND paid_at IS NULL`,
-      [runId],
-    );
-    if (Number(unpaidRows?.[0]?.cnt || 0) === 0) {
-      await sql(`UPDATE payroll_runs SET status = 'paid' WHERE id = $1`, [runId]);
     }
 
     return Response.json({ success: true });
