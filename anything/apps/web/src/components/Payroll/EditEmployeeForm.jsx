@@ -123,6 +123,8 @@ export default function EditEmployeeForm({
   });
   const mutation = useUpdateEmployee();
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  // Based on the saved record, not the form, so it can't be toggled away.
+  const isTerminated = employee.status === "terminated";
 
   const canSubmit = form.full_name.trim() && form.position.trim();
 
@@ -187,19 +189,28 @@ export default function EditEmployeeForm({
           </FormField>
         ) : null}
         <FormField label="Status">
-          {/* Deactivating/reactivating is Admin-only (the API refuses a change). */}
-          <Select
-            value={form.status}
-            onChange={(e) => set("status", e.target.value)}
-            disabled={!isAdmin}
-          >
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            {form.status === "terminated" ? (
+          {/* Deactivating/reactivating is Admin-only (the API refuses a change).
+              A terminated employee's status is locked for everyone: the API
+              accepts "terminated" only unchanged, so other fields still save. */}
+          {isTerminated ? (
+            <Select value="terminated" disabled>
               <option value="terminated">Terminated</option>
-            ) : null}
-          </Select>
-          {!isAdmin ? (
+            </Select>
+          ) : (
+            <Select
+              value={form.status}
+              onChange={(e) => set("status", e.target.value)}
+              disabled={!isAdmin}
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </Select>
+          )}
+          {isTerminated ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Terminated employees keep this status; other details can still be edited.
+            </p>
+          ) : !isAdmin ? (
             <p className="mt-1 text-xs text-slate-500">
               Only an admin can change status.
             </p>

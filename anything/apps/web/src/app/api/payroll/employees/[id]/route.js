@@ -237,15 +237,36 @@ export async function PUT(request, { params }) {
     // "inactive" drops the employee from payroll runs, and "active" would
     // revive a terminated employee without the terminate route. The edit
     // form sends status on every save, so only an actual change is refused.
-    if (body?.status !== undefined && !isAdminStaff(perm.staff)) {
+    // An unchanged status (including "terminated") is not a status change,
+    // so a terminated employee's other fields can still be edited. Changing
+    // TO "terminated" must go through the terminate route; changing FROM
+    // "terminated" is not allowed here at all.
+    let statusGuard = null;
+    if (body?.status !== undefined) {
       const [cur] = await sql`SELECT status FROM employees WHERE id = ${employeeId} LIMIT 1`;
-      if (cur && body.status !== cur.status) {
+      if (!cur) {
+        return Response.json({ error: "Employee not found" }, { status: 404 });
+      }
+      if (body.status === cur.status) {
+        delete body.status;
+      } else if (!isAdminStaff(perm.staff)) {
         return Response.json(
           { error: "Only an admin can change an employee's status." },
           { status: 403 },
         );
+      } else if (cur.status === "terminated") {
+        return Response.json(
+          { error: "A terminated employee's status can't be changed here." },
+          { status: 400 },
+        );
+      } else if (body.status === "terminated") {
+        return Response.json(
+          { error: "Use Terminate to terminate an employee." },
+          { status: 400 },
+        );
+      } else {
+        statusGuard = cur.status;
       }
-      delete body.status;
     }
 
     if (body?.status !== undefined) {
@@ -262,11 +283,24 @@ export async function PUT(request, { params }) {
 
     fields.push(`updated_at = NOW()`);
     values.push(employeeId);
+    let where = `id = $${values.length}`;
+    if (statusGuard !== null) {
+      // Status change: only if the status is still what we checked above
+      // (e.g. not terminated by a concurrent Terminate in the meantime).
+      values.push(statusGuard);
+      where += ` AND status = $${values.length}`;
+    }
 
-    await sql(
-      `UPDATE employees SET ${fields.join(", ")} WHERE id = $${values.length}`,
+    const updated = await sql(
+      `UPDATE employees SET ${fields.join(", ")} WHERE ${where} RETURNING id`,
       values,
     );
+    if (statusGuard !== null && !updated?.length) {
+      return Response.json(
+        { error: "The employee's status changed meanwhile. Reload and try again." },
+        { status: 409 },
+      );
+    }
 
     return Response.json({ success: true, employee_id: employeeId });
   } catch (error) {
