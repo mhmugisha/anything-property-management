@@ -26,6 +26,7 @@ import {
   useApprovePayrollRun,
   usePayEmployee,
   usePayAll,
+  useReturnRunToDraft,
   usePayslip,
   useDeletePayrollRun,
 } from "@/hooks/usePayroll";
@@ -1580,6 +1581,7 @@ function RunDetail({ runId, onBack, isAdmin, canManage = false }) {
   const runQuery = usePayrollRun(runId);
   const approveRun = useApprovePayrollRun();
   const deleteRun = useDeletePayrollRun();
+  const returnToDraft = useReturnRunToDraft();
   const [payEntry, setPayEntry] = useState(null);
   const [showPayAll, setShowPayAll] = useState(false);
   // Set when approval would exceed the Payroll budget and needs a raise.
@@ -1733,6 +1735,21 @@ function RunDetail({ runId, onBack, isAdmin, canManage = false }) {
                 {deleteRun.isPending ? "Deleting…" : "Delete Run"}
               </button>
             )}
+            {/* Admin only, and only while nobody has been paid (the server
+                re-checks both under the run lock). */}
+            {isAdmin && run.status === "approved" && paidCount === 0 && (
+              <button
+                onClick={() => {
+                  if (window.confirm("Return this run to draft? You can then delete or recreate it.")) {
+                    returnToDraft.mutate({ runId: run.id });
+                  }
+                }}
+                disabled={returnToDraft.isPending}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-slate-600 text-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                {returnToDraft.isPending ? "Returning…" : "Return to draft"}
+              </button>
+            )}
           </div>
           <div className="flex gap-3">
             {isAdmin && run.status === "draft" && (
@@ -1761,6 +1778,7 @@ function RunDetail({ runId, onBack, isAdmin, canManage = false }) {
       )}
       {approveRun.error && <ErrorBanner error={approveRun.error} />}
       {deleteRun.error && <ErrorBanner error={deleteRun.error} />}
+      {returnToDraft.error && <ErrorBanner error={returnToDraft.error} />}
 
       {/* Modals */}
       {budgetRaise && (

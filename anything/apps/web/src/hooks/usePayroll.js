@@ -277,6 +277,28 @@ export function usePayAll() {
   });
 }
 
+// Admin only: approved run with nobody paid -> back to draft (accrual GL
+// soft-deleted server-side). Refetch on success or 409 so the page shows the
+// real state (Delete appears once the run is draft).
+export function useReturnRunToDraft() {
+  const qc = useQueryClient();
+  const refresh = (runId) => {
+    qc.invalidateQueries({ queryKey: ["payroll", "runs"] });
+    qc.invalidateQueries({ queryKey: ["payroll", "runs", runId] });
+  };
+  return useMutation({
+    mutationFn: async ({ runId }) =>
+      postJson(`/api/payroll/runs/${runId}/return-to-draft`, {}),
+    onSuccess: (_, { runId }) => {
+      refresh(runId);
+      qc.invalidateQueries({ queryKey: ["accounting"] });
+    },
+    onError: (error, { runId }) => {
+      if (error?.status === 409) refresh(runId);
+    },
+  });
+}
+
 export function useDeletePayrollRun() {
   const qc = useQueryClient();
   return useMutation({
