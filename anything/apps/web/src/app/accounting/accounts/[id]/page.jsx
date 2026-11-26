@@ -16,10 +16,11 @@ import PrintPreviewButtons from "@/components/PrintPreviewButtons";
 import DatePopoverInput from "@/components/DatePopoverInput";
 
 
-// Deductions can be edited/deleted from ANY account they touch (e.g. 2100
-// Due to Landlords, 1210, or the income account of an income deduction),
-// not only from Cash/Bank. Other kinds keep the Cash/Bank-only rule.
-const ANY_ACCOUNT_KINDS = ["landlord_deduction", "tenant_deduction"];
+// Source-record edits (deductions, payouts, payments, deposits) are offered on
+// EVERY account page the entry appears on, and call the same routes as the
+// Journal. Only manual-journal edits are limited to Cash/Bank pages
+// (isEditableAccount).
+const MANUAL_KIND = "manual";
 
 export default function AccountStatementPage({ params }) {
   const accountId = params?.id;
@@ -417,7 +418,12 @@ export default function AccountStatementPage({ params }) {
       if (sourceType === "manual") {
         kind = "manual";
       } else if (sourceType === "payment") {
-        const isReceipt = t.debit > 0;
+        // Actions go on the receipt row only (not the commission row). On
+        // Cash/Bank pages that's the debit side, as before; elsewhere use the
+        // Journal's rule (receipt = Dr 1130 Undeposited Funds).
+        const isReceipt = isEditableAccount
+          ? t.debit > 0
+          : String(t.debit_code || "") === "1130";
         kind = isReceipt ? "payment" : null;
       } else if (sourceType === "landlord_payout") {
         kind = "landlord_payout";
@@ -435,9 +441,11 @@ export default function AccountStatementPage({ params }) {
       return { ...t, _editKind: kind };
     });
 
+    // Manual journals stay editable only on Cash/Bank pages. Source-record
+    // kinds keep their actions on every account page.
     if (isEditableAccount) return mapped;
     return mapped.map((t) =>
-      ANY_ACCOUNT_KINDS.includes(t._editKind) ? t : { ...t, _editKind: null },
+      t._editKind === MANUAL_KIND ? { ...t, _editKind: null } : t,
     );
   }, [rows, isEditableAccount]);
 

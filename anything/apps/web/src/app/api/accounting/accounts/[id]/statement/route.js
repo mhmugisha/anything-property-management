@@ -92,9 +92,11 @@ export async function GET(request, { params: { id } }) {
         t.amount,
         t.source_type,
         t.source_id,
-        su.full_name AS created_by_name
+        su.full_name AS created_by_name,
+        dca.account_code AS debit_code
       FROM transactions t
       LEFT JOIN staff_users su ON t.created_by = su.id
+      LEFT JOIN chart_of_accounts dca ON dca.id = t.debit_account_id
       ${whereSql}
       ORDER BY t.transaction_date ASC, t.id ASC
       LIMIT 10000
@@ -120,6 +122,7 @@ export async function GET(request, { params: { id } }) {
         created_by_name: t.created_by_name,
         source_type: t.source_type,
         source_id: t.source_id,
+        debit_code: t.debit_code || null,
       };
     });
 
