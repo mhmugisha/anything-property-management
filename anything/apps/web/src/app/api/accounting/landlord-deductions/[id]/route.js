@@ -297,23 +297,13 @@ export async function PUT(request, { params: { id } }) {
       if (!guard.ok) return Response.json(guard.body, { status: guard.status });
     }
 
-    const updated = await sql.transaction(async (txn) => {
-      const deductionRows = await txn`
-        UPDATE landlord_deductions
-        SET property_id = ${propertyId},
-            deduction_date = ${deductionDate}::date,
-            description = ${description},
-            amount = ${amount}
-        WHERE id = ${deductionId}
-        RETURNING *
-      `;
+    // Neon's HTTP driver only runs NON-interactive transactions: every write
+    // goes in one sql.transaction([...]) batch so the edit is all-or-nothing.
+    // All reads and validation (funds, due-to-landlord, accounts) are above.
+    const txDesc = `Landlord deduction - ${description}`;
 
-      const deduction = deductionRows?.[0] || null;
-
-      const txDesc = `Landlord deduction - ${description}`;
-
-      if (oldTx) {
-        await txn`
+    const glQuery = oldTx
+      ? sql`
           UPDATE transactions
           SET transaction_date = ${deductionDate}::date,
               description = ${txDesc},
@@ -322,9 +312,8 @@ export async function PUT(request, { params: { id } }) {
               amount = ${amount},
               property_id = ${propertyId}
           WHERE id = ${oldTx.id}
-        `;
-      } else {
-        await txn`
+        `
+      : sql`
           INSERT INTO transactions (
             transaction_date, description,
             debit_account_id, credit_account_id,
@@ -337,15 +326,26 @@ export async function PUT(request, { params: { id } }) {
             ${deductionDate}::date, ${txDesc},
             ${rentPayableId}, ${creditAccountId},
             ${amount}, 'UGX', ${perm.staff.id},
-            ${deduction.landlord_id}, ${propertyId},
+            ${oldDeduction.landlord_id}, ${propertyId},
             'landlord',
             'landlord_deduction', ${deductionId}
           )
         `;
-      }
 
-      return deduction;
-    });
+    const [deductionRows] = await sql.transaction([
+      sql`
+        UPDATE landlord_deductions
+        SET property_id = ${propertyId},
+            deduction_date = ${deductionDate}::date,
+            description = ${description},
+            amount = ${amount}
+        WHERE id = ${deductionId}
+        RETURNING *
+      `,
+      glQuery,
+    ]);
+
+    const updated = deductionRows?.[0] || null;
 
     await writeAuditLog({
       staffId: perm.staff.id,
@@ -388,16 +388,16 @@ export async function DELETE(request, { params: { id } }) {
     if (!oldDeduction)
       return Response.json({ error: "Not found" }, { status: 404 });
 
-    await sql.transaction(async (txn) => {
-      await txn`
+    // One non-interactive batch (Neon HTTP): both soft-deletes or neither.
+    await sql.transaction([
+      sql`
         UPDATE landlord_deductions
         SET is_deleted = true,
             deleted_at = now(),
             deleted_by = ${perm.staff.id}
         WHERE id = ${deductionId}
-      `;
-
-      await txn`
+      `,
+      sql`
         UPDATE transactions
         SET is_deleted = true,
             deleted_at = now(),
@@ -405,8 +405,8 @@ export async function DELETE(request, { params: { id } }) {
         WHERE source_type = 'landlord_deduction'
           AND source_id = ${deductionId}
           AND COALESCE(is_deleted,false) = false
-      `;
-    });
+      `,
+    ]);
 
     await writeAuditLog({
       staffId: perm.staff.id,

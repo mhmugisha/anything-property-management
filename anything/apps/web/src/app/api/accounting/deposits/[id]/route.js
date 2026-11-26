@@ -224,34 +224,33 @@ export async function DELETE(request, { params: { id } }) {
       );
     }
 
-    await sql.transaction(async (txn) => {
+    // One non-interactive batch (Neon HTTP driver): all three or none.
+    await sql.transaction([
       // 1. Soft-delete the deposit transaction
-      await txn`
+      sql`
         UPDATE transactions
         SET is_deleted = true,
             deleted_at = now(),
             deleted_by = ${perm.staff.id}
         WHERE id = ${depositTxnId}
-      `;
-
+      `,
       // 2. Find all payments that were part of this deposit and clear their deposit tracking
-      await txn`
+      sql`
         UPDATE payments
         SET deposited_at = NULL,
             deposited_to_account_id = NULL,
             deposit_transaction_id = NULL
         WHERE deposit_transaction_id = ${depositTxnId}
           AND is_reversed = false
-      `;
-
+      `,
       // 3. Clear deposited_by_transaction_id for all source transactions (marks them as undeposited again)
-      await txn`
+      sql`
         UPDATE transactions
         SET deposited_by_transaction_id = NULL
         WHERE deposited_by_transaction_id = ${depositTxnId}
           AND COALESCE(is_deleted, false) = false
-      `;
-    });
+      `,
+    ]);
 
     await writeAuditLog({
       staffId: perm.staff.id,

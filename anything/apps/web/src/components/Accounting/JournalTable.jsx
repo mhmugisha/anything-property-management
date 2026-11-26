@@ -213,6 +213,8 @@ export function JournalTable({
     },
     onError: (err) => {
       console.error(err);
+      // Refetch anyway so the list never shows stale values after a failure.
+      invalidateAll();
       setSuccessMessage(null);
       if (err?.status === 409 && err?.payload?.overage != null) {
         setBudgetBlock(err.payload);

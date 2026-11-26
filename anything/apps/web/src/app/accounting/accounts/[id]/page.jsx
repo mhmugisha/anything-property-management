@@ -228,11 +228,15 @@ export default function AccountStatementPage({ params }) {
       throw new Error(`Unknown edit kind: ${editKind}`);
     },
     onSuccess: () => {
+      setFormError(null);
+      // Refetch so the statement shows the saved values.
       invalidateAll();
       closeModal();
     },
     onError: (err) => {
       console.error(err);
+      // Refetch anyway so the list never shows stale values after a failure.
+      invalidateAll();
       setFormError(err?.message || "Could not save changes");
     },
   });
