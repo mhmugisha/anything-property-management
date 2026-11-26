@@ -76,7 +76,40 @@ export async function GET(request, { params: { id } }) {
     if (!deduction)
       return Response.json({ error: "Not found" }, { status: 404 });
 
-    return Response.json({ deduction });
+    // Current credit account, read from the deduction's GL entry, so the edit
+    // modal can open on what is actually booked.
+    const creditRows = await sql`
+      SELECT c.id, c.account_code, c.account_name, c.account_type
+      FROM transactions t
+      JOIN chart_of_accounts c ON c.id = t.credit_account_id
+      WHERE t.source_type = 'landlord_deduction'
+        AND t.source_id = ${deductionId}
+        AND COALESCE(t.is_deleted,false) = false
+      ORDER BY t.id DESC
+      LIMIT 1
+    `;
+    const acct = creditRows?.[0] || null;
+    let paymentSource = null; // cash | bank | income | other | null (no GL)
+    if (acct) {
+      const type = String(acct.account_type || "").trim().toLowerCase();
+      if (acct.account_code === "1110") paymentSource = "cash";
+      else if (acct.account_code === "1120") paymentSource = "bank";
+      else if (type === "income" || type === "revenue") paymentSource = "income";
+      else paymentSource = "other";
+    }
+
+    return Response.json({
+      deduction,
+      credit_account: acct
+        ? {
+            id: acct.id,
+            account_code: acct.account_code,
+            account_name: acct.account_name,
+            account_type: acct.account_type,
+            payment_source: paymentSource,
+          }
+        : null,
+    });
   } catch (error) {
     console.error("GET /api/accounting/landlord-deductions/[id] error", error);
     return Response.json(
@@ -156,7 +189,12 @@ export async function PUT(request, { params: { id } }) {
     const deductionDate = (body?.deduction_date || "").trim();
     const description = (body?.description || "").trim();
     const amount = toNumber(body?.amount);
-    const paymentSource = (body?.payment_source || "bank").trim(); // bank | cash
+    // bank | cash. When omitted, the existing GL credit account is kept.
+    const paymentSourceRaw = String(body?.payment_source || "").trim();
+    const paymentSource =
+      paymentSourceRaw === "cash" || paymentSourceRaw === "bank"
+        ? paymentSourceRaw
+        : null;
 
     if (!propertyId || !deductionDate || !description || !amount) {
       return Response.json(
@@ -224,11 +262,19 @@ export async function PUT(request, { params: { id } }) {
     const isIncomeDeduction =
       oldCreditType === "income" || oldCreditType === "revenue";
 
-    const creditAccountId = isIncomeDeduction
-      ? toNumber(oldTx.credit_account_id)
-      : paymentSource === "cash"
-        ? cashId
-        : bankId;
+    // Income deductions always keep their income account. Otherwise an
+    // omitted payment_source keeps the current credit account; with no GL
+    // entry to keep, fall back to bank as before.
+    let creditAccountId;
+    if (isIncomeDeduction) {
+      creditAccountId = toNumber(oldTx.credit_account_id);
+    } else if (paymentSource) {
+      creditAccountId = paymentSource === "cash" ? cashId : bankId;
+    } else if (oldTx?.credit_account_id) {
+      creditAccountId = toNumber(oldTx.credit_account_id);
+    } else {
+      creditAccountId = bankId;
+    }
 
     if (!creditAccountId) {
       return Response.json(

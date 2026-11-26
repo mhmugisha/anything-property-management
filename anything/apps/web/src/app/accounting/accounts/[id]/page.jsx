@@ -55,6 +55,11 @@ export default function AccountStatementPage({ params }) {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [notes, setNotes] = useState("");
   const [paymentSource, setPaymentSource] = useState("bank");
+  // Landlord deduction: current GL credit account (from GET /[id]).
+  const [ldCreditAccount, setLdCreditAccount] = useState(null);
+  const ldCreditLocked =
+    ldCreditAccount?.payment_source === "income" ||
+    ldCreditAccount?.payment_source === "other";
   const [depositTo, setDepositTo] = useState("");
 
   // NEW: Fetch deposit accounts for the deposit edit form
@@ -119,6 +124,7 @@ export default function AccountStatementPage({ params }) {
     setPaymentMethod("");
     setNotes("");
     setPaymentSource("bank");
+    setLdCreditAccount(null);
     setDepositTo("");
   }, []);
 
@@ -173,14 +179,16 @@ export default function AccountStatementPage({ params }) {
       }
 
       if (editKind === "landlord_deduction") {
+        const payload = {
+          deduction_date: date,
+          description,
+          amount: Number(amount),
+        };
+        // Income / other credit accounts are kept as booked: send no source.
+        if (!ldCreditLocked) payload.payment_source = paymentSource;
         return putJson(
           `/api/accounting/landlord-deductions/${activeRow.source_id}`,
-          {
-            deduction_date: date,
-            description,
-            amount: Number(amount),
-            payment_source: paymentSource,
-          },
+          payload,
         );
       }
 
@@ -314,7 +322,10 @@ export default function AccountStatementPage({ params }) {
         setDate(toYmd(d.deduction_date));
         setDescription(d.description || "");
         setAmount(d.amount != null ? String(d.amount) : "");
-        setPaymentSource("bank");
+        const credit = data.credit_account || null;
+        setLdCreditAccount(credit);
+        // Open on the account actually booked; bank only when there's no GL entry.
+        setPaymentSource(credit?.payment_source === "cash" ? "cash" : "bank");
         return;
       }
 
@@ -801,16 +812,33 @@ export default function AccountStatementPage({ params }) {
                       />
                     </Field>
                   </div>
-                  <Field label="Paid from">
-                    <select
-                      value={paymentSource}
-                      onChange={(e) => setPaymentSource(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+                  {editKind === "landlord_deduction" && ldCreditLocked ? (
+                    <Field
+                      label={
+                        ldCreditAccount?.payment_source === "income"
+                          ? "Recognised as income"
+                          : "Credited to"
+                      }
                     >
-                      <option value="bank">Bank</option>
-                      <option value="cash">Cash</option>
-                    </select>
-                  </Field>
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${ldCreditAccount?.account_code || ""} • ${ldCreditAccount?.account_name || ""}`}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 text-slate-600 outline-none cursor-default"
+                      />
+                    </Field>
+                  ) : (
+                    <Field label="Paid from">
+                      <select
+                        value={paymentSource}
+                        onChange={(e) => setPaymentSource(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+                      >
+                        <option value="bank">Bank</option>
+                        <option value="cash">Cash</option>
+                      </select>
+                    </Field>
+                  )}
                 </div>
               ) : null}
 
