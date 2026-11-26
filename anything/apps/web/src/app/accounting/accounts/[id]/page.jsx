@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit2, Trash2, Save, X } from "lucide-react";
+import { Edit2, Trash2, Save, X, Undo2 } from "lucide-react";
 import useUser from "@/utils/useUser";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
 import AppHeader from "@/components/Shell/AppHeader";
@@ -76,19 +76,6 @@ export default function AccountStatementPage({ params }) {
       : editKind === "tenant_deduction" && tdCreditLocked
         ? tdCreditAccount
         : null;
-  const [depositTo, setDepositTo] = useState("");
-
-  // NEW: Fetch deposit accounts for the deposit edit form
-  const depositAccountsQuery = useQuery({
-    queryKey: ["accounting", "depositAccounts"],
-    queryFn: async () => {
-      const data = await fetchJson("/api/accounting/deposit-accounts");
-      return data.accounts || [];
-    },
-    enabled: !userLoading && !!user && canUseAccounting,
-  });
-
-  const depositAccounts = depositAccountsQuery.data || [];
 
   // Allow deep link from P&L: /accounting/accounts/:id?from=...&to=...
   useEffect(() => {
@@ -142,7 +129,6 @@ export default function AccountStatementPage({ params }) {
     setPaymentSource("bank");
     setLdCreditAccount(null);
     setTdCreditAccount(null);
-    setDepositTo("");
   }, []);
 
   const invalidateAll = useCallback(() => {
@@ -223,15 +209,6 @@ export default function AccountStatementPage({ params }) {
         );
       }
 
-      // NEW: Handle deposit updates
-      if (editKind === "deposit") {
-        return putJson(`/api/accounting/deposits/${activeRow.source_id}`, {
-          deposit_date: date,
-          description,
-          deposit_to_account_id: Number(depositTo),
-        });
-      }
-
       throw new Error(`Unknown edit kind: ${editKind}`);
     },
     onSuccess: () => {
@@ -276,7 +253,8 @@ export default function AccountStatementPage({ params }) {
         return deleteJson(`/api/accounting/tenant-deductions/${row.source_id}`);
       }
 
-      // NEW: Handle deposit deletion
+      // Deposit "Reverse": same route as the Journal's Reverse. Moves every
+      // payment in the batch back to Undeposited Funds (1130).
       if (kind === "deposit") {
         return deleteJson(`/api/accounting/deposits/${row.source_id}`);
       }
@@ -366,17 +344,6 @@ export default function AccountStatementPage({ params }) {
         setPaymentSource(credit?.payment_source === "cash" ? "cash" : "bank");
         return;
       }
-
-      if (kind === "deposit") {
-        const data = await fetchJson(
-          `/api/accounting/deposits/${row.source_id}`,
-        );
-        const dep = data.deposit;
-        setDate(toYmd(dep.transaction_date));
-        setDescription(dep.description || "");
-        setDepositTo(String(dep.debit_account_id || ""));
-        return;
-      }
     } catch (err) {
       console.error(err);
       setFormError(err?.message || "Could not load record for editing");
@@ -387,7 +354,9 @@ export default function AccountStatementPage({ params }) {
     (row, kind) => {
       if (typeof window !== "undefined") {
         const ok = window.confirm(
-          "Delete this transaction? This cannot be undone.",
+          kind === "deposit"
+            ? "Reverse this deposit? The payments will return to Undeposited Funds."
+            : "Delete this transaction? This cannot be undone.",
         );
         if (!ok) return;
       }
@@ -600,7 +569,20 @@ export default function AccountStatementPage({ params }) {
                               className="py-2 pr-3 text-right"
                               data-no-print="true"
                             >
-                              {canEdit ? (
+                              {canEdit && r._editKind === "deposit" ? (
+                                // Deposits: Reverse only (same as the Journal).
+                                // No Edit: the deposit PUT doesn't validate the
+                                // account or check funds, so it isn't safe.
+                                <button
+                                  onClick={() => openDelete(r, r._editKind)}
+                                  disabled={deleteMutation.isPending}
+                                  className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 disabled:opacity-50"
+                                  title="Reverse deposit - moves all payments back to Undeposited Funds"
+                                >
+                                  <Undo2 className="w-4 h-4" />
+                                  Reverse
+                                </button>
+                              ) : canEdit ? (
                                 <div className="inline-flex items-center gap-2 justify-end">
                                   <button
                                     onClick={() => openEdit(r, r._editKind)}
@@ -674,9 +656,7 @@ export default function AccountStatementPage({ params }) {
                         ? "Edit landlord deduction"
                         : editKind === "tenant_deduction"
                           ? "Edit tenant deduction"
-                          : editKind === "deposit"
-                            ? "Edit deposit"
-                            : "Edit"}
+                          : "Edit"}
               </div>
               <button
                 onClick={closeModal}
@@ -880,42 +860,6 @@ export default function AccountStatementPage({ params }) {
                 </div>
               ) : null}
 
-              {/* NEW: Deposit edit form */}
-              {editKind === "deposit" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Field label="Date">
-                    <DatePopoverInput
-                      value={date}
-                      onChange={setDate}
-                      placeholder="DD-MM-YYYY"
-                      className="bg-white"
-                    />
-                  </Field>
-                  <Field label="Deposit to">
-                    <select
-                      value={depositTo}
-                      onChange={(e) => setDepositTo(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
-                    >
-                      <option value="">Select account…</option>
-                      {depositAccounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.label}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <div className="md:col-span-2">
-                    <Field label="Description">
-                      <input
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
-                      />
-                    </Field>
-                  </div>
-                </div>
-              ) : null}
 
               <div className="flex items-center justify-end gap-2">
                 <button
