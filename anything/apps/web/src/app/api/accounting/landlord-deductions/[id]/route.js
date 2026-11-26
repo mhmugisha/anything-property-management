@@ -134,9 +134,8 @@ export async function PUT(request, { params: { id } }) {
     const rentPayableId = await getAccountIdByCode("2100");
     const cashId = await getAccountIdByCode("1110");
     const bankId = await getAccountIdByCode("1120");
-    const creditAccountId = paymentSource === "cash" ? cashId : bankId;
 
-    if (!rentPayableId || !creditAccountId) {
+    if (!rentPayableId) {
       return Response.json(
         { error: "Accounting accounts not set up correctly" },
         { status: 500 },
@@ -170,7 +169,35 @@ export async function PUT(request, { params: { id } }) {
 
     const oldTx = oldTxRows?.[0] || null;
 
-    if (oldTx) {
+    // A deduction recognised as income (Cr an Income account, no cash moved)
+    // keeps its income account on edit. The edit form only offers bank/cash,
+    // so payment_source is ignored for these rather than turning the income
+    // into a cash/bank outflow.
+    const oldCreditAccount = oldTx?.credit_account_id
+      ? await getAccountById(oldTx.credit_account_id)
+      : null;
+    const oldCreditType = String(oldCreditAccount?.account_type || "")
+      .trim()
+      .toLowerCase();
+    const isIncomeDeduction =
+      oldCreditType === "income" || oldCreditType === "revenue";
+
+    const creditAccountId = isIncomeDeduction
+      ? toNumber(oldTx.credit_account_id)
+      : paymentSource === "cash"
+        ? cashId
+        : bankId;
+
+    if (!creditAccountId) {
+      return Response.json(
+        { error: "Accounting accounts not set up correctly" },
+        { status: 500 },
+      );
+    }
+
+    if (isIncomeDeduction) {
+      // Crediting income never draws down cash/bank: no funds check.
+    } else if (oldTx) {
       const guard = await canCreditForUpdate({
         oldTx,
         nextCreditAccountId: creditAccountId,

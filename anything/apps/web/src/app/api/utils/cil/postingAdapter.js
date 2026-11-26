@@ -55,6 +55,10 @@ export async function postAccountingEntryFromIntents({
   referenceNumber,
   debitIntent,
   creditIntent,
+  // Optional: post the credit leg to this exact account instead of resolving
+  // creditIntent. The caller must validate the account first (e.g. a landlord
+  // deduction recognised as income). creditIntent stays as the audit label.
+  creditAccountIdOverride,
   amount,
   currency,
   createdBy,
@@ -101,7 +105,10 @@ export async function postAccountingEntryFromIntents({
     return { ok: false, status: 400, error: debitRes.error };
   }
 
-  const creditRes = await resolveAccountIntent(creditIntent);
+  const creditOverrideId = toNumber(creditAccountIdOverride);
+  const creditRes = creditOverrideId
+    ? { ok: true, accountId: creditOverrideId, method: "explicit" }
+    : await resolveAccountIntent(creditIntent);
   if (!creditRes.ok) {
     return { ok: false, status: 400, error: creditRes.error };
   }

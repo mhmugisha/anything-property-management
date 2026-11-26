@@ -11,15 +11,20 @@ export function LandlordDeductionForm({
   description,
   amount,
   paymentAccountId,
+  creditMode = "cash_bank",
+  incomeAccountId,
   landlords,
   properties,
   paymentAccounts,
+  incomeAccounts,
   onLandlordChange,
   onPropertyChange,
   onDateChange,
   onDescriptionChange,
   onAmountChange,
   onPaymentAccountChange,
+  onCreditModeChange,
+  onIncomeAccountChange,
   onReferenceChange,
   reference,
   onSubmit,
@@ -42,7 +47,9 @@ export function LandlordDeductionForm({
     !!date &&
     !!description &&
     !!amount &&
-    !!paymentAccountId;
+    (creditMode === "income" ? !!incomeAccountId : !!paymentAccountId);
+
+  const isIncome = creditMode === "income";
 
   const filteredLandlords = useMemo(() => {
     if (!landlordSearch.trim()) return landlords || [];
@@ -91,6 +98,11 @@ export function LandlordDeductionForm({
     showLandlordDropdown && filteredLandlords.length > 0;
 
   const paymentAccountOptions = (paymentAccounts || []).map((acc) => ({
+    value: String(acc.id),
+    label: `${acc.account_code} • ${acc.account_name}`,
+  }));
+
+  const incomeAccountOptions = (incomeAccounts || []).map((acc) => ({
     value: String(acc.id),
     label: `${acc.account_code} • ${acc.account_name}`,
   }));
@@ -218,7 +230,7 @@ export function LandlordDeductionForm({
           </Field>
         </div>
 
-        {/* Row 3: Description | Paid from Account */}
+        {/* Row 3: Description | Deduction type */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Field label="Description">
             <input
@@ -229,39 +241,84 @@ export function LandlordDeductionForm({
             />
           </Field>
 
-          <Field label="Paid from Account">
-            <select
-              value={paymentAccountId}
-              onChange={(e) => onPaymentAccountChange(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
-            >
-              <option value="">Select account…</option>
-              {paymentAccountOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+          <Field label="Deduction type">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 py-2 text-sm text-slate-700">
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="landlord-deduction-credit-mode"
+                  value="cash_bank"
+                  checked={!isIncome}
+                  onChange={() => onCreditModeChange?.("cash_bank")}
+                />
+                Paid from (cash/bank)
+              </label>
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="landlord-deduction-credit-mode"
+                  value="income"
+                  checked={isIncome}
+                  onChange={() => onCreditModeChange?.("income")}
+                />
+                Recognise as income
+              </label>
+            </div>
           </Field>
         </div>
 
-        {/* Row 4: Reference (optional) */}
-        <Field label="Reference (Optional)">
-          <input
-            value={reference || ""}
-            onChange={(e) => {
-              onReferenceChange(e.target.value);
-              if (refWarning) setRefWarning(false);
-            }}
-            className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
-            placeholder="e.g. MV-2026-001"
-          />
-          {refWarning && (!reference || !reference.trim()) ? (
-            <div className="mt-1 text-[11px] text-amber-600">
-              No reference number — are you sure?
-            </div>
-          ) : null}
-        </Field>
+        {/* Row 4: Credit account (cash/bank or income) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {isIncome ? (
+            <Field label="Income account (no cash paid out)">
+              <select
+                value={incomeAccountId || ""}
+                onChange={(e) => onIncomeAccountChange?.(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+              >
+                <option value="">Select income account…</option>
+                {incomeAccountOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <Field label="Paid from Account (cash/bank)">
+              <select
+                value={paymentAccountId}
+                onChange={(e) => onPaymentAccountChange(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+              >
+                <option value="">Select account…</option>
+                {paymentAccountOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          {/* Reference (optional) */}
+          <Field label="Reference (Optional)">
+            <input
+              value={reference || ""}
+              onChange={(e) => {
+                onReferenceChange(e.target.value);
+                if (refWarning) setRefWarning(false);
+              }}
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+              placeholder="e.g. MV-2026-001"
+            />
+            {refWarning && (!reference || !reference.trim()) ? (
+              <div className="mt-1 text-[11px] text-amber-600">
+                No reference number — are you sure?
+              </div>
+            ) : null}
+          </Field>
+        </div>
       </div>
 
       {landlordDropdownVisible && (
@@ -283,7 +340,9 @@ export function LandlordDeductionForm({
       </div>
 
       <div className="mt-4 text-xs text-slate-500 text-center">
-        Deduct expenses paid on behalf of the landlord
+        {isIncome
+          ? "Charge the landlord a fee or commission: reduces what is due to the landlord and records company income. No cash or bank is touched."
+          : "Deduct expenses paid on behalf of the landlord"}
       </div>
     </div>
   );

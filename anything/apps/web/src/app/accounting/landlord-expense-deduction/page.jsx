@@ -32,6 +32,9 @@ export default function LandlordExpenseDeductionPage() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentAccountId, setPaymentAccountId] = useState("");
+  // "cash_bank" (paid out of cash/bank) or "income" (recognised as income)
+  const [creditMode, setCreditMode] = useState("cash_bank");
+  const [incomeAccountId, setIncomeAccountId] = useState("");
   const [reference, setReference] = useState("");
 
   const lookups = useAccountingLookups(
@@ -49,6 +52,19 @@ export default function LandlordExpenseDeductionPage() {
         a.is_active !== false &&
         (a.account_code === "1110" || a.account_code === "1120"),
     );
+  }, [accountRegistry.accounts]);
+
+  // Income accounts a deduction may be recognised as (server re-validates).
+  const incomeAccounts = useMemo(() => {
+    const accounts = accountRegistry.accounts || [];
+    return accounts.filter((a) => {
+      const type = String(a.account_type || "").trim().toLowerCase();
+      return (
+        a.is_active !== false &&
+        (type === "income" || type === "revenue") &&
+        a.account_code !== "2100"
+      );
+    });
   }, [accountRegistry.accounts]);
 
   const createLandlordDeductionMutation = useCreateLandlordDeduction();
@@ -89,7 +105,15 @@ export default function LandlordExpenseDeductionPage() {
       deduction_date: date,
       description,
       amount: amount === "" ? null : Number(amount),
-      payment_account_id: paymentAccountId ? Number(paymentAccountId) : null,
+      credit_mode: creditMode,
+      payment_account_id:
+        creditMode === "cash_bank" && paymentAccountId
+          ? Number(paymentAccountId)
+          : null,
+      income_account_id:
+        creditMode === "income" && incomeAccountId
+          ? Number(incomeAccountId)
+          : null,
       reference_number: reference.trim() || null,
     };
 
@@ -108,6 +132,8 @@ export default function LandlordExpenseDeductionPage() {
     description,
     amount,
     paymentAccountId,
+    creditMode,
+    incomeAccountId,
     reference,
     createLandlordDeductionMutation,
   ]);
@@ -175,16 +201,21 @@ export default function LandlordExpenseDeductionPage() {
               description={description}
               amount={amount}
               paymentAccountId={paymentAccountId}
+              creditMode={creditMode}
+              incomeAccountId={incomeAccountId}
               reference={reference}
               landlords={lookups.landlords || []}
               properties={lookups.properties || []}
               paymentAccounts={paymentAccounts}
+              incomeAccounts={incomeAccounts}
               onLandlordChange={onLandlordChange}
               onPropertyChange={setPropertyId}
               onDateChange={setDate}
               onDescriptionChange={setDescription}
               onAmountChange={setAmount}
               onPaymentAccountChange={setPaymentAccountId}
+              onCreditModeChange={setCreditMode}
+              onIncomeAccountChange={setIncomeAccountId}
               onReferenceChange={setReference}
               onSubmit={onSubmit}
               isPending={createLandlordDeductionMutation.isPending}
