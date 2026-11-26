@@ -9,6 +9,7 @@ import MobileMenu from "@/components/Shell/MobileMenu";
 import AccountingSidebar from "@/components/Shell/AccountingSidebar";
 import AccessDenied from "@/components/Shell/AccessDenied";
 import { fetchJson, postJson } from "@/utils/api";
+import { voidPolicyFor } from "@/utils/voidPolicy";
 import { X } from "lucide-react";
 
 function fmt(n) {
@@ -239,7 +240,11 @@ export default function VoidTransactionPage() {
         <div className="max-w-[90%] mx-auto p-4 md:p-6 space-y-6">
           <div>
             <h1 className="text-2xl font-semibold text-slate-800">Void Transaction</h1>
-            <p className="text-slate-500 text-sm mt-0.5">Search for and void accidental GL entries</p>
+            <p className="text-slate-500 text-sm mt-0.5">
+              Search for and void accidental manual journal entries. Entries
+              created by a deduction, payout, payment, deposit, invoice or
+              payroll must be deleted from that record instead.
+            </p>
           </div>
 
           {/* Search filters */}
@@ -333,7 +338,11 @@ export default function VoidTransactionPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {transactions.map((tx) => (
+                  {transactions.map((tx) => {
+                    // Only manual / GL-only entries can be voided; the API
+                    // enforces the same rule (409) for source-linked rows.
+                    const policy = voidPolicyFor(tx);
+                    return (
                     <tr key={tx.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{fmtDate(tx.transaction_date)}</td>
                       <td className="px-4 py-3 text-slate-800 max-w-xs">
@@ -352,15 +361,30 @@ export default function VoidTransactionPage() {
                         {tx.source_type || "—"}
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => handleVoidClick(Number(tx.id))}
-                          className="px-3 py-1 text-xs rounded-lg border border-red-300 text-red-600 hover:bg-red-50 whitespace-nowrap"
-                        >
-                          Void
-                        </button>
+                        {policy.ok ? (
+                          <button
+                            onClick={() => handleVoidClick(Number(tx.id))}
+                            className="px-3 py-1 text-xs rounded-lg border border-red-300 text-red-600 hover:bg-red-50 whitespace-nowrap"
+                          >
+                            Void
+                          </button>
+                        ) : (
+                          <span
+                            className="inline-block px-3 py-1 text-xs rounded-lg border border-gray-200 text-slate-400 whitespace-nowrap cursor-help"
+                            title={policy.error}
+                          >
+                            Can't void
+                          </span>
+                        )}
+                        {!policy.ok ? (
+                          <div className="mt-1 text-[11px] text-slate-500 max-w-[220px] whitespace-normal">
+                            {policy.error}
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

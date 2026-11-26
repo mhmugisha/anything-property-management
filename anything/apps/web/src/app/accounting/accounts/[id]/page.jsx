@@ -15,6 +15,12 @@ import { formatCurrencyUGX } from "@/utils/formatCurrency";
 import PrintPreviewButtons from "@/components/PrintPreviewButtons";
 import DatePopoverInput from "@/components/DatePopoverInput";
 
+
+// Deductions can be edited/deleted from ANY account they touch (e.g. 2100
+// Due to Landlords, 1210, or the income account of an income deduction),
+// not only from Cash/Bank. Other kinds keep the Cash/Bank-only rule.
+const ANY_ACCOUNT_KINDS = ["landlord_deduction", "tenant_deduction"];
+
 export default function AccountStatementPage({ params }) {
   const accountId = params?.id;
   const printRef = useRef(null);
@@ -391,9 +397,7 @@ export default function AccountStatementPage({ params }) {
   );
 
   const rowsWithActions = useMemo(() => {
-    if (!isEditableAccount) return rows;
-
-    return rows.map((t) => {
+    const mapped = rows.map((t) => {
       const sourceType = t.source_type || null;
       let kind = null;
 
@@ -430,7 +434,15 @@ export default function AccountStatementPage({ params }) {
 
       return { ...t, _editKind: kind };
     });
+
+    if (isEditableAccount) return mapped;
+    return mapped.map((t) =>
+      ANY_ACCOUNT_KINDS.includes(t._editKind) ? t : { ...t, _editKind: null },
+    );
   }, [rows, isEditableAccount]);
+
+  const showActionsColumn =
+    isEditableAccount || rowsWithActions.some((r) => !!r._editKind);
 
   if (isLoading) {
     return (
@@ -538,7 +550,7 @@ export default function AccountStatementPage({ params }) {
                       <th className="py-2 pr-3 text-right">Credit (UGX)</th>
                       <th className="py-2 pr-3 text-right">Balance (UGX)</th>
                       <th className="py-2 pr-3">Created By</th>
-                      {isEditableAccount ? (
+                      {showActionsColumn ? (
                         <th
                           className="py-2 pr-3 text-right"
                           data-no-print="true"
@@ -559,8 +571,7 @@ export default function AccountStatementPage({ params }) {
                         : "—";
                       const balanceText = formatCurrencyUGX(r.balance);
 
-                      const canEdit =
-                        isAdmin && isEditableAccount && !!r._editKind;
+                      const canEdit = isAdmin && !!r._editKind;
 
                       return (
                         <tr key={r.id} className="border-b last:border-b-0">
@@ -576,7 +587,7 @@ export default function AccountStatementPage({ params }) {
                           <td className="py-2 pr-3 text-slate-600">
                             {r.created_by_name || "—"}
                           </td>
-                          {isEditableAccount ? (
+                          {showActionsColumn ? (
                             <td
                               className="py-2 pr-3 text-right"
                               data-no-print="true"
@@ -628,7 +639,7 @@ export default function AccountStatementPage({ params }) {
                         {finalBalanceText}
                       </td>
                       <td className="py-2 pr-3 text-slate-400">—</td>
-                      {isEditableAccount ? <td className="py-2 pr-3" /> : null}
+                      {showActionsColumn ? <td className="py-2 pr-3" /> : null}
                     </tr>
                   </tfoot>
                 </table>
