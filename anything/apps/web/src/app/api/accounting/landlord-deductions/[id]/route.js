@@ -109,8 +109,49 @@ export async function PUT(request, { params: { id } }) {
 
     const body = await request.json();
 
-    const propertyIdRaw = body?.property_id;
-    const propertyId = toNumber(propertyIdRaw);
+    const isProvided = (v) => v !== undefined && v !== null && v !== "";
+
+    // property_id / landlord_id are optional on edit: the edit modals don't
+    // send them, so fall back to the deduction's own values. If a client does
+    // send them, they are validated.
+    const propertyIdSent = isProvided(body?.property_id);
+    const propertyId = propertyIdSent
+      ? toNumber(body.property_id)
+      : toNumber(oldDeduction.property_id);
+
+    if (propertyIdSent && (!propertyId || propertyId <= 0)) {
+      return Response.json({ error: "Invalid property_id" }, { status: 400 });
+    }
+
+    if (isProvided(body?.landlord_id)) {
+      const landlordIdSent = toNumber(body.landlord_id);
+      if (!landlordIdSent || landlordIdSent <= 0) {
+        return Response.json({ error: "Invalid landlord_id" }, { status: 400 });
+      }
+      // Moving a deduction to another landlord is not supported on edit.
+      if (landlordIdSent !== Number(oldDeduction.landlord_id)) {
+        return Response.json(
+          { error: "landlord_id cannot be changed when editing a deduction" },
+          { status: 400 },
+        );
+      }
+    }
+
+    // A property sent explicitly must belong to the deduction's landlord.
+    if (propertyIdSent && propertyId !== Number(oldDeduction.property_id)) {
+      const propRows = await sql`
+        SELECT id FROM properties
+        WHERE id = ${propertyId}
+          AND landlord_id = ${oldDeduction.landlord_id}
+        LIMIT 1
+      `;
+      if (!propRows?.length) {
+        return Response.json(
+          { error: "Property does not belong to this deduction's landlord" },
+          { status: 400 },
+        );
+      }
+    }
 
     const deductionDate = (body?.deduction_date || "").trim();
     const description = (body?.description || "").trim();
@@ -120,8 +161,9 @@ export async function PUT(request, { params: { id } }) {
     if (!propertyId || !deductionDate || !description || !amount) {
       return Response.json(
         {
-          error:
-            "property_id, deduction_date, description, and amount are required",
+          error: !propertyId
+            ? "Deduction has no property; property_id is required"
+            : "deduction_date, description, and amount are required",
         },
         { status: 400 },
       );
