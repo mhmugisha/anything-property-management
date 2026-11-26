@@ -60,6 +60,15 @@ export default function AccountStatementPage({ params }) {
   const ldCreditLocked =
     ldCreditAccount?.payment_source === "income" ||
     ldCreditAccount?.payment_source === "other";
+  // Tenant deduction: current GL credit (cash/bank) account (from GET /[id]).
+  const [tdCreditAccount, setTdCreditAccount] = useState(null);
+  const tdCreditLocked = tdCreditAccount?.payment_source === "other";
+  const lockedCreditAccount =
+    editKind === "landlord_deduction" && ldCreditLocked
+      ? ldCreditAccount
+      : editKind === "tenant_deduction" && tdCreditLocked
+        ? tdCreditAccount
+        : null;
   const [depositTo, setDepositTo] = useState("");
 
   // NEW: Fetch deposit accounts for the deposit edit form
@@ -125,6 +134,7 @@ export default function AccountStatementPage({ params }) {
     setNotes("");
     setPaymentSource("bank");
     setLdCreditAccount(null);
+    setTdCreditAccount(null);
     setDepositTo("");
   }, []);
 
@@ -193,14 +203,16 @@ export default function AccountStatementPage({ params }) {
       }
 
       if (editKind === "tenant_deduction") {
+        const payload = {
+          deduction_date: date,
+          description,
+          amount: Number(amount),
+        };
+        // A non-cash/bank credit account is kept as booked: send no source.
+        if (!tdCreditLocked) payload.payment_source = paymentSource;
         return putJson(
           `/api/accounting/tenant-deductions/${activeRow.source_id}`,
-          {
-            deduction_date: date,
-            description,
-            amount: Number(amount),
-            payment_source: paymentSource,
-          },
+          payload,
         );
       }
 
@@ -337,7 +349,10 @@ export default function AccountStatementPage({ params }) {
         setDate(toYmd(d.deduction_date));
         setDescription(d.description || "");
         setAmount(d.amount != null ? String(d.amount) : "");
-        setPaymentSource("bank");
+        const credit = data.credit_account || null;
+        setTdCreditAccount(credit);
+        // Open on the account actually booked; bank only when there's no GL entry.
+        setPaymentSource(credit?.payment_source === "cash" ? "cash" : "bank");
         return;
       }
 
@@ -812,10 +827,10 @@ export default function AccountStatementPage({ params }) {
                       />
                     </Field>
                   </div>
-                  {editKind === "landlord_deduction" && ldCreditLocked ? (
+                  {lockedCreditAccount ? (
                     <Field
                       label={
-                        ldCreditAccount?.payment_source === "income"
+                        lockedCreditAccount.payment_source === "income"
                           ? "Recognised as income"
                           : "Credited to"
                       }
@@ -823,7 +838,7 @@ export default function AccountStatementPage({ params }) {
                       <input
                         type="text"
                         readOnly
-                        value={`${ldCreditAccount?.account_code || ""} • ${ldCreditAccount?.account_name || ""}`}
+                        value={`${lockedCreditAccount.account_code || ""} • ${lockedCreditAccount.account_name || ""}`}
                         className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 text-slate-600 outline-none cursor-default"
                       />
                     </Field>

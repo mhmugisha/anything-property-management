@@ -75,7 +75,39 @@ export async function GET(request, { params: { id } }) {
     if (!deduction)
       return Response.json({ error: "Not found" }, { status: 404 });
 
-    return Response.json({ deduction });
+    // Current cash/bank account, read from the deduction's GL entry
+    // (Dr 1210 Tenant Receivable / Cr cash-bank: the CREDIT leg), so the edit
+    // modal can open on what is actually booked.
+    const creditRows = await sql`
+      SELECT c.id, c.account_code, c.account_name, c.account_type
+      FROM transactions t
+      JOIN chart_of_accounts c ON c.id = t.credit_account_id
+      WHERE t.source_type = 'tenant_deduction'
+        AND t.source_id = ${deductionId}
+        AND COALESCE(t.is_deleted,false) = false
+      ORDER BY t.id DESC
+      LIMIT 1
+    `;
+    const acct = creditRows?.[0] || null;
+    let paymentSource = null; // cash | bank | other | null (no GL)
+    if (acct) {
+      if (acct.account_code === "1110") paymentSource = "cash";
+      else if (acct.account_code === "1120") paymentSource = "bank";
+      else paymentSource = "other";
+    }
+
+    return Response.json({
+      deduction,
+      credit_account: acct
+        ? {
+            id: acct.id,
+            account_code: acct.account_code,
+            account_name: acct.account_name,
+            account_type: acct.account_type,
+            payment_source: paymentSource,
+          }
+        : null,
+    });
   } catch (error) {
     console.error("GET /api/accounting/tenant-deductions/[id] error", error);
     return Response.json(
@@ -111,7 +143,12 @@ export async function PUT(request, { params: { id } }) {
     const deductionDate = (body?.deduction_date || "").trim();
     const description = (body?.description || "").trim();
     const amount = toNumber(body?.amount);
-    const paymentSource = (body?.payment_source || "bank").trim(); // bank | cash
+    // bank | cash. When omitted, the existing GL credit account is kept.
+    const paymentSourceRaw = String(body?.payment_source || "").trim();
+    const paymentSource =
+      paymentSourceRaw === "cash" || paymentSourceRaw === "bank"
+        ? paymentSourceRaw
+        : null;
 
     if (!deductionDate || !description || !amount) {
       return Response.json(
@@ -127,9 +164,8 @@ export async function PUT(request, { params: { id } }) {
     const receivableId = await getAccountIdByCode("1210");
     const cashId = await getAccountIdByCode("1110");
     const bankId = await getAccountIdByCode("1120");
-    const creditAccountId = paymentSource === "cash" ? cashId : bankId;
 
-    if (!receivableId || !creditAccountId) {
+    if (!receivableId) {
       return Response.json(
         { error: "Accounting accounts not set up correctly" },
         { status: 500 },
@@ -147,6 +183,24 @@ export async function PUT(request, { params: { id } }) {
     `;
 
     const oldTx = oldTxRows?.[0] || null;
+
+    // An explicit cash/bank choice wins. Otherwise keep the credit account as
+    // booked; with no GL entry to keep, fall back to bank as before.
+    let creditAccountId;
+    if (paymentSource) {
+      creditAccountId = paymentSource === "cash" ? cashId : bankId;
+    } else if (oldTx?.credit_account_id) {
+      creditAccountId = toNumber(oldTx.credit_account_id);
+    } else {
+      creditAccountId = bankId;
+    }
+
+    if (!creditAccountId) {
+      return Response.json(
+        { error: "Accounting accounts not set up correctly" },
+        { status: 500 },
+      );
+    }
 
     if (oldTx) {
       const guard = await canCreditForUpdate({
