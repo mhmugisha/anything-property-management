@@ -1,6 +1,7 @@
 import sql from "@/app/api/utils/sql";
 import { requirePermission, writeAuditLog } from "@/app/api/utils/staff";
 import { getAccountIdByCode } from "@/app/api/utils/accounting";
+import { voidPolicyFor } from "@/utils/voidPolicy";
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -26,6 +27,22 @@ export async function POST(request, { params: { id } }) {
     const tx = rows?.[0] || null;
     if (!tx) return Response.json({ error: "Transaction not found" }, { status: 404 });
 
+    // Void only soft-deletes this GL row, so it is allowed only where that is
+    // a complete undo (manual journals, GL-only entries). Rows that belong to
+    // a source record must be undone from that record, or it is orphaned
+    // (e.g. a landlord deduction still on the Payment Note).
+    const policy = voidPolicyFor(tx);
+    if (!policy.ok) {
+      return Response.json(
+        {
+          error: policy.error,
+          source_type: policy.sourceType,
+          source_id: tx.source_id ?? null,
+        },
+        { status: 409 },
+      );
+    }
+
     // Block voiding of an already-allocated Holding entry — it would orphan
     // the Dr-Holding side of the allocation payment.
     const holdingAccountId = await getAccountIdByCode("2500");
@@ -48,16 +65,9 @@ export async function POST(request, { params: { id } }) {
     const confirm = body?.confirm === true;
     const reason = typeof body?.reason === "string" ? body.reason.trim() || null : null;
 
-    // Build warnings based on source_type
+    // Source-linked rows are blocked above, so the old per-source warnings
+    // (payout / maintenance / payroll) can no longer apply.
     const warnings = [];
-    const src = tx.source_type || "";
-    if (src === "landlord_payout") {
-      warnings.push("This transaction is linked to a landlord payout. Voiding it will affect the landlord's balance.");
-    } else if (src === "maintenance") {
-      warnings.push(`This transaction is linked to maintenance request #${tx.source_id}. The GL entry will be removed but the maintenance record will remain.`);
-    } else if (["payroll", "payroll_advance", "payroll_loan", "termination"].includes(src)) {
-      warnings.push("This transaction is part of a payroll run. Voiding may cause payroll records to be inconsistent.");
-    }
 
     if (!confirm) {
       return Response.json({

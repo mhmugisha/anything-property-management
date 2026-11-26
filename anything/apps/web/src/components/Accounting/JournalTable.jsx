@@ -58,6 +58,20 @@ export function JournalTable({
 
   // Deduction source
   const [paymentSource, setPaymentSource] = useState("bank");
+  // Landlord deduction: current GL credit account (from GET /[id]).
+  const [ldCreditAccount, setLdCreditAccount] = useState(null);
+  const ldCreditLocked =
+    ldCreditAccount?.payment_source === "income" ||
+    ldCreditAccount?.payment_source === "other";
+  // Tenant deduction: current GL credit (cash/bank) account (from GET /[id]).
+  const [tdCreditAccount, setTdCreditAccount] = useState(null);
+  const tdCreditLocked = tdCreditAccount?.payment_source === "other";
+  const lockedCreditAccount =
+    editKind === "landlord_deduction" && ldCreditLocked
+      ? ldCreditAccount
+      : editKind === "tenant_deduction" && tdCreditLocked
+        ? tdCreditAccount
+        : null;
 
   // Operating budget block (409) + Admin override — manual entries only
   const [budgetBlock, setBudgetBlock] = useState(null);
@@ -79,6 +93,8 @@ export function JournalTable({
     setPaymentMethod("");
     setNotes("");
     setPaymentSource("bank");
+    setLdCreditAccount(null);
+    setTdCreditAccount(null);
     setBudgetBlock(null);
     setBudgetOverride(false);
     setBudgetOverrideReason("");
@@ -164,8 +180,9 @@ export function JournalTable({
           deduction_date: date,
           description,
           amount: Number(amount),
-          payment_source: paymentSource,
         };
+        // Income / other credit accounts are kept as booked: send no source.
+        if (!ldCreditLocked) payload.payment_source = paymentSource;
         return putJson(
           `/api/accounting/landlord-deductions/${activeRow.source_id}`,
           payload,
@@ -177,8 +194,9 @@ export function JournalTable({
           deduction_date: date,
           description,
           amount: Number(amount),
-          payment_source: paymentSource,
         };
+        // A non-cash/bank credit account is kept as booked: send no source.
+        if (!tdCreditLocked) payload.payment_source = paymentSource;
         return putJson(
           `/api/accounting/tenant-deductions/${activeRow.source_id}`,
           payload,
@@ -195,6 +213,8 @@ export function JournalTable({
     },
     onError: (err) => {
       console.error(err);
+      // Refetch anyway so the list never shows stale values after a failure.
+      invalidateAll();
       setSuccessMessage(null);
       if (err?.status === 409 && err?.payload?.overage != null) {
         setBudgetBlock(err.payload);
@@ -330,8 +350,10 @@ export function JournalTable({
         setDate(toYmd(d.deduction_date));
         setDescription(d.description || "");
         setAmount(d.amount != null ? String(d.amount) : "");
-        // We can't reliably infer bank vs cash from old data; default to bank.
-        setPaymentSource("bank");
+        const credit = data.credit_account || null;
+        setLdCreditAccount(credit);
+        // Open on the account actually booked; bank only when there's no GL entry.
+        setPaymentSource(credit?.payment_source === "cash" ? "cash" : "bank");
         return;
       }
 
@@ -343,7 +365,10 @@ export function JournalTable({
         setDate(toYmd(d.deduction_date));
         setDescription(d.description || "");
         setAmount(d.amount != null ? String(d.amount) : "");
-        setPaymentSource("bank");
+        const credit = data.credit_account || null;
+        setTdCreditAccount(credit);
+        // Open on the account actually booked; bank only when there's no GL entry.
+        setPaymentSource(credit?.payment_source === "cash" ? "cash" : "bank");
       }
     } catch (err) {
       console.error(err);
@@ -785,16 +810,33 @@ export function JournalTable({
                       />
                     </Field>
                   </div>
-                  <Field label="Paid from">
-                    <select
-                      value={paymentSource}
-                      onChange={(e) => setPaymentSource(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+                  {lockedCreditAccount ? (
+                    <Field
+                      label={
+                        lockedCreditAccount.payment_source === "income"
+                          ? "Recognised as income"
+                          : "Credited to"
+                      }
                     >
-                      <option value="bank">Bank</option>
-                      <option value="cash">Cash</option>
-                    </select>
-                  </Field>
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${lockedCreditAccount.account_code || ""} • ${lockedCreditAccount.account_name || ""}`}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 text-slate-600 outline-none cursor-default"
+                      />
+                    </Field>
+                  ) : (
+                    <Field label="Paid from">
+                      <select
+                        value={paymentSource}
+                        onChange={(e) => setPaymentSource(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+                      >
+                        <option value="bank">Bank</option>
+                        <option value="cash">Cash</option>
+                      </select>
+                    </Field>
+                  )}
                   <div className="md:col-span-1" />
                 </div>
               ) : null}

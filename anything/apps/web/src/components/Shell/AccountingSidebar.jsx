@@ -64,7 +64,6 @@ export default function AccountingSidebar({ isAdmin: isAdminProp = false }) {
               { title: "Credit Landlord", href: "/accounting/credit-landlord" },
             ]
           : []),
-        ...(isAdmin ? [{ title: "Void Transaction", href: "/accounting/void-transaction" }] : []),
       ],
     },
     {

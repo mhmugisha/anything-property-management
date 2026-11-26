@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit2, Trash2, Save, X } from "lucide-react";
+import { Edit2, Trash2, Save, X, Undo2 } from "lucide-react";
 import useUser from "@/utils/useUser";
 import { useStaffProfile } from "@/hooks/useStaffProfile";
 import AppHeader from "@/components/Shell/AppHeader";
@@ -14,6 +14,13 @@ import { fetchJson, putJson, deleteJson } from "@/utils/api";
 import { formatCurrencyUGX } from "@/utils/formatCurrency";
 import PrintPreviewButtons from "@/components/PrintPreviewButtons";
 import DatePopoverInput from "@/components/DatePopoverInput";
+
+
+// Source-record edits (deductions, payouts, payments, deposits) are offered on
+// EVERY account page the entry appears on, and call the same routes as the
+// Journal. Only manual-journal edits are limited to Cash/Bank pages
+// (isEditableAccount).
+const MANUAL_KIND = "manual";
 
 export default function AccountStatementPage({ params }) {
   const accountId = params?.id;
@@ -55,19 +62,20 @@ export default function AccountStatementPage({ params }) {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [notes, setNotes] = useState("");
   const [paymentSource, setPaymentSource] = useState("bank");
-  const [depositTo, setDepositTo] = useState("");
-
-  // NEW: Fetch deposit accounts for the deposit edit form
-  const depositAccountsQuery = useQuery({
-    queryKey: ["accounting", "depositAccounts"],
-    queryFn: async () => {
-      const data = await fetchJson("/api/accounting/deposit-accounts");
-      return data.accounts || [];
-    },
-    enabled: !userLoading && !!user && canUseAccounting,
-  });
-
-  const depositAccounts = depositAccountsQuery.data || [];
+  // Landlord deduction: current GL credit account (from GET /[id]).
+  const [ldCreditAccount, setLdCreditAccount] = useState(null);
+  const ldCreditLocked =
+    ldCreditAccount?.payment_source === "income" ||
+    ldCreditAccount?.payment_source === "other";
+  // Tenant deduction: current GL credit (cash/bank) account (from GET /[id]).
+  const [tdCreditAccount, setTdCreditAccount] = useState(null);
+  const tdCreditLocked = tdCreditAccount?.payment_source === "other";
+  const lockedCreditAccount =
+    editKind === "landlord_deduction" && ldCreditLocked
+      ? ldCreditAccount
+      : editKind === "tenant_deduction" && tdCreditLocked
+        ? tdCreditAccount
+        : null;
 
   // Allow deep link from P&L: /accounting/accounts/:id?from=...&to=...
   useEffect(() => {
@@ -119,7 +127,8 @@ export default function AccountStatementPage({ params }) {
     setPaymentMethod("");
     setNotes("");
     setPaymentSource("bank");
-    setDepositTo("");
+    setLdCreditAccount(null);
+    setTdCreditAccount(null);
   }, []);
 
   const invalidateAll = useCallback(() => {
@@ -173,46 +182,45 @@ export default function AccountStatementPage({ params }) {
       }
 
       if (editKind === "landlord_deduction") {
+        const payload = {
+          deduction_date: date,
+          description,
+          amount: Number(amount),
+        };
+        // Income / other credit accounts are kept as booked: send no source.
+        if (!ldCreditLocked) payload.payment_source = paymentSource;
         return putJson(
           `/api/accounting/landlord-deductions/${activeRow.source_id}`,
-          {
-            deduction_date: date,
-            description,
-            amount: Number(amount),
-            payment_source: paymentSource,
-          },
+          payload,
         );
       }
 
       if (editKind === "tenant_deduction") {
+        const payload = {
+          deduction_date: date,
+          description,
+          amount: Number(amount),
+        };
+        // A non-cash/bank credit account is kept as booked: send no source.
+        if (!tdCreditLocked) payload.payment_source = paymentSource;
         return putJson(
           `/api/accounting/tenant-deductions/${activeRow.source_id}`,
-          {
-            deduction_date: date,
-            description,
-            amount: Number(amount),
-            payment_source: paymentSource,
-          },
+          payload,
         );
-      }
-
-      // NEW: Handle deposit updates
-      if (editKind === "deposit") {
-        return putJson(`/api/accounting/deposits/${activeRow.source_id}`, {
-          deposit_date: date,
-          description,
-          deposit_to_account_id: Number(depositTo),
-        });
       }
 
       throw new Error(`Unknown edit kind: ${editKind}`);
     },
     onSuccess: () => {
+      setFormError(null);
+      // Refetch so the statement shows the saved values.
       invalidateAll();
       closeModal();
     },
     onError: (err) => {
       console.error(err);
+      // Refetch anyway so the list never shows stale values after a failure.
+      invalidateAll();
       setFormError(err?.message || "Could not save changes");
     },
   });
@@ -245,7 +253,8 @@ export default function AccountStatementPage({ params }) {
         return deleteJson(`/api/accounting/tenant-deductions/${row.source_id}`);
       }
 
-      // NEW: Handle deposit deletion
+      // Deposit "Reverse": same route as the Journal's Reverse. Moves every
+      // payment in the batch back to Undeposited Funds (1130).
       if (kind === "deposit") {
         return deleteJson(`/api/accounting/deposits/${row.source_id}`);
       }
@@ -314,7 +323,10 @@ export default function AccountStatementPage({ params }) {
         setDate(toYmd(d.deduction_date));
         setDescription(d.description || "");
         setAmount(d.amount != null ? String(d.amount) : "");
-        setPaymentSource("bank");
+        const credit = data.credit_account || null;
+        setLdCreditAccount(credit);
+        // Open on the account actually booked; bank only when there's no GL entry.
+        setPaymentSource(credit?.payment_source === "cash" ? "cash" : "bank");
         return;
       }
 
@@ -326,18 +338,10 @@ export default function AccountStatementPage({ params }) {
         setDate(toYmd(d.deduction_date));
         setDescription(d.description || "");
         setAmount(d.amount != null ? String(d.amount) : "");
-        setPaymentSource("bank");
-        return;
-      }
-
-      if (kind === "deposit") {
-        const data = await fetchJson(
-          `/api/accounting/deposits/${row.source_id}`,
-        );
-        const dep = data.deposit;
-        setDate(toYmd(dep.transaction_date));
-        setDescription(dep.description || "");
-        setDepositTo(String(dep.debit_account_id || ""));
+        const credit = data.credit_account || null;
+        setTdCreditAccount(credit);
+        // Open on the account actually booked; bank only when there's no GL entry.
+        setPaymentSource(credit?.payment_source === "cash" ? "cash" : "bank");
         return;
       }
     } catch (err) {
@@ -350,7 +354,9 @@ export default function AccountStatementPage({ params }) {
     (row, kind) => {
       if (typeof window !== "undefined") {
         const ok = window.confirm(
-          "Delete this transaction? This cannot be undone.",
+          kind === "deposit"
+            ? "Reverse this deposit? The payments will return to Undeposited Funds."
+            : "Delete this transaction? This cannot be undone.",
         );
         if (!ok) return;
       }
@@ -361,9 +367,7 @@ export default function AccountStatementPage({ params }) {
   );
 
   const rowsWithActions = useMemo(() => {
-    if (!isEditableAccount) return rows;
-
-    return rows.map((t) => {
+    const mapped = rows.map((t) => {
       const sourceType = t.source_type || null;
       let kind = null;
 
@@ -383,7 +387,12 @@ export default function AccountStatementPage({ params }) {
       if (sourceType === "manual") {
         kind = "manual";
       } else if (sourceType === "payment") {
-        const isReceipt = t.debit > 0;
+        // Actions go on the receipt row only (not the commission row). On
+        // Cash/Bank pages that's the debit side, as before; elsewhere use the
+        // Journal's rule (receipt = Dr 1130 Undeposited Funds).
+        const isReceipt = isEditableAccount
+          ? t.debit > 0
+          : String(t.debit_code || "") === "1130";
         kind = isReceipt ? "payment" : null;
       } else if (sourceType === "landlord_payout") {
         kind = "landlord_payout";
@@ -400,7 +409,17 @@ export default function AccountStatementPage({ params }) {
 
       return { ...t, _editKind: kind };
     });
+
+    // Manual journals stay editable only on Cash/Bank pages. Source-record
+    // kinds keep their actions on every account page.
+    if (isEditableAccount) return mapped;
+    return mapped.map((t) =>
+      t._editKind === MANUAL_KIND ? { ...t, _editKind: null } : t,
+    );
   }, [rows, isEditableAccount]);
+
+  const showActionsColumn =
+    isEditableAccount || rowsWithActions.some((r) => !!r._editKind);
 
   if (isLoading) {
     return (
@@ -508,7 +527,7 @@ export default function AccountStatementPage({ params }) {
                       <th className="py-2 pr-3 text-right">Credit (UGX)</th>
                       <th className="py-2 pr-3 text-right">Balance (UGX)</th>
                       <th className="py-2 pr-3">Created By</th>
-                      {isEditableAccount ? (
+                      {showActionsColumn ? (
                         <th
                           className="py-2 pr-3 text-right"
                           data-no-print="true"
@@ -529,8 +548,7 @@ export default function AccountStatementPage({ params }) {
                         : "—";
                       const balanceText = formatCurrencyUGX(r.balance);
 
-                      const canEdit =
-                        isAdmin && isEditableAccount && !!r._editKind;
+                      const canEdit = isAdmin && !!r._editKind;
 
                       return (
                         <tr key={r.id} className="border-b last:border-b-0">
@@ -546,12 +564,25 @@ export default function AccountStatementPage({ params }) {
                           <td className="py-2 pr-3 text-slate-600">
                             {r.created_by_name || "—"}
                           </td>
-                          {isEditableAccount ? (
+                          {showActionsColumn ? (
                             <td
                               className="py-2 pr-3 text-right"
                               data-no-print="true"
                             >
-                              {canEdit ? (
+                              {canEdit && r._editKind === "deposit" ? (
+                                // Deposits: Reverse only (same as the Journal).
+                                // No Edit: the deposit PUT doesn't validate the
+                                // account or check funds, so it isn't safe.
+                                <button
+                                  onClick={() => openDelete(r, r._editKind)}
+                                  disabled={deleteMutation.isPending}
+                                  className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 disabled:opacity-50"
+                                  title="Reverse deposit - moves all payments back to Undeposited Funds"
+                                >
+                                  <Undo2 className="w-4 h-4" />
+                                  Reverse
+                                </button>
+                              ) : canEdit ? (
                                 <div className="inline-flex items-center gap-2 justify-end">
                                   <button
                                     onClick={() => openEdit(r, r._editKind)}
@@ -598,7 +629,7 @@ export default function AccountStatementPage({ params }) {
                         {finalBalanceText}
                       </td>
                       <td className="py-2 pr-3 text-slate-400">—</td>
-                      {isEditableAccount ? <td className="py-2 pr-3" /> : null}
+                      {showActionsColumn ? <td className="py-2 pr-3" /> : null}
                     </tr>
                   </tfoot>
                 </table>
@@ -625,9 +656,7 @@ export default function AccountStatementPage({ params }) {
                         ? "Edit landlord deduction"
                         : editKind === "tenant_deduction"
                           ? "Edit tenant deduction"
-                          : editKind === "deposit"
-                            ? "Edit deposit"
-                            : "Edit"}
+                          : "Edit"}
               </div>
               <button
                 onClick={closeModal}
@@ -801,55 +830,36 @@ export default function AccountStatementPage({ params }) {
                       />
                     </Field>
                   </div>
-                  <Field label="Paid from">
-                    <select
-                      value={paymentSource}
-                      onChange={(e) => setPaymentSource(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+                  {lockedCreditAccount ? (
+                    <Field
+                      label={
+                        lockedCreditAccount.payment_source === "income"
+                          ? "Recognised as income"
+                          : "Credited to"
+                      }
                     >
-                      <option value="bank">Bank</option>
-                      <option value="cash">Cash</option>
-                    </select>
-                  </Field>
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${lockedCreditAccount.account_code || ""} • ${lockedCreditAccount.account_name || ""}`}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-100 text-slate-600 outline-none cursor-default"
+                      />
+                    </Field>
+                  ) : (
+                    <Field label="Paid from">
+                      <select
+                        value={paymentSource}
+                        onChange={(e) => setPaymentSource(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
+                      >
+                        <option value="bank">Bank</option>
+                        <option value="cash">Cash</option>
+                      </select>
+                    </Field>
+                  )}
                 </div>
               ) : null}
 
-              {/* NEW: Deposit edit form */}
-              {editKind === "deposit" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Field label="Date">
-                    <DatePopoverInput
-                      value={date}
-                      onChange={setDate}
-                      placeholder="DD-MM-YYYY"
-                      className="bg-white"
-                    />
-                  </Field>
-                  <Field label="Deposit to">
-                    <select
-                      value={depositTo}
-                      onChange={(e) => setDepositTo(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
-                    >
-                      <option value="">Select account…</option>
-                      {depositAccounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.label}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <div className="md:col-span-2">
-                    <Field label="Description">
-                      <input
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none"
-                      />
-                    </Field>
-                  </div>
-                </div>
-              ) : null}
 
               <div className="flex items-center justify-end gap-2">
                 <button

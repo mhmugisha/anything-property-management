@@ -28,7 +28,16 @@ export async function POST(request) {
     const description = (body?.description || "").trim();
     const amount = toNumber(body?.amount);
     const paymentAccountId = toNumber(body?.payment_account_id);
+    const incomeAccountId = toNumber(body?.income_account_id);
     const referenceNumber = (body?.reference_number || "").trim() || null;
+    // credit_mode: "cash_bank" (default, paid out of cash/bank) or "income"
+    // (not paid out; recognised as company income, e.g. a letting fee).
+    const creditMode =
+      String(body?.credit_mode || "cash_bank").trim() === "income"
+        ? "income"
+        : "cash_bank";
+    const creditAccountInput =
+      creditMode === "income" ? incomeAccountId : paymentAccountId;
 
     if (
       !landlordId ||
@@ -36,12 +45,14 @@ export async function POST(request) {
       !deductionDate ||
       !description ||
       !amount ||
-      !paymentAccountId
+      !creditAccountInput
     ) {
       return Response.json(
         {
           error:
-            "landlord_id, property_id, deduction_date, description, amount, and payment_account_id are required",
+            creditMode === "income"
+              ? "landlord_id, property_id, deduction_date, description, amount, and income_account_id are required"
+              : "landlord_id, property_id, deduction_date, description, amount, and payment_account_id are required",
         },
         { status: 400 },
       );
@@ -51,50 +62,78 @@ export async function POST(request) {
       return Response.json({ error: "Amount must be > 0" }, { status: 400 });
     }
 
-    // Validate that the payment account exists and is one of the allowed accounts (1110 or 1120)
-    const accountCheck = await sql`
-      SELECT id, account_code, account_name 
-      FROM chart_of_accounts 
-      WHERE id = ${paymentAccountId} 
-        AND account_code IN ('1110', '1120')
-        AND COALESCE(is_active, true) = true
-    `;
-
-    if (accountCheck.length === 0) {
-      return Response.json(
-        {
-          error:
-            "Invalid payment account. Must be Cash on Hand (1110) or Bank Account - Operating (1120)",
-        },
-        { status: 400 },
-      );
-    }
-
-    const accountCode = accountCheck[0].account_code;
-    const creditAccountId = paymentAccountId;
-
-    // Map account code to credit intent
     let creditIntent;
-    if (accountCode === "1110") {
-      creditIntent = "cash_account";
-    } else if (accountCode === "1120") {
-      creditIntent = "bank_account";
-    } else {
-      return Response.json(
-        { error: "Invalid payment account code" },
-        { status: 400 },
-      );
+    let creditAccountIdOverride = null;
+
+    if (creditMode === "income") {
+      // Only an active Income/Revenue account may be credited. Never 2100,
+      // liabilities, expenses, assets or equity.
+      const incomeCheck = await sql`
+        SELECT id, account_code, account_name, account_type
+        FROM chart_of_accounts
+        WHERE id = ${incomeAccountId}
+          AND LOWER(TRIM(COALESCE(account_type, ''))) IN ('income', 'revenue')
+          AND COALESCE(account_code, '') <> '2100'
+          AND COALESCE(is_active, true) = true
+      `;
+      if (incomeCheck.length === 0) {
+        return Response.json(
+          {
+            error:
+              "Invalid income account. Choose an active Income account from the chart of accounts.",
+          },
+          { status: 400 },
+        );
+      }
+      creditIntent = "landlord_deduction_income";
+      creditAccountIdOverride = incomeCheck[0].id;
     }
 
-    // Prevent spending more than what's available in the credited Asset account.
-    console.log("Checking if can credit account", { creditAccountId, amount });
-    const guard = await ensureCanCreditAccount({
-      creditAccountId,
-      amount,
-    });
-    if (!guard.ok) {
-      console.error("ensureCanCreditAccount failed:", guard.body);
-      return Response.json(guard.body, { status: guard.status });
+    if (creditMode === "cash_bank") {
+      // Validate that the payment account exists and is one of the allowed accounts (1110 or 1120)
+      const accountCheck = await sql`
+        SELECT id, account_code, account_name 
+        FROM chart_of_accounts 
+        WHERE id = ${paymentAccountId} 
+          AND account_code IN ('1110', '1120')
+          AND COALESCE(is_active, true) = true
+      `;
+
+      if (accountCheck.length === 0) {
+        return Response.json(
+          {
+            error:
+              "Invalid payment account. Must be Cash on Hand (1110) or Bank Account - Operating (1120)",
+          },
+          { status: 400 },
+        );
+      }
+
+      const accountCode = accountCheck[0].account_code;
+      const creditAccountId = paymentAccountId;
+
+      // Map account code to credit intent
+      if (accountCode === "1110") {
+        creditIntent = "cash_account";
+      } else if (accountCode === "1120") {
+        creditIntent = "bank_account";
+      } else {
+        return Response.json(
+          { error: "Invalid payment account code" },
+          { status: 400 },
+        );
+      }
+
+      // Prevent spending more than what's available in the credited Asset account.
+      console.log("Checking if can credit account", { creditAccountId, amount });
+      const guard = await ensureCanCreditAccount({
+        creditAccountId,
+        amount,
+      });
+      if (!guard.ok) {
+        console.error("ensureCanCreditAccount failed:", guard.body);
+        return Response.json(guard.body, { status: guard.status });
+      }
     }
 
     // Prevent overpaying landlords (deductions also reduce what's due to landlords).
@@ -134,7 +173,8 @@ export async function POST(request) {
 
     const deduction = deductionRows?.[0] || null;
 
-    // Accounting: reduce landlord payable and reduce cash/bank
+    // Accounting: reduce landlord payable (Dr 2100) and either reduce
+    // cash/bank or recognise income (Cr chosen income account).
     const txDesc = `Landlord deduction - ${description}`;
 
     console.log("Posting accounting entry...");
@@ -144,6 +184,7 @@ export async function POST(request) {
       referenceNumber,
       debitIntent: "landlord_liability",
       creditIntent, // Use creditIntent instead of creditAccountId
+      creditAccountIdOverride, // set only for income deductions (validated above)
       amount,
       currency: "UGX",
       createdBy: perm.staff.id,

@@ -61,8 +61,9 @@ export async function POST(request, { params }) {
     const creditId = action === "credit" ? acct2100Id : acct3200Id;
     const txDate = String(transaction_date).slice(0, 10);
 
-    const txnRow = await sql.transaction(async (txn) => {
-      const [row] = await txn`
+    // Single INSERT, run as a non-interactive batch (Neon HTTP driver).
+    const [insertedRows] = await sql.transaction([
+      sql`
         INSERT INTO transactions (
           transaction_date, description,
           debit_account_id, credit_account_id,
@@ -76,9 +77,9 @@ export async function POST(request, { params }) {
           ${perm.staff.id}, ${landlordId},
           'reconciliation'
         ) RETURNING id
-      `;
-      return row;
-    });
+      `,
+    ]);
+    const txnRow = insertedRows?.[0] || null;
 
     await writeAuditLog({
       staffId: perm.staff.id,

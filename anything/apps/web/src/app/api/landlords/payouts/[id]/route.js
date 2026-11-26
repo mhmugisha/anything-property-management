@@ -191,22 +191,11 @@ export async function PUT(request, { params: { id } }) {
     let updatedPayout = null;
 
     // Atomically update the payout record and its GL entry so they cannot diverge.
-    await sql.transaction(async (txn) => {
-      const updatedPayoutRows = await txn`
-        UPDATE landlord_payouts
-        SET payout_date = ${payoutDate}::date,
-            amount = ${amount},
-            payment_method = ${method},
-            reference_number = ${referenceNumber},
-            notes = ${notes}
-        WHERE id = ${payoutId}
-        RETURNING *
-      `;
-
-      updatedPayout = updatedPayoutRows?.[0] || null;
-
-      if (oldTx) {
-        await txn`
+    // One non-interactive batch (Neon HTTP driver): payout row and GL entry
+    // are written together or not at all.
+    const approval = oldTx ? null : getApprovalFields(perm.staff);
+    const glQuery = oldTx
+      ? sql`
           UPDATE transactions
           SET transaction_date = ${payoutDate}::date,
               description = ${desc},
@@ -215,10 +204,8 @@ export async function PUT(request, { params: { id } }) {
               credit_account_id = ${creditAccountId},
               amount = ${amount}
           WHERE id = ${oldTx.id}
-        `;
-      } else {
-        const approval = getApprovalFields(perm.staff);
-        await txn`
+        `
+      : sql`
           INSERT INTO transactions (
             transaction_date, description, reference_number,
             debit_account_id, credit_account_id,
@@ -231,13 +218,27 @@ export async function PUT(request, { params: { id } }) {
             ${payoutDate}::date, ${desc}, ${referenceNumber},
             ${rentPayableId}, ${creditAccountId},
             ${amount}, 'UGX', ${perm.staff.id},
-            ${updatedPayout.landlord_id}, ${updatedPayout.property_id},
+            ${oldPayout.landlord_id}, ${oldPayout.property_id},
             'landlord_payout', ${payoutId},
             ${approval.approval_status}, ${approval.approved_by}, ${approval.approved_at}
           )
         `;
-      }
-    });
+
+    const [updatedPayoutRows] = await sql.transaction([
+      sql`
+        UPDATE landlord_payouts
+        SET payout_date = ${payoutDate}::date,
+            amount = ${amount},
+            payment_method = ${method},
+            reference_number = ${referenceNumber},
+            notes = ${notes}
+        WHERE id = ${payoutId}
+        RETURNING *
+      `,
+      glQuery,
+    ]);
+
+    updatedPayout = updatedPayoutRows?.[0] || null;
 
     await writeAuditLog({
       staffId: perm.staff.id,
@@ -282,16 +283,16 @@ export async function DELETE(request, { params: { id } }) {
     if (!oldPayout)
       return Response.json({ error: "Not found" }, { status: 404 });
 
-    await sql.transaction(async (txn) => {
-      await txn`
+    // One non-interactive batch (Neon HTTP driver): both soft-deletes or neither.
+    await sql.transaction([
+      sql`
         UPDATE landlord_payouts
         SET is_deleted = true,
             deleted_at = now(),
             deleted_by = ${perm.staff.id}
         WHERE id = ${payoutId}
-      `;
-
-      await txn`
+      `,
+      sql`
         UPDATE transactions
         SET is_deleted = true,
             deleted_at = now(),
@@ -299,8 +300,8 @@ export async function DELETE(request, { params: { id } }) {
         WHERE source_type = 'landlord_payout'
           AND source_id = ${payoutId}
           AND COALESCE(is_deleted,false) = false
-      `;
-    });
+      `,
+    ]);
 
     await writeAuditLog({
       staffId: perm.staff.id,

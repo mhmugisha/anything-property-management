@@ -76,7 +76,40 @@ export async function GET(request, { params: { id } }) {
     if (!deduction)
       return Response.json({ error: "Not found" }, { status: 404 });
 
-    return Response.json({ deduction });
+    // Current credit account, read from the deduction's GL entry, so the edit
+    // modal can open on what is actually booked.
+    const creditRows = await sql`
+      SELECT c.id, c.account_code, c.account_name, c.account_type
+      FROM transactions t
+      JOIN chart_of_accounts c ON c.id = t.credit_account_id
+      WHERE t.source_type = 'landlord_deduction'
+        AND t.source_id = ${deductionId}
+        AND COALESCE(t.is_deleted,false) = false
+      ORDER BY t.id DESC
+      LIMIT 1
+    `;
+    const acct = creditRows?.[0] || null;
+    let paymentSource = null; // cash | bank | income | other | null (no GL)
+    if (acct) {
+      const type = String(acct.account_type || "").trim().toLowerCase();
+      if (acct.account_code === "1110") paymentSource = "cash";
+      else if (acct.account_code === "1120") paymentSource = "bank";
+      else if (type === "income" || type === "revenue") paymentSource = "income";
+      else paymentSource = "other";
+    }
+
+    return Response.json({
+      deduction,
+      credit_account: acct
+        ? {
+            id: acct.id,
+            account_code: acct.account_code,
+            account_name: acct.account_name,
+            account_type: acct.account_type,
+            payment_source: paymentSource,
+          }
+        : null,
+    });
   } catch (error) {
     console.error("GET /api/accounting/landlord-deductions/[id] error", error);
     return Response.json(
@@ -109,19 +142,66 @@ export async function PUT(request, { params: { id } }) {
 
     const body = await request.json();
 
-    const propertyIdRaw = body?.property_id;
-    const propertyId = toNumber(propertyIdRaw);
+    const isProvided = (v) => v !== undefined && v !== null && v !== "";
+
+    // property_id / landlord_id are optional on edit: the edit modals don't
+    // send them, so fall back to the deduction's own values. If a client does
+    // send them, they are validated.
+    const propertyIdSent = isProvided(body?.property_id);
+    const propertyId = propertyIdSent
+      ? toNumber(body.property_id)
+      : toNumber(oldDeduction.property_id);
+
+    if (propertyIdSent && (!propertyId || propertyId <= 0)) {
+      return Response.json({ error: "Invalid property_id" }, { status: 400 });
+    }
+
+    if (isProvided(body?.landlord_id)) {
+      const landlordIdSent = toNumber(body.landlord_id);
+      if (!landlordIdSent || landlordIdSent <= 0) {
+        return Response.json({ error: "Invalid landlord_id" }, { status: 400 });
+      }
+      // Moving a deduction to another landlord is not supported on edit.
+      if (landlordIdSent !== Number(oldDeduction.landlord_id)) {
+        return Response.json(
+          { error: "landlord_id cannot be changed when editing a deduction" },
+          { status: 400 },
+        );
+      }
+    }
+
+    // A property sent explicitly must belong to the deduction's landlord.
+    if (propertyIdSent && propertyId !== Number(oldDeduction.property_id)) {
+      const propRows = await sql`
+        SELECT id FROM properties
+        WHERE id = ${propertyId}
+          AND landlord_id = ${oldDeduction.landlord_id}
+        LIMIT 1
+      `;
+      if (!propRows?.length) {
+        return Response.json(
+          { error: "Property does not belong to this deduction's landlord" },
+          { status: 400 },
+        );
+      }
+    }
 
     const deductionDate = (body?.deduction_date || "").trim();
     const description = (body?.description || "").trim();
     const amount = toNumber(body?.amount);
-    const paymentSource = (body?.payment_source || "bank").trim(); // bank | cash
+    // bank | cash. When omitted, the existing GL credit account is kept.
+    const paymentSourceRaw = String(body?.payment_source || "").trim();
+    const paymentSource =
+      paymentSourceRaw === "cash" || paymentSourceRaw === "bank"
+        ? paymentSourceRaw
+        : null;
 
     if (!propertyId || !deductionDate || !description || !amount) {
       return Response.json(
         {
-          error:
-            "property_id, deduction_date, description, and amount are required",
+          error: !propertyId
+            ? "Deduction has no property; property_id is required"
+            : "deduction_date, description, and amount are required",
         },
         { status: 400 },
       );
@@ -134,9 +214,8 @@ export async function PUT(request, { params: { id } }) {
     const rentPayableId = await getAccountIdByCode("2100");
     const cashId = await getAccountIdByCode("1110");
     const bankId = await getAccountIdByCode("1120");
-    const creditAccountId = paymentSource === "cash" ? cashId : bankId;
 
-    if (!rentPayableId || !creditAccountId) {
+    if (!rentPayableId) {
       return Response.json(
         { error: "Accounting accounts not set up correctly" },
         { status: 500 },
@@ -170,7 +249,43 @@ export async function PUT(request, { params: { id } }) {
 
     const oldTx = oldTxRows?.[0] || null;
 
-    if (oldTx) {
+    // A deduction recognised as income (Cr an Income account, no cash moved)
+    // keeps its income account on edit. The edit form only offers bank/cash,
+    // so payment_source is ignored for these rather than turning the income
+    // into a cash/bank outflow.
+    const oldCreditAccount = oldTx?.credit_account_id
+      ? await getAccountById(oldTx.credit_account_id)
+      : null;
+    const oldCreditType = String(oldCreditAccount?.account_type || "")
+      .trim()
+      .toLowerCase();
+    const isIncomeDeduction =
+      oldCreditType === "income" || oldCreditType === "revenue";
+
+    // Income deductions always keep their income account. Otherwise an
+    // omitted payment_source keeps the current credit account; with no GL
+    // entry to keep, fall back to bank as before.
+    let creditAccountId;
+    if (isIncomeDeduction) {
+      creditAccountId = toNumber(oldTx.credit_account_id);
+    } else if (paymentSource) {
+      creditAccountId = paymentSource === "cash" ? cashId : bankId;
+    } else if (oldTx?.credit_account_id) {
+      creditAccountId = toNumber(oldTx.credit_account_id);
+    } else {
+      creditAccountId = bankId;
+    }
+
+    if (!creditAccountId) {
+      return Response.json(
+        { error: "Accounting accounts not set up correctly" },
+        { status: 500 },
+      );
+    }
+
+    if (isIncomeDeduction) {
+      // Crediting income never draws down cash/bank: no funds check.
+    } else if (oldTx) {
       const guard = await canCreditForUpdate({
         oldTx,
         nextCreditAccountId: creditAccountId,
@@ -182,23 +297,13 @@ export async function PUT(request, { params: { id } }) {
       if (!guard.ok) return Response.json(guard.body, { status: guard.status });
     }
 
-    const updated = await sql.transaction(async (txn) => {
-      const deductionRows = await txn`
-        UPDATE landlord_deductions
-        SET property_id = ${propertyId},
-            deduction_date = ${deductionDate}::date,
-            description = ${description},
-            amount = ${amount}
-        WHERE id = ${deductionId}
-        RETURNING *
-      `;
+    // Neon's HTTP driver only runs NON-interactive transactions: every write
+    // goes in one sql.transaction([...]) batch so the edit is all-or-nothing.
+    // All reads and validation (funds, due-to-landlord, accounts) are above.
+    const txDesc = `Landlord deduction - ${description}`;
 
-      const deduction = deductionRows?.[0] || null;
-
-      const txDesc = `Landlord deduction - ${description}`;
-
-      if (oldTx) {
-        await txn`
+    const glQuery = oldTx
+      ? sql`
           UPDATE transactions
           SET transaction_date = ${deductionDate}::date,
               description = ${txDesc},
@@ -207,9 +312,8 @@ export async function PUT(request, { params: { id } }) {
               amount = ${amount},
               property_id = ${propertyId}
           WHERE id = ${oldTx.id}
-        `;
-      } else {
-        await txn`
+        `
+      : sql`
           INSERT INTO transactions (
             transaction_date, description,
             debit_account_id, credit_account_id,
@@ -222,15 +326,26 @@ export async function PUT(request, { params: { id } }) {
             ${deductionDate}::date, ${txDesc},
             ${rentPayableId}, ${creditAccountId},
             ${amount}, 'UGX', ${perm.staff.id},
-            ${deduction.landlord_id}, ${propertyId},
+            ${oldDeduction.landlord_id}, ${propertyId},
             'landlord',
             'landlord_deduction', ${deductionId}
           )
         `;
-      }
 
-      return deduction;
-    });
+    const [deductionRows] = await sql.transaction([
+      sql`
+        UPDATE landlord_deductions
+        SET property_id = ${propertyId},
+            deduction_date = ${deductionDate}::date,
+            description = ${description},
+            amount = ${amount}
+        WHERE id = ${deductionId}
+        RETURNING *
+      `,
+      glQuery,
+    ]);
+
+    const updated = deductionRows?.[0] || null;
 
     await writeAuditLog({
       staffId: perm.staff.id,
@@ -273,16 +388,16 @@ export async function DELETE(request, { params: { id } }) {
     if (!oldDeduction)
       return Response.json({ error: "Not found" }, { status: 404 });
 
-    await sql.transaction(async (txn) => {
-      await txn`
+    // One non-interactive batch (Neon HTTP): both soft-deletes or neither.
+    await sql.transaction([
+      sql`
         UPDATE landlord_deductions
         SET is_deleted = true,
             deleted_at = now(),
             deleted_by = ${perm.staff.id}
         WHERE id = ${deductionId}
-      `;
-
-      await txn`
+      `,
+      sql`
         UPDATE transactions
         SET is_deleted = true,
             deleted_at = now(),
@@ -290,8 +405,8 @@ export async function DELETE(request, { params: { id } }) {
         WHERE source_type = 'landlord_deduction'
           AND source_id = ${deductionId}
           AND COALESCE(is_deleted,false) = false
-      `;
-    });
+      `,
+    ]);
 
     await writeAuditLog({
       staffId: perm.staff.id,
