@@ -47,6 +47,7 @@ export default function AccountingSidebar({ isAdmin: isAdminProp = false }) {
       isOpen: journalOpen,
       toggle: () => setJournalOpen(!journalOpen),
       submenu: [
+        { title: "Journal Log", href: "/accounting/journal" },
         { title: "General Journal", href: "/accounting/new-entry-company" },
         {
           title: "Landlord Deduction",
